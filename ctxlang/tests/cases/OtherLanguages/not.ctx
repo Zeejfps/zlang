@@ -1,0 +1,7 @@
+// `!b` is `not b`.
+
+fn main {} -> i32 {
+    let b = true
+    if !b { return 1 }  //~ error at 8: `!` is the word `not` in ctxlang: write `not b`
+    return 0
+}

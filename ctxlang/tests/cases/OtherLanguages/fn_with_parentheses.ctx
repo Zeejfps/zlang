@@ -1,0 +1,8 @@
+// `fn main()` and `fn add(a: i32, b: i32)` take their fields in braces; `fn f(E: error)` is
+// still a generic error set.
+
+fn add(a: i32, b: i32) -> i32 { return a + b }  //~ error at 7: a function's fields are in braces in ctxlang: write `fn add { a: i32, b: i32 }`
+fn main() {  //~ error at 8: a function's fields are in braces in ctxlang, and a function without any has empty ones: write `fn main {}`
+    _ = add{ a = 1, b = 2 }
+}
+fn f(E: error) { g: &fn{} -> E!i32 } -> E!i32 { return g{} }

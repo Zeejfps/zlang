@@ -1,0 +1,6 @@
+// `x as T` is `@as(T, x)`.
+
+fn main {} -> i32 {
+    let a: u8 = 3
+    return a as i32  //~ error at 14: a conversion is the builtin `@as` in ctxlang: write `@as(T, x)`, not `x as T`
+}

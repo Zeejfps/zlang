@@ -1,0 +1,7 @@
+// `var x = 0` is `let mut x = 0`, and the rest reads x as the local it declares.
+
+fn main {} -> i32 {
+    var x = 0  //~ error at 5: a local that changes is `let mut` in ctxlang: write `let mut x = 0`, not `var`
+    x = x + 1
+    return x
+}

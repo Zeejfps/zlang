@@ -1,0 +1,8 @@
+// `x++` and `x--` are `x = x + 1` and `x = x - 1`.
+
+fn main {} -> i32 {
+    let mut x = 0
+    x++  //~ error at 6: there is no `++` in ctxlang: write `x = x + 1`
+    x--  //~ error at 6: there is no `--` in ctxlang: write `x = x - 1`
+    return x
+}

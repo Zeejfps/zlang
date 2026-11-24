@@ -782,6 +782,13 @@ namespace tree {
                 }
                 d.depth = d.depth - 1
             }
+            paren_call{ callee, args } => {
+                line{ &d, at, s = "paren_call" }
+                d.depth = d.depth + 1
+                expr{ &d, e = callee.* }
+                for x in args { expr{ &d, e = x } }
+                d.depth = d.depth - 1
+            }
             neg{ e = x } => {
                 line{ &d, at, s = "neg" }
                 sub{ &d, e = x.* }

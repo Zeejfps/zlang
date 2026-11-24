@@ -108,13 +108,24 @@ namespace parser {
         } else if k == tok::Kind::kw_fn {
             skip{ &p }
             let name = ident{ &p }
-            let tps = fn_tparams{ &p }
-            if body_as_context{ p } {
+            let paren_fields = fields_in_parens_at{ p }
+            let tps = if paren_fields { TParams{ names = slice::empty(syntax::Name){}, sets = slice::empty(bool){} } } else { fn_tparams{ &p } }
+            if not paren_fields and body_as_context{ p } {
                 let at = p.toks[p.i].span.start
                 fix{ &p, start = at, end = at, text = "{} ", safe = true, msg = "give the function its empty context" }
                 failf{ &p, msg = @fmt("a function's context comes before its body: write `fn {} {{}} {{ ... }}`", utf8::String{ bytes = name.text }) }
             }
-            let params = ctx_fields{ &p, decl = true }
+            let mut params: []syntax::Param = slice::empty(syntax::Param){}
+            if paren_fields {
+                params = fields_in_parens{ &p, name }
+            } else if next_is{ p, k = tok::Kind::arrow } {
+                // `fn f -> T`: a function without fields still has its braces.
+                let t = p.toks[p.i]
+                fix{ &p, start = t.span.start, end = t.span.start, text = "{} ", safe = true, msg = "give the function its empty context" }
+                slipf{ &p, span = t.span, msg = @fmt("a function without fields still has its braces in ctxlang: write `fn {} {{}} -> ...`", utf8::String{ bytes = name.text }) }
+            } else {
+                params = ctx_fields{ &p, decl = true }
+            }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
             d = syntax::DeclKind::func{ name, tparams = tps.names, tsets = tps.sets, params, ret, body = block{ &p }, external = false }
         } else if k == tok::Kind::kw_extern and kind{ p, ahead = 1 } == tok::Kind::kw_union {
@@ -148,8 +159,13 @@ namespace parser {
             skip{ &p }
             let name = ident{ &p }
             if next_is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an enum cannot have generic parameters" } }
-            expect{ &p, k = tok::Kind::colon }
-            let base = type_expr{ &p }
+            let mut base = syntax::TypeExpr{ id = 0, span = name.span, k = syntax::TypeKind::error }
+            if next_is{ p, k = tok::Kind::lbrace } {
+                base = enum_without_type{ &p, keyword = p.toks[start], name }
+            } else {
+                expect{ &p, k = tok::Kind::colon }
+                base = type_expr{ &p }
+            }
             d = syntax::DeclKind::enumeration{ name, base, variants = enum_variants{ &p } }
         } else if k == tok::Kind::kw_type {
             skip{ &p }
@@ -317,12 +333,70 @@ namespace parser {
         return TParams{ names = list::items{ list = xs }, sets = list::items{ list = sets } }
     }
 
+    // At `fn f(` before fields in parentheses, as other languages write a function's
+    // parameters: `()`, `(mut`, or `(name: T` with a name in lower case, as fields are named;
+    // a generic error set, `(E: error)`, is named in upper case, as generic parameters are.
+    fn fields_in_parens_at { p: Parser } -> bool {
+        if not next_is{ p, k = tok::Kind::lparen } { return false }
+        let k1 = kind{ p, ahead = 1 }
+        if k1 == tok::Kind::rparen or k1 == tok::Kind::kw_mut { return true }
+        if k1 != tok::Kind::ident or kind{ p, ahead = 2 } != tok::Kind::colon { return false }
+        let first = text_of{ p, t = p.toks[p.i + 1] }[0]
+        return first >= 'a' and first <= 'z'
+    }
+
+    // `fn name(a: T, ...)`: the fields, which go in braces.
+    fn fields_in_parens { mut p: Parser, name: syntax::Name } -> []syntax::Param {
+        let open = p.i
+        let fields = fields_between{ &p, decl = true, open = tok::Kind::lparen, close = tok::Kind::rparen }
+        if p.bad { return fields }
+        let close = p.i - 1
+        let two = try! alloc::make(diag::Edit, arena::Arena){ realloc = arena::alloc, heap = p.heap, count = 2 }
+        let empty = close == open + 1
+        let gap = open > 0 and p.toks[open - 1].span.end == p.toks[open].span.start
+        let brace: []u8 = if empty { "{" } else { "{ " }
+        let mut first = message{ p }
+        try! @fmt(&first, "{}{}", if gap { " " } else { "" }, utf8::String{ bytes = brace })
+        two[0] = diag::Edit{ span = p.toks[open].span, text = utf8::view{ b = first }.bytes }
+        two[1] = diag::Edit{ span = p.toks[close].span, text = if empty { "}" } else { " }" } }
+        diag::fix{ diags = p.diags, safe = true, msg = "write braces", edits = two }
+        let n = utf8::String{ bytes = name.text }
+        let span = tokens_span{ p, a = open, b = close }
+        if empty {
+            slipf{ &p, span, msg = @fmt("a function's fields are in braces in ctxlang, and a function without any has empty ones: write `fn {} {{}}`", n) }
+        } else {
+            let mut inner = message{ p }
+            put_source{ p, b = &inner, lo = p.toks[open].span.end, hi = p.toks[close].span.start }
+            let fs = utf8::String{ bytes = trimmed{ s = utf8::view{ b = inner }.bytes } }
+            slipf{ &p, span, msg = @fmt("a function's fields are in braces in ctxlang: write `fn {} {{ {} }}`", n, fs) }
+        }
+        return fields
+    }
+
+    // `enum K {` without its integer type: an error with the two ways on, and the parse goes on
+    // with `u8`.
+    fn enum_without_type { mut p: Parser, keyword: tok::Token, name: syntax::Name } -> syntax::TypeExpr {
+        let open = p.toks[p.i]
+        fix{ &p, start = name.span.end, end = name.span.end, text = ": u8", safe = false, msg = "an enum of u8" }
+        fix{ &p, start = keyword.span.start, end = keyword.span.end, text = "union", safe = false, msg = "a union whose variants have no payload" }
+        let n = utf8::String{ bytes = name.text }
+        slipf{ &p, span = open.span, msg = @fmt("an enum is an integer type, and names which: write `enum {}: u8 {{ ... }}`; a set whose values don't matter is a union, `union {} {{ ... }}`", n, n) }
+        let u8 = made_name{ &p, at = name.span, text = "u8" }
+        let segs = try! alloc::make(syntax::Seg, arena::Arena){ realloc = arena::alloc, heap = p.heap, count = 1 }
+        segs[0] = syntax::Seg{ name = u8, targs = null, rest = false }
+        return syntax::TypeExpr{ id = new_id{ &p }, span = name.span, k = syntax::TypeKind::path{ segs } }
+    }
+
     // `{ mut name: T, ... }`, the context of a function, whose fields may have attributes, or of
     // a function type (decl false), whose fields declare nothing and so have none.
     fn ctx_fields { mut p: Parser, decl: bool } -> []syntax::Param {
+        return fields_between{ &p, decl, open = tok::Kind::lbrace, close = tok::Kind::rbrace }
+    }
+
+    fn fields_between { mut p: Parser, decl: bool, open: tok::Kind, close: tok::Kind } -> []syntax::Param {
         let mut xs = list::new(syntax::Param){ realloc = arena::alloc, heap = p.heap }
-        expect{ &p, k = tok::Kind::lbrace }
-        while more{ p, close = tok::Kind::rbrace } {
+        expect{ &p, k = open }
+        while more{ p, close } {
             let mut attrs: []syntax::Attr = slice::empty(syntax::Attr){}
             if decl {
                 attrs = attributes{ &p, field = true }
@@ -337,7 +411,7 @@ namespace parser {
             try! list::push{ list = &xs, item = syntax::Param{ span = span_from{ p, start }, attrs, mutable, name, ty } }
             if not accept{ &p, k = tok::Kind::comma } and not lacks_comma{ &p } { break }
         }
-        expect{ &p, k = tok::Kind::rbrace }
+        expect{ &p, k = close }
         return list::items{ list = xs }
     }
 
@@ -502,8 +576,13 @@ namespace parser {
 
     // Whether a type begins at the current token.
     fn starts_type { p: Parser } -> bool {
-        let k = kind{ p, ahead = 0 }
-        let k1 = kind{ p, ahead = 1 }
+        return starts_type_at{ p, ahead = 0 }
+    }
+
+    // Whether the token `ahead` of the current one can begin a type.
+    fn starts_type_at { p: Parser, ahead: usize } -> bool {
+        let k = kind{ p, ahead }
+        let k1 = kind{ p, ahead = ahead + 1 }
         return k == tok::Kind::star or k == tok::Kind::question or k == tok::Kind::lbracket or k == tok::Kind::ident
                or k == tok::Kind::kw_fn or (k == tok::Kind::amp and k1 == tok::Kind::kw_fn)
                or (k == tok::Kind::kw_extern and k1 == tok::Kind::kw_fn)
@@ -600,7 +679,15 @@ namespace parser {
         let k = kind{ p, ahead = 0 }
         let mut s = syntax::StmtKind::error
         if k == tok::Kind::kw_let {
-            return let_stmt{ &p, id }
+            return let_stmt{ &p, id, var = false }
+        } else if k == tok::Kind::ident and is_word{ p, word = "var" } and kind{ p, ahead = 1 } == tok::Kind::ident and not p.toks[p.i + 1].nl
+                  and (kind{ p, ahead = 2 } == tok::Kind::assign or kind{ p, ahead = 2 } == tok::Kind::colon) {
+            // `var x = e`: `let mut x = e`.
+            fix_span{ &p, span = t.span, text = "let mut", safe = true, msg = "write `let mut`" }
+            slip{ &p, span = t.span, msg = "a local that changes is `let mut` in ctxlang: write `let mut x = 0`, not `var`" }
+            return let_stmt{ &p, id, var = true }
+        } else if k == tok::Kind::ident and is_word{ p, word = "loop" } and kind{ p, ahead = 1 } == tok::Kind::lbrace and not p.toks[p.i + 1].nl {
+            s = loop_stmt{ &p, label = null }
         } else if k == tok::Kind::kw_if {
             s = if_stmt{ &p }
         } else if k == tok::Kind::kw_while {
@@ -650,6 +737,8 @@ namespace parser {
             start = p.i
             if next_is{ p, k = tok::Kind::kw_while } {
                 s = while_stmt{ &p, label }
+            } else if is_word{ p, word = "loop" } and kind{ p, ahead = 1 } == tok::Kind::lbrace {
+                s = loop_stmt{ &p, label }
             } else if next_is{ p, k = tok::Kind::kw_for } {
                 s = for_stmt{ &p, label }
             } else {
@@ -657,7 +746,11 @@ namespace parser {
             }
         } else {
             let e = expr{ &p }
-            if accept{ &p, k = tok::Kind::assign } {
+            if at_compound{ p } {
+                s = compound{ &p, place = e }
+            } else if at_step{ p } {
+                s = step{ &p, place = e }
+            } else if accept{ &p, k = tok::Kind::assign } {
                 if is_discard{ e } {
                     s = syntax::StmtKind::discard{ e = expr{ &p } }
                 } else {
@@ -687,10 +780,11 @@ namespace parser {
         return syntax::Block{ id = new_id{ &p }, span = s.span, stmts = list::items{ list = xs } }
     }
 
-    fn let_stmt { mut p: Parser, id: u32 } -> syntax::Stmt {
+    // `let`, or `var` read as `let mut` (var: the error is reported).
+    fn let_stmt { mut p: Parser, id: u32, var: bool } -> syntax::Stmt {
         let start = p.i
         let t = take{ &p }
-        let mutable = accept{ &p, k = tok::Kind::kw_mut }
+        let mutable = var or accept{ &p, k = tok::Kind::kw_mut }
         if not mutable and next_is{ p, k = tok::Kind::kw_null } {
             let pat = pattern{ &p, test = false }
             return let_else{ &p, id, start, variant = pat.variant, binders = pat.binders }
@@ -736,6 +830,53 @@ namespace parser {
         let els = block{ &p }
         let k = syntax::StmtKind::let_else{ variant, binders, init, els_variant, els_binders, els }
         return syntax::Stmt{ id, span = span_from{ p, start }, k }
+    }
+
+    // `loop { ... }`: `while true { ... }`.
+    fn loop_stmt { mut p: Parser, label: ?syntax::Name } -> syntax::StmtKind {
+        let t = take{ &p }
+        fix_span{ &p, span = t.span, text = "while true", safe = true, msg = "write `while true`" }
+        slip{ &p, span = t.span, msg = "a loop without a condition is `while true` in ctxlang: write `while true { ... }`, not `loop`" }
+        let c = made_expr{ &p, span = t.span, k = syntax::ExprKind::boolean{ value = true } }
+        return syntax::StmtKind::loop{ label, c, body = block{ &p } }
+    }
+
+    // `x += n` and its kin after the place x: `x = x + n`. The parse goes on with `x = n`, of
+    // the same type, as the error stops the program before it runs.
+    fn compound { mut p: Parser, place: syntax::Expr } -> syntax::StmtKind {
+        let op = take{ &p }
+        let eq = take{ &p }
+        let value = expr{ &p }
+        if p.bad { return syntax::StmtKind::assign{ place, value } }
+        let opt = utf8::String{ bytes = text_of{ p, t = op } }
+        let grouped = value.k is binary | matchx | overflow | isx | ifx
+        let mut b = message{ p }
+        if grouped {
+            try! @fmt(&b, "= {} {} ({})", utf8::String{ bytes = raw{ p, span = place.span } }, opt, utf8::String{ bytes = raw{ p, span = value.span } })
+        } else {
+            try! @fmt(&b, "= {} {} {}", utf8::String{ bytes = raw{ p, span = place.span } }, opt, utf8::String{ bytes = raw{ p, span = value.span } })
+        }
+        let span = source::Span{ file = p.file, start = op.span.start, end = value.span.end }
+        fix_span{ &p, span, text = utf8::view{ b }.bytes, safe = true, msg = "write the assignment" }
+        let both = source::Span{ file = p.file, start = op.span.start, end = eq.span.end }
+        slipf{ &p, span = both, msg = @fmt("there is no `{}=` in ctxlang: write `x = x {} n`", opt, opt) }
+        return syntax::StmtKind::assign{ place, value }
+    }
+
+    // `x++` or `x--` after the place x: `x = x + 1`. The parse goes on with `x = 1`.
+    fn step { mut p: Parser, place: syntax::Expr } -> syntax::StmtKind {
+        let first = p.i
+        let op = take{ &p }
+        skip{ &p }
+        let span = tokens_span{ p, a = first, b = first + 1 }
+        let opt = utf8::String{ bytes = text_of{ p, t = op } }
+        let mut b = message{ p }
+        let before = if span.start > 0 and is_space{ c = p.text[span.start - 1] } { "" } else { " " }
+        try! @fmt(&b, "{}= {} {} 1", before, utf8::String{ bytes = raw{ p, span = place.span } }, opt)
+        fix_span{ &p, span, text = utf8::view{ b }.bytes, safe = true, msg = "write the assignment" }
+        slipf{ &p, span, msg = @fmt("there is no `{}{}` in ctxlang: write `x = x {} 1`", opt, opt, opt) }
+        let value = made_expr{ &p, span, k = syntax::ExprKind::int{ negative = false, value = 1 } }
+        return syntax::StmtKind::assign{ place, value }
     }
 
     fn while_stmt { mut p: Parser, label: ?syntax::Name } -> syntax::StmtKind {
@@ -1255,17 +1396,81 @@ namespace parser {
     fn expr { mut p: Parser } -> syntax::Expr {
         let saved = p.in_cond
         p.in_cond = false
-        let e = or_expr{ &p }
+        let start = p.i
+        let mut e = or_expr{ &p }
+        if next_is{ p, k = tok::Kind::question } and not nl{ p } { e = ternary{ &p, start, c = e } }
         p.in_cond = saved
         return e
+    }
+
+    // `c ? a : b` after its condition c: `if c { a } else { b }`. The parse goes on with an
+    // error expression.
+    fn ternary { mut p: Parser, start: usize, c: syntax::Expr } -> syntax::Expr {
+        let q = take{ &p }
+        let a = expr{ &p }
+        expect{ &p, k = tok::Kind::colon }
+        let b = expr{ &p }
+        if p.bad { return expr_from{ &p, start, k = syntax::ExprKind::error } }
+        let span = source::Span{ file = p.file, start = c.span.start, end = b.span.end }
+        let mut t = message{ p }
+        try! @fmt(&t, "if {} {{ {} }} else {{ {} }}", utf8::String{ bytes = raw{ p, span = c.span } }, utf8::String{ bytes = raw{ p, span = a.span } }, utf8::String{ bytes = raw{ p, span = b.span } })
+        fix_span{ &p, span, text = utf8::view{ b = t }.bytes, safe = true, msg = "write an `if`" }
+        slip{ &p, span = q.span, msg = "there is no `? :` in ctxlang, since `if` has a value: write `if c { a } else { b }`" }
+        return expr_from{ &p, start, k = syntax::ExprKind::error }
+    }
+
+    // At `(T)x`, C's cast of x to a primitive type T, written before an operand on its line.
+    fn c_cast_at { p: Parser } -> bool {
+        if kind{ p, ahead = 1 } != tok::Kind::ident or kind{ p, ahead = 2 } != tok::Kind::rparen { return false }
+        if not is_primitive{ name = text_of{ p, t = p.toks[p.i + 1] } } or p.toks[p.i + 3].nl { return false }
+        let k = kind{ p, ahead = 3 }
+        return k == tok::Kind::ident or k == tok::Kind::int or k == tok::Kind::float or k == tok::Kind::char
+               or k == tok::Kind::lparen or k == tok::Kind::builtin
+    }
+
+    // `(T)x`: `@as(T, x)`.
+    fn c_cast { mut p: Parser } -> syntax::Expr {
+        let first = p.i
+        skip{ &p }
+        let ty = type_expr{ &p }
+        let close = p.i
+        expect{ &p, k = tok::Kind::rparen }
+        let x = prefix{ &p }
+        let span = source::Span{ file = p.file, start = p.toks[first].span.start, end = x.span.end }
+        return as_builtin{ &p, x, ty, at = tokens_span{ p, a = first, b = close }, span, msg = "a conversion is the builtin `@as` in ctxlang: write `@as(T, x)`, not `(T)x`" }
+    }
+
+    // At `(` after a name, where what is in the parentheses isn't types: a call written with
+    // them, `f(1, 2)` or `f()`. Names alone, `f(a, b)`, are generic arguments to the parser,
+    // and the checker tells them apart.
+    fn paren_args_at { p: Parser } -> bool {
+        let k1 = kind{ p, ahead = 1 }
+        return k1 == tok::Kind::rparen or not (starts_type_at{ p, ahead = 1 } or k1 == tok::Kind::bang)
+    }
+
+    // `f(a, b)` after its callee f: the arguments, for the checker's error, which names f's
+    // fields.
+    fn paren_call { mut p: Parser, start: usize, callee: syntax::Expr } -> syntax::Expr {
+        let open = p.i
+        skip{ &p }
+        let mut args = list::new(syntax::Expr){ realloc = arena::alloc, heap = p.heap }
+        while more{ p, close = tok::Kind::rparen } {
+            try! list::push{ list = &args, item = expr{ &p } }
+            if not accept{ &p, k = tok::Kind::comma } { break }
+        }
+        expect{ &p, k = tok::Kind::rparen }
+        // To the last token read: the `)`, or what came before where it is missing.
+        let parens = source::Span{ file = p.file, start = p.toks[open].span.start, end = prev_end{ p } }
+        let k = syntax::ExprKind::paren_call{ callee = box{ &p, value = callee }, args = list::items{ list = args }, parens }
+        return syntax::Expr{ id = new_id{ &p }, span = span_from{ p, start }, at = p.toks[open].span.start, k }
     }
 
     fn or_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let mut e = and_expr{ &p }
         let mut h = p.hand
-        while next_is{ p, k = tok::Kind::kw_or } {
-            let op = take{ &p }
+        while next_is{ p, k = tok::Kind::kw_or } or doubled{ p, k = tok::Kind::pipe } {
+            let op = if next_is{ p, k = tok::Kind::kw_or } { take{ &p } } else { logical{ &p, word = "or", k = tok::Kind::kw_or } }
             let b = and_expr{ &p }
             mixed{ &p, a = e, ha = h, op, b_start = b.span.start, hb = p.hand }
             e = binary{ &p, start, op, a = e, b }
@@ -1279,8 +1484,8 @@ namespace parser {
         let start = p.i
         let mut e = cmp_expr{ &p }
         let mut h = p.hand
-        while next_is{ p, k = tok::Kind::kw_and } {
-            let op = take{ &p }
+        while next_is{ p, k = tok::Kind::kw_and } or doubled{ p, k = tok::Kind::amp } {
+            let op = if next_is{ p, k = tok::Kind::kw_and } { take{ &p } } else { logical{ &p, word = "and", k = tok::Kind::kw_and } }
             let b = cmp_expr{ &p }
             mixed{ &p, a = e, ha = h, op, b_start = b.span.start, hb = p.hand }
             e = binary{ &p, start, op, a = e, b }
@@ -1590,7 +1795,7 @@ namespace parser {
         if level == LEVELS { return prefix{ &p } }
         let start = p.i
         let mut e = bin_expr{ &p, level = level + 1 }
-        while in_level{ k = kind{ p, ahead = 0 }, level } and p.i != p.arm_end {
+        while in_level{ k = kind{ p, ahead = 0 }, level } and p.i != p.arm_end and not foreign_op{ p } {
             let op = take{ &p }
             let b = bin_expr{ &p, level = level + 1 }
             e = binary{ &p, start, op, a = e, b }
@@ -1645,6 +1850,31 @@ namespace parser {
             skip{ &p }
             let e = box{ &p, value = prefix{ &p } }
             return expr_from{ &p, start, k = syntax::ExprKind::bnot{ e } }
+        }
+        if k == tok::Kind::bang {
+            // `!b`: `not b`.
+            let t = take{ &p }
+            let text = if touching{ p, i = start } { "not " } else { "not" }
+            fix_span{ &p, span = t.span, text, safe = true, msg = "write `not`" }
+            slip{ &p, span = t.span, msg = "`!` is the word `not` in ctxlang: write `not b`" }
+            let e = box{ &p, value = prefix{ &p } }
+            return expr_from{ &p, start, k = syntax::ExprKind::lnot{ e } }
+        }
+        if k == tok::Kind::star {
+            // `*p`: `p.*`, the value p points to.
+            let t = take{ &p }
+            let x = prefix{ &p }
+            let span = source::Span{ file = p.file, start = t.span.start, end = x.span.end }
+            let mut b = message{ p }
+            if x.k is path {
+                try! @fmt(&b, "{}.*", utf8::String{ bytes = raw{ p, span = x.span } })
+            } else {
+                try! @fmt(&b, "({}).*", utf8::String{ bytes = raw{ p, span = x.span } })
+            }
+            fix_span{ &p, span, text = utf8::view{ b }.bytes, safe = true, msg = "write `.*` after it" }
+            slip{ &p, span = t.span, msg = "the value a pointer points to is written after it in ctxlang: write `p.*`, not `*p`" }
+            let base = box{ &p, value = x }
+            return expr_from{ &p, start, k = syntax::ExprKind::deref{ base } }
         }
         if k == tok::Kind::kw_try {
             skip{ &p }
@@ -1703,7 +1933,22 @@ namespace parser {
                 } else {
                     let name = ident{ &p }
                     e = at_op{ &p, start, op = t, k = syntax::ExprKind::field{ base, name } }
+                    if next_is{ p, k = tok::Kind::lparen } and not nl{ p } { e = method{ &p, start, e, base = base.*, name } }
                 }
+            } else if k == tok::Kind::arrow and not t.nl and kind{ p, ahead = 1 } == tok::Kind::ident {
+                // `p->x`: `p.x`, which reaches a field through a pointer as on a value.
+                skip{ &p }
+                fix_span{ &p, span = t.span, text = ".", safe = true, msg = "write `.`" }
+                slip{ &p, span = t.span, msg = "a field through a pointer is `p.x` in ctxlang, as on a value: write `.`, not `->`" }
+                let base = box{ &p, value = e }
+                let name = ident{ &p }
+                e = at_op{ &p, start, op = t, k = syntax::ExprKind::field{ base, name } }
+            } else if k == tok::Kind::ident and not t.nl and is_word{ p, word = "as" } and starts_type_at{ p, ahead = 1 } and not p.toks[p.i + 1].nl {
+                // `x as T`: `@as(T, x)`.
+                skip{ &p }
+                let ty = type_expr{ &p }
+                let span = source::Span{ file = p.file, start = e.span.start, end = ty.span.end }
+                e = as_builtin{ &p, x = e, ty, at = t.span, span, msg = "a conversion is the builtin `@as` in ctxlang: write `@as(T, x)`, not `x as T`" }
             } else if k == tok::Kind::lbracket and not t.nl {
                 skip{ &p }
                 let base = box{ &p, value = e }
@@ -1729,6 +1974,39 @@ namespace parser {
             }
         }
         return e
+    }
+
+    // `x.name(...)`, a method call as other languages write one, after the `x.name` that is e:
+    // there are no methods. `s.len()` is the field `s.len`, and the parse goes on with it;
+    // anything else goes on as an error expression.
+    fn method { mut p: Parser, start: usize, e: syntax::Expr, base: syntax::Expr, name: syntax::Name } -> syntax::Expr {
+        let open = p.i
+        let mut close = open
+        let mut depth: u32 = 0
+        while p.toks[close].kind != tok::Kind::eof {
+            let k = p.toks[close].kind
+            if k == tok::Kind::lparen or k == tok::Kind::lbracket or k == tok::Kind::lbrace {
+                depth = depth + 1
+            } else if k == tok::Kind::rparen or k == tok::Kind::rbracket or k == tok::Kind::rbrace {
+                depth = depth - 1
+                if depth == 0 { break }
+            }
+            close = close + 1
+        }
+        if p.toks[close].kind != tok::Kind::rparen {
+            fail{ &p, msg = "there are no methods in ctxlang: call a function with the value as one of its fields, as `list::push{ list = &xs, item = 7 }`" }
+            return e
+        }
+        p.i = close + 1
+        let parens = tokens_span{ p, a = open, b = close }
+        if close == open + 1 and slice::eq_bytes{ a = name.text, b = "len" } {
+            fix_span{ &p, span = parens, text = "", safe = true, msg = "drop the `()`" }
+            slipf{ &p, span = parens, msg = @fmt("`len` is a field, not a method: write `{}.len`, without `()`", utf8::String{ bytes = raw{ p, span = base.span } }) }
+            return e
+        }
+        // Anything else is the checker's error, which checks x too.
+        p.i = open
+        return paren_call{ &p, start, callee = e }
     }
 
     // After `lo..`: the end of a range, if any, and its `]`.
@@ -1757,6 +2035,10 @@ namespace parser {
             if accept{ &p, k = tok::Kind::colons } {
                 try! list::push{ list = &xs, item = syntax::Seg{ name = ident{ &p }, targs = null, rest = false } }
             } else if next_is{ p, k = tok::Kind::lparen } and not nl{ p } and xs.items[xs.len - 1].targs == null {
+                if paren_args_at{ p } {
+                    let callee = syntax::Expr{ id = e.id, span = span_from{ p, start }, at = e.at, k = syntax::ExprKind::path{ segs = list::items{ list = xs } } }
+                    return paren_call{ &p, start, callee }
+                }
                 let targs = type_list{ &p }
                 xs.items[xs.len - 1].targs = targs
             } else {
@@ -1932,6 +2214,7 @@ namespace parser {
         } else if k == tok::Kind::builtin {
             return builtin{ &p }
         } else if k == tok::Kind::lparen {
+            if c_cast_at{ p } { return c_cast{ &p } }
             skip{ &p }
             let mut inner = expr{ &p }
             expect{ &p, k = tok::Kind::rparen }
@@ -2154,6 +2437,138 @@ namespace parser {
             return
         }
         diag::error{ diags = p.diags, span = t.span, msg }
+    }
+
+    // ---- forms of other languages
+    //
+    // What a person or a model writes from another language, where what it means in ctxlang
+    // is clear: `!b`, `a && b`, `x += 1`, `p->x`, `x as T`, `var x`, `fn f()`. Each is one
+    // error that says what to write, with the edit as a fix, and the parse goes on as if that
+    // were written, so the rest of the program is checked without errors that follow from it
+    // (spec §21, rule 7).
+
+    // Reports msg over span, without starting to recover: the parser goes on with what the
+    // message says to write.
+    fn slip { mut p: Parser, span: source::Span, msg: utf8::String } {
+        if p.bad {
+            diag::unstage{ diags = p.diags }
+            return
+        }
+        p.errored = true
+        p.err_at = p.i
+        diag::error{ diags = p.diags, span, msg }
+    }
+
+    fn slipf { mut p: Parser, span: source::Span, msg: utf8::Fmt(arena::Arena) } {
+        let mut b = message{ p }
+        try! msg{ &b }
+        slip{ &p, span, msg = utf8::view{ b } }
+    }
+
+    // A fix over span, said before `slip`.
+    fn fix_span { mut p: Parser, span: source::Span, text: []u8, safe: bool, msg: utf8::String } {
+        fix{ &p, start = span.start, end = span.end, text, safe, msg }
+    }
+
+    // Tokens i and i + 1, with nothing between them, as `&&` and `+=` are written.
+    fn touching { p: Parser, i: usize } -> bool {
+        return i + 1 < p.toks.len and p.toks[i].span.end == p.toks[i + 1].span.start
+    }
+
+    // From token a's start to token b's end.
+    fn tokens_span { p: Parser, a: usize, b: usize } -> source::Span {
+        return source::Span{ file = p.file, start = p.toks[a].span.start, end = p.toks[b].span.end }
+    }
+
+    // A span's source, as it is written: the text of a fix.
+    fn raw { p: Parser, span: source::Span } -> []u8 {
+        return p.text[span.start..span.end]
+    }
+
+    // word, with a space on each side where the source has none, to replace span: `a&&b` takes
+    // ` and `, `a && b` takes `and`.
+    fn spaced { p: Parser, span: source::Span, word: []u8 } -> []u8 {
+        let before = span.start > 0 and not is_space{ c = p.text[span.start - 1] }
+        let after = span.end < p.text.len and not is_space{ c = p.text[span.end] }
+        let mut b = message{ p }
+        try! @fmt(&b, "{}{}{}", if before { " " } else { "" }, utf8::String{ bytes = word }, if after { " " } else { "" })
+        return utf8::view{ b }.bytes
+    }
+
+    // At `&&` or `||`: two of k, touching.
+    fn doubled { p: Parser, k: tok::Kind } -> bool {
+        return kind{ p, ahead = 0 } == k and kind{ p, ahead = 1 } == k and touching{ p, i = p.i }
+    }
+
+    // An operator that `=` touches, `+=` and its kin: a compound assignment.
+    fn at_compound { p: Parser } -> bool {
+        let k = kind{ p, ahead = 0 }
+        let op = k == tok::Kind::plus or k == tok::Kind::minus or k == tok::Kind::star or k == tok::Kind::slash
+                 or k == tok::Kind::percent or k == tok::Kind::amp or k == tok::Kind::pipe or k == tok::Kind::caret
+                 or k == tok::Kind::shl or k == tok::Kind::shr or k == tok::Kind::plus_wrap or k == tok::Kind::minus_wrap
+                 or k == tok::Kind::star_wrap or k == tok::Kind::shl_wrap
+        return op and kind{ p, ahead = 1 } == tok::Kind::assign and touching{ p, i = p.i }
+    }
+
+    // At `++` or `--` that ends a statement.
+    fn at_step { p: Parser } -> bool {
+        let k = kind{ p, ahead = 0 }
+        if not (k == tok::Kind::plus or k == tok::Kind::minus) or kind{ p, ahead = 1 } != k or not touching{ p, i = p.i } { return false }
+        let after = p.toks[p.i + 2]
+        return after.nl or after.kind == tok::Kind::semi or after.kind == tok::Kind::rbrace or after.kind == tok::Kind::eof
+    }
+
+    // An operator that begins a form of another language, which a binary operator's loop leaves
+    // for the code that reads that form.
+    fn foreign_op { p: Parser } -> bool {
+        return doubled{ p, k = tok::Kind::amp } or doubled{ p, k = tok::Kind::pipe } or at_compound{ p } or at_step{ p }
+    }
+
+    // `&&` or `||` at the current token, read as `and` or `or`: the token of the word.
+    fn logical { mut p: Parser, word: []u8, k: tok::Kind } -> tok::Token {
+        let first = p.i
+        skip{ &p }
+        skip{ &p }
+        let span = tokens_span{ p, a = first, b = first + 1 }
+        fix_span{ &p, span, text = spaced{ p, span, word }, safe = true, msg = "write the word" }
+        let x = utf8::String{ bytes = word }
+        slipf{ &p, span, msg = @fmt("`{}` is the word `{}` in ctxlang: write `a {} b`", utf8::String{ bytes = raw{ p, span } }, x, x) }
+        return tok::Token{ kind = k, nl = false, span }
+    }
+
+    // s without spaces at its ends.
+    fn trimmed { s: []u8 } -> []u8 {
+        let mut lo: usize = 0
+        let mut hi = s.len
+        while lo < hi and is_space{ c = s[lo] } { lo = lo + 1 }
+        while hi > lo and is_space{ c = s[hi - 1] } { hi = hi - 1 }
+        return s[lo..hi]
+    }
+
+    // A primitive type's name, for `(T)x`.
+    fn is_primitive { name: []u8 } -> bool {
+        for n in PRIMITIVES { if slice::eq_bytes{ a = n, b = name } { return true } }
+        return false
+    }
+
+    const PRIMITIVES: [_][]u8 = ["i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "f32", "f64", "bool"]
+
+    // `@as(T, x)` for `x as T` and `(T)x`, which span holds: msg's error at `at`, with the fix,
+    // and the builtin the parse goes on with.
+    fn as_builtin { mut p: Parser, x: syntax::Expr, ty: syntax::TypeExpr, at: source::Span, span: source::Span, msg: utf8::String } -> syntax::Expr {
+        let mut b = message{ p }
+        try! @fmt(&b, "@as({}, {})", utf8::String{ bytes = raw{ p, span = ty.span } }, utf8::String{ bytes = raw{ p, span = x.span } })
+        fix_span{ &p, span, text = utf8::view{ b }.bytes, safe = true, msg = "write `@as`" }
+        slip{ &p, span = at, msg }
+        let args = try! alloc::make(syntax::Expr, arena::Arena){ realloc = arena::alloc, heap = p.heap, count = 1 }
+        args[0] = x
+        let k = syntax::ExprKind::builtin{ name = made_name{ &p, at, text = "as" }, targ = box{ &p, value = ty }, args }
+        return syntax::Expr{ id = new_id{ &p }, span, at = span.start, k }
+    }
+
+    // An expression of the literal 1 or of `true`, at span, for what the parse goes on with.
+    fn made_expr { mut p: Parser, span: source::Span, k: syntax::ExprKind } -> syntax::Expr {
+        return syntax::Expr{ id = new_id{ &p }, span, at = span.start, k }
     }
 
     // A fix for the error reported next (diag::Fix), said just before `fail` or its kin: the

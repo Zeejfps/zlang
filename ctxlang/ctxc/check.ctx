@@ -5226,6 +5226,10 @@ namespace check {
         let mut t = types::ERROR
         match e.k {
             error => { return }
+            paren_call => {
+                _ = typed{ &c, e }     // a call with parentheses: its error says what to write
+                return
+            }
             braced{ callee } => {
                 t = typed{ &c, e }
                 let lit = map::get{ m = c.literal, key = expr_key{ e } }
@@ -5301,6 +5305,18 @@ namespace check {
                 return
             }
             else => {
+                if e.k is path{ segs } and segs[segs.len - 1].targs != null {
+                    // `bump(n)`, a call with parentheses of names to a function without
+                    // generic parameters: its own error says what to write.
+                    let d = callee_decl{ c, segs }
+                    if d != NONE {
+                        let x = get_decl{ c, d }
+                        if (x.kind == Kind::func or x.kind == Kind::external) and x.tparams.len == 0 {
+                            _ = expr{ &c, e, exp = types::NO_TYPE }
+                            return
+                        }
+                    }
+                }
                 error{ &c, at = expr_at{ e }, msg = "an expression statement must be a call" }
                 _ = expr{ &c, e, exp = types::NO_TYPE }
                 return
@@ -7000,7 +7016,7 @@ namespace check {
             path{ segs } => {
                 let r = map::get{ m = c.refs, key = expr_key{ e } }
                 if r == null { return true }       // it didn't resolve, which is reported
-                let what: utf8::String = match r { local => { "" } constant => { "a const, not a place" } else => { "not a place" } }
+                let what: utf8::String = match r { local | path => { "" } constant => { "a const, not a place" } else => { "not a place" } }
                 if what.bytes.len == 0 { return true }
                 let mut b = message{ c }
                 try! @fmt(&b, "`{}` is {}", path_text{ c, segs }, what)
@@ -10878,6 +10894,12 @@ namespace check {
             nil => { return types::NULL }
             path{ segs } => { return path_expr{ &c, e, segs, exp } }
             braced{ callee, items, forward, bind } => { return braced{ &c, e, callee = callee.*, items, forward, bind, exp } }
+            paren_call{ callee, args, parens } => {
+                let spans = try! alloc::make(source::Span, Heap){ realloc = arena::alloc, heap = c.heap, count = args.len }
+                for x at i in args { spans[i] = x.span }
+                paren_call{ &c, callee = callee.*, args = spans, parens }
+                return types::ERROR
+            }
             neg{ e = x } => {
                 let t = expr{ &c, e = x.*, exp }
                 if not is_num{ c, t = op_type{ c, t } } {
@@ -11277,6 +11299,161 @@ namespace check {
         return utf8::view{ b }
     }
 
+    // ---- forms of other languages (§21, rule 7)
+
+    // `f(a, b)`, a call written with parentheses, or `Point(1, 2)`, a literal: an error whose
+    // message writes it in braces with the callee's fields in their order, each argument with
+    // `&` where its field is `mut`. args are the spans of what is in the parentheses, parens
+    // the span from `(` to `)`.
+    fn paren_call { mut c: Checker, callee: syntax::Expr, args: []source::Span, parens: source::Span } {
+        if callee.k is field{ base, name } {
+            // `x.f(...)`: x is checked, for its own errors.
+            _ = typed{ &c, e = base.* }
+            let at = source::Span{ file = parens.file, start = name.span.start, end = parens.end }
+            errorf{ &c, at, msg = @fmt("there are no methods in ctxlang: call a function with `{}` as one of its fields, as `list::push{{ list = &xs, item = 7 }}`, and read a field without `()`", str{ s = source_text{ c, span = base.span } }) }
+            return
+        }
+        let mut d = NONE
+        if callee.k is path{ segs } {
+            let name = segs[segs.len - 1].name.text
+            if segs.len == 1 and local_named{ c, name, call = true } == NONE and lookup_value{ c, ns = c.sc.ns, name } == null and print_hint{ &c, at = callee.span, name, args } { return }
+            d = callee_decl{ c, segs }
+            if d == NONE and not callee_found{ c, segs } {
+                _ = resolve_path{ &c, e = callee, segs, call = true }     // reports the unknown name
+                return
+            }
+        }
+        paren_fields{ &c, callee = source_text{ c, span = callee.span }, d, args, parens }
+    }
+
+    // `add(x, y)` of a function d without generic parameters: the call with parentheses, whose
+    // `(` and `)` are found in the source around the written arguments.
+    fn paren_named { mut c: Checker, d: u32, seg: syntax::Seg, written: []syntax::TypeExpr } {
+        let text = c.files[seg.name.span.file].text
+        let mut open: usize = seg.name.span.end
+        while open < text.len and text[open] != '(' { open = open + 1 }
+        let mut close: usize = if written.len > 0 { written[written.len - 1].span.end } else { open }
+        while close < text.len and text[close] != ')' { close = close + 1 }
+        if close < text.len { close = close + 1 }
+        let parens = source::Span{ file = seg.name.span.file, start = @as(u32, open), end = @as(u32, close) }
+        let args = try! alloc::make(source::Span, Heap){ realloc = arena::alloc, heap = c.heap, count = written.len }
+        for t at k in written { args[k] = t.span }
+        paren_fields{ &c, callee = source_text{ c, span = seg.name.span }, d, args, parens }
+    }
+
+    // The error of a call or a literal written with parentheses, for the function or struct d
+    // (NONE for another callee, as a function value), named callee in the source.
+    fn paren_fields { mut c: Checker, callee: []u8, d: u32, args: []source::Span, parens: source::Span } {
+        let mut fields: ?[]types::Field = null
+        let mut what = str{ s = "a call names its fields, in braces" }
+        if d != NONE {
+            let x = get_decl{ c, d }
+            if x.kind == Kind::func or x.kind == Kind::external { fields = x.fields }
+            if x.kind == Kind::record {
+                fields = x.fields
+                what = str{ s = "a struct's literal names its fields, in braces" }
+            }
+        }
+        let mut b = message{ c }
+        if let fs = fields {
+            if fs.len == 0 {
+                try! @fmt(&b, "{{}}")
+            } else {
+                try! @fmt(&b, "{{ ")
+                for f at i in fs {
+                    if i > 0 { try! @fmt(&b, ", ") }
+                    try! @fmt(&b, "{} = ", str{ s = f.name })
+                    if i < args.len {
+                        let text = source_text{ c, span = args[i] }
+                        if f.mutable and not (text.len > 0 and text[0] == '&') { try! @fmt(&b, "&") }
+                        try! @fmt(&b, "{}", str{ s = text })
+                    } else {
+                        try! @fmt(&b, "...")
+                    }
+                }
+                try! @fmt(&b, " }}")
+            }
+            if fs.len == args.len {
+                diag::fix_one{ diags = c.diags, safe = false, msg = "name the fields in their order", span = parens, text = utf8::view{ b }.bytes }
+            }
+        } else {
+            try! @fmt(&b, "{{ field = value, ... }}")
+        }
+        errorf{ &c, at = parens, msg = @fmt("{}: write `{}{}`", what, str{ s = callee }, utf8::view{ b }) }
+    }
+
+    // `println("hi")` and its kin, where no function has the name: an error that says how to
+    // print. False for a name that isn't one of these.
+    fn print_hint { mut c: Checker, at: source::Span, name: []u8, args: []source::Span } -> bool {
+        let line = slice::eq_bytes{ a = name, b = "println" } or slice::eq_bytes{ a = name, b = "puts" }
+        let plain = slice::eq_bytes{ a = name, b = "print" }
+        let formatted = slice::eq_bytes{ a = name, b = "printf" }
+        if not (line or plain or formatted) { return false }
+        if formatted {
+            errorf{ &c, at, msg = @fmt("there is no `{}`: write `_ = @fmt(&io, \"x = {{}}\", x)`, with `mut io: Io` among the function's fields", str{ s = name }) }
+            return true
+        }
+        let text = if args.len == 1 { str{ s = source_text{ c, span = args[0] } } } else { str{ s = "\"text\"" } }
+        errorf{ &c, at, msg = @fmt("there is no `{}`: write `io::{}{{ &io, s = {} }}`, with `mut io: Io` among the function's fields", str{ s = name }, if line { "println" } else { "print" }, text) }
+        return true
+    }
+
+    // The function or struct segs names, found without reporting or recording anything: NONE
+    // if it names something else, or nothing.
+    fn callee_decl { c: Checker, segs: []syntax::Seg } -> u32 {
+        let e = callee_entry{ c, segs } ifnull { return NONE }
+        if e is decl{ i } { return i }
+        return NONE
+    }
+
+    // Whether segs names anything: a local, a function, a type or a namespace.
+    fn callee_found { c: Checker, segs: []syntax::Seg } -> bool {
+        if segs.len == 1 and local_named{ c, name = segs[0].name.text, call = true } != NONE { return true }
+        return callee_entry{ c, segs } != null
+    }
+
+    fn callee_entry { c: Checker, segs: []syntax::Seg } -> ?Entry {
+        let last = segs[segs.len - 1].name.text
+        if segs.len == 1 {
+            if local_named{ c, name = last, call = true } != NONE { return null }
+            let v = lookup_value{ c, ns = c.sc.ns, name = last }
+            if v != null { return v }
+            return lookup_path{ c, ns = c.sc.ns, name = last }
+        }
+        let mut ns = NONE
+        for s at i in segs[0..segs.len - 1] {
+            let p = if i == 0 { lookup_path{ c, ns = c.sc.ns, name = s.name.text } } else { map::get{ m = get_space{ c, ns }.paths, key = s.name.text } }
+            let x = p ifnull { return null }
+            if x is space{ ns = n } { ns = n } else { return null }
+        }
+        let sp = get_space{ c, ns }
+        let v = map::get{ m = sp.values, key = last }
+        if v != null { return v }
+        return map::get{ m = sp.paths, key = last }
+    }
+
+    // `io` alone where a value goes, with `Io` a capability: the function lacks the field.
+    fn namespace_as_value { mut c: Checker, at: source::Span, name: []u8 } {
+        let cn = try! alloc::make(u8, Heap){ realloc = arena::alloc, heap = c.heap, count = name.len }
+        slice::copy(u8){ dst = cn, src = name }
+        if cn.len > 0 and cn[0] >= 'a' and cn[0] <= 'z' { cn[0] = cn[0] - 32 }
+        let mut is_cap = false
+        if let x = lookup_path{ c, ns = c.sc.ns, name = cn } {
+            if x is decl{ i } { is_cap = get_decl{ c, d = i }.kind == Kind::cap }
+        }
+        let n = str{ s = name }
+        if not is_cap {
+            errorf{ &c, at, msg = @fmt("`{}` is a namespace, not a value", n) }
+            return
+        }
+        if c.fn_decl != NONE {
+            let f = str{ s = get_decl{ c, d = c.fn_decl }.name.text }
+            errorf{ &c, at, msg = @fmt("`{}` is a namespace here: the capability is a field, so add `mut {}: {}` to `{}`'s fields, and pass it in, `{}{{ &{} }}`", n, n, str{ s = cn }, f, f, n) }
+        } else {
+            errorf{ &c, at, msg = @fmt("`{}` is a namespace here: the capability is a field, so add `mut {}: {}` to the function's fields", n, n, str{ s = cn }) }
+        }
+    }
+
     fn path_expr { mut c: Checker, e: syntax::Expr, segs: []syntax::Seg, exp: Id } -> Id {
         let r = resolve_path{ &c, e, segs, call = false }
         if r == null { return types::ERROR }
@@ -11303,7 +11480,11 @@ namespace check {
                 return ty
             }
             enumval{ ty } => { return ty }
-            path => {
+            path{ e = entry } => {
+                if segs.len == 1 and entry is space {
+                    namespace_as_value{ &c, at = expr_at{ e }, name = segs[0].name.text }
+                    return types::ERROR
+                }
                 errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` is a type, not a value", path_text{ c, segs }) }
                 return types::ERROR
             }
@@ -11533,6 +11714,14 @@ namespace check {
                         return null
                     }
                     return PathRef::fault{ decl = i }
+                }
+                if let written = seg.targs {
+                    if (x.kind == Kind::func or x.kind == Kind::external) and x.tparams.len == 0 {
+                        // `add(x, y)`: names alone in the parentheses, which the parser took
+                        // for type arguments, of a function that has none.
+                        paren_named{ &c, d = i, seg, written }
+                        return null
+                    }
                 }
                 let explicit = targs_of{ &c, seg }
                 let mut all = list::new(Id){ realloc = arena::alloc, heap = c.heap }

@@ -1,0 +1,10 @@
+// `xs.push(7)`, a method call: there are no methods. The value it is called on is checked for
+// errors of its own.
+
+fn main { mut mem: Mem } {
+    let pages = mem::pages{ &mem, size = 65536 } ifnull { return }
+    let mut heap = arena::new{ buf = pages }
+    let mut xs = list::new(u32){ realloc = arena::alloc, &heap }
+    xs.push(7)  //~ error at 8: there are no methods in ctxlang: call a function with `xs` as one of its fields, as `list::push{ list = &xs, item = 7 }`, and read a field without `()`
+    ys.clear()  //~ error at 5: unknown name `ys` //~ error at 8: there are no methods in ctxlang: call a function with `ys` as one of its fields, as `list::push{ list = &xs, item = 7 }`, and read a field without `()`
+}

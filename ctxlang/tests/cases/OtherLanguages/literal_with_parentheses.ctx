@@ -1,0 +1,7 @@
+// `Point(1, 2)`, a constructor as other languages write one, is a struct's literal in braces.
+
+struct Point { x: i32, y: i32 }
+fn main {} -> i32 {
+    let p = Point(1, 2)  //~ error at 18: a struct's literal names its fields, in braces: write `Point{ x = 1, y = 2 }`
+    return 0
+}

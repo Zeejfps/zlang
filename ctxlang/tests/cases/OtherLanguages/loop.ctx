@@ -1,0 +1,11 @@
+// `loop { }` is `while true { }`, with a label too.
+
+fn main {} -> i32 {
+    let mut n = 0
+    loop {  //~ error at 5: a loop without a condition is `while true` in ctxlang: write `while true { ... }`, not `loop`
+        n = n + 1
+        if n > 3 { break }
+    }
+    outer: loop { break outer }  //~ error at 12: a loop without a condition is `while true` in ctxlang: write `while true { ... }`, not `loop`
+    return n
+}

@@ -1,0 +1,9 @@
+// `two()` is `two{}`, and a `mut` field takes `&` of its argument in what the message writes.
+
+fn two {} -> i32 { return 2 }
+fn bump { mut n: i32 } { n = n + 1 }
+fn main {} -> i32 {
+    let mut n = two()  //~ error at 20: a call names its fields, in braces: write `two{}`
+    bump(n)  //~ error at 9: a call names its fields, in braces: write `bump{ n = &n }`
+    return n
+}

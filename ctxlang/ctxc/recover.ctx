@@ -555,6 +555,11 @@ namespace recover {
                     i = i + 1
                 }
             }
+            paren_call{ callee, args, parens } => {
+                expr{ &c, e = callee.*, lo = a, hi = b }
+                within{ &c, span = parens, lo = a, hi = b }
+                for x in args { expr{ &c, e = x, lo = parens.start, hi = parens.end } }
+            }
             neg{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
             lnot{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }
             bnot{ e = x } => { expr{ &c, e = x.*, lo = a, hi = b } }

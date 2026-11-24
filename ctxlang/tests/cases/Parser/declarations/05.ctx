@@ -1,2 +1,2 @@
-enum E { a }  //~ error at 8: expected ':', found '{'
+enum E { a }  //~ error at 8: an enum is an integer type, and names which: write `enum E: u8 { ... }`; a set whose values don't matter is a union, `union E { ... }`
 fn main {} {}

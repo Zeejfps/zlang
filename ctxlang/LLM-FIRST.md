@@ -31,6 +31,14 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
   a fragment, or an expected error) and checks it with ctxc.
   - *Done when:* the test runs in the suite and every block passes or is marked as an error example.
 
+- [x] **1.3 Errors that name the ctxlang form of another language's.**
+  `add(1, 2)`, `!b`, `a && b`, `x += 1`, `x as T`, `p->x`, `var x`, `fn main()` and the rest
+  got errors that didn't say what to write, or said something wrong: `&&` was "`&` of bool and
+  *bool", `loop { break }` suggested renaming `break`. Each is now one error that writes the
+  ctxlang form, with a safe fix where it is certain, and the parse goes on as if it were
+  written ([spec §21, rule 7](spec.md#21-checking-and-diagnostics); cases/OtherLanguages).
+  - *Done when:* each form is one error that names the fix, and `--fix` writes the certain ones.
+
 ## 2. Next tier
 
 - [ ] **2.1 Modules, and choosing files.**

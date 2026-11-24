@@ -1,0 +1,7 @@
+// `(T)x`, C's cast to a primitive type, is `@as(T, x)`. A name in parentheses before another
+// that isn't a primitive type is left as it is.
+
+fn main {} -> i32 {
+    let a: u8 = 3
+    return (i32)a  //~ error at 12: a conversion is the builtin `@as` in ctxlang: write `@as(T, x)`, not `(T)x`
+}

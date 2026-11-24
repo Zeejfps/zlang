@@ -1,0 +1,5 @@
+// `println("hi")`, where no function has the name, says how to print.
+
+fn main { mut io: Io } {
+    println("hi")  //~ error at 5: there is no `println`: write `io::println{ &io, s = "hi" }`, with `mut io: Io` among the function's fields
+}

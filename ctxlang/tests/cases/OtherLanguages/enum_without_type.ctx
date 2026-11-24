@@ -1,0 +1,8 @@
+// `enum K { a, b }` lacks its integer type: one error, with two suggestions, and the rest is
+// checked as if it were a u8, so `K::a` is no error.
+
+enum K { a, b }  //~ error at 8: an enum is an integer type, and names which: write `enum K: u8 { ... }`; a set whose values don't matter is a union, `union K { ... }`
+fn main {} -> i32 {
+    let k = K::a
+    return if k == K::b { 1 } else { 0 }
+}

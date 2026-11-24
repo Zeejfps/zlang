@@ -1,0 +1,6 @@
+// `c ? a : b` is `if c { a } else { b }`, whose value the `return` takes, so it is one error.
+
+fn main {} -> i32 {
+    let c = true
+    return c ? 1 : 2  //~ error at 14: there is no `? :` in ctxlang, since `if` has a value: write `if c { a } else { b }`
+}

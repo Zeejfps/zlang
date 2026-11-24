@@ -157,6 +157,9 @@ namespace syntax {
         index{ base: *Expr, i: *Expr },                 // at the `[`
         range{ base: *Expr, lo: ?*Expr, hi: ?*Expr },   // at the `[`
         braced{ callee: *Expr, items: []Item, forward: bool, bind: bool },  // at the `{`
+        // `f(a, b)`, a call as other languages write one: only an error, which names f's fields
+        // (§21, rule 7). At the `(`; parens is the span from `(` to `)`.
+        paren_call{ callee: *Expr, args: []Expr, parens: Span },
         neg{ e: *Expr },
         lnot{ e: *Expr },
         bnot{ e: *Expr },                               // ~e

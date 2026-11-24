@@ -1,0 +1,11 @@
+// `x += n` and its kin are `x = x + n`; the fix puts an operand with an operator of its own
+// in parentheses.
+
+fn main {} -> i32 {
+    let mut x = 10
+    x += 1  //~ error at 7: there is no `+=` in ctxlang: write `x = x + n`
+    x -= 2  //~ error at 7: there is no `-=` in ctxlang: write `x = x - n`
+    x *= 1 + 2  //~ error at 7: there is no `*=` in ctxlang: write `x = x * n`
+    x <<= 1  //~ error at 7: there is no `<<=` in ctxlang: write `x = x << n`
+    return x
+}

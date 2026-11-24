@@ -1,0 +1,10 @@
+// `&&` and `||` are `and` and `or`, and bind as they do: below the comparisons, so each line
+// is one error, not one about `&` of a bool. `a & &b` and `a | b`, apart, are still bitwise.
+
+fn main {} -> i32 {
+    let a = 1
+    let b = 2
+    if a == 1 && b == 2 { return 1 }  //~ error at 15: `&&` is the word `and` in ctxlang: write `a and b`
+    if a == 2 || b == 3 { return 2 }  //~ error at 15: `||` is the word `or` in ctxlang: write `a or b`
+    return a & b
+}

@@ -1,0 +1,7 @@
+// `add(1, 2)`, a call as other languages write one, is one error that writes it in braces
+// with add's fields, in their order (§21, rule 7).
+
+fn add { a: i32, b: i32 } -> i32 { return a + b }
+fn main {} -> i32 {
+    return add(1, 2)  //~ error at 15: a call names its fields, in braces: write `add{ a = 1, b = 2 }`
+}

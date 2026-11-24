@@ -443,28 +443,37 @@ namespace wav_tests {
 ## Common mistakes
 
 What a first draft gets wrong, from the agents' write-ups ([FRICTION.md](FRICTION.md)) and from
-habits of other languages. The middle column is what ctxc says; where it says less than the fix,
-the last column is the fix.
+habits of other languages.
 
-From other languages:
+From other languages. ctxc says what to write for each, in one error (§21, rule 7), and
+`ctxc check --fix` writes the first eight; the rest need a choice it leaves to you:
+
+| Written | Write |
+|---|---|
+| `!b`, `a && b`, `a \|\| b` | `not b`, `a and b`, `a or b` |
+| `x += 1`, `x++` | `x = x + 1` |
+| `c ? a : b` | `if c { a } else { b }` |
+| `x as i32`, `(i32)x` | `@as(i32, x)` (§13) |
+| `p->x`, `*p` | `p.x`, `p.*` (§12, Pointers) |
+| `s.len()` | `s.len`, a field |
+| `fn main()`, `fn add(a: i32)`, `fn two -> i32` | `fn main {}`, `fn add { a: i32 }`, `fn two {} -> i32` (§2) |
+| `var x = 0`, `loop { }` | `let mut x = 0`, `while true { }` |
+| `add(1, 2)`, `two()` | `add{ a = 1, b = 2 }`, `two{}`: a call names its fields (§3) |
+| `Point(1, 2)` | `Point{ x = 1, y = 2 }` (§7) |
+| `enum K { a, b }` | `enum K: u8 { a, b }`, or `union K { a, b }` if the values don't matter (§12, Enums) |
+| `println("hi")` | `io::println{ &io, s = "hi" }`, with `mut io: Io` among the fn's fields (§15) |
+| `xs.push(7)` | `list::push{ list = &xs, item = 7 }`: there are no methods |
+| `io::println{ &io, ... }` where the fn has no `io` | add `mut io: Io` to the fn's fields and pass `&io` down (§15) |
+
+Where ctxc's error doesn't name the fix yet:
 
 | Written | ctxc says | Write |
 |---|---|---|
-| `add(1, 2)`, `println("hi")` | expected a type, found '1' | `add{ a = 1, b = 2 }`: a call names its fields (§3) |
 | `P{ x: 1, y: 2 }` | expected '}', found ':' | `P{ x = 1, y = 2 }` |
-| `xs.push(7)`, `s.len()` | List(...) has no field `push` | `list::push{ list = &xs, item = 7 }`; `len` is a field: `s.len` |
-| `fn main()`, `fn two -> i32` | expected a name, found ')' | `fn main { mut io: Io } -> i32`, `fn two {} -> i32` (§2) |
-| `!b`, `a && b`, `a \|\| b` | expected an expression, found '!' | `not b`, `a and b`, `a or b` |
-| `x += 1`, `x++` | expected an expression, found '=' | `x = x + 1` |
-| `c ? a : b` | expected a newline or ';' | `if c { a } else { b }` |
-| `x as i32`, `(i32)x` | expected a newline or ';' | `@as(i32, x)` (§13) |
-| `p->x`, `*p` | expected an expression, found '*' | `p.x`, `p.*` (§12, Pointers) |
-| `var x = 0`, `let mut` at top level | unknown name `var`; expected a declaration | `let mut x = 0` in a function; no globals (§1, rule 2) |
-| `loop { }` | unknown name `loop` | `while true { }` |
-| `enum K { a, b }`, `K.a` | expected ':', found '{' | `enum K: u8 { a, b }`, `K::a` (§12, Enums) |
+| `K.a` for an enum's value | `K` is a type, not a value | `K::a` (§12, Enums) |
 | `"a" + b` | `+` needs numbers | `@fmt` into a `utf8::Builder` |
 | `string`, `str` | unknown type or namespace | `[]u8` or `utf8::String` |
-| `io::println{ &io, ... }` where no `io` is in the context | `io` is a type, not a value | add `mut io: Io` to the fn's context and pass `&io` down (§15) |
+| `let mut` at top level | expected a declaration | a local of `main`, passed down: no globals (§1, rule 2) |
 
 ctxlang's own rules (the error says what to write, and `ctxc check --fix` writes the
 first four):

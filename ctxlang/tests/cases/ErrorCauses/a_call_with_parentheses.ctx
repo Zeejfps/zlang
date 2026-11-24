@@ -1,8 +1,8 @@
-// `f(3)` reads as `f` with a type argument that isn't a type: that error alone, without one
-// about how many type arguments `f` takes.
+// `f(3)`, a call as other languages write one, is one error, which writes it in braces with
+// f's fields; not one about a type argument that isn't a type, nor about how many f takes.
 
 fn double { n: i32 } -> i32 { return n * 2 }
 fn main { mut io: Io } {
-    let a = double(3)  //~ error at 20: expected a type, found '3'
+    let a = double(3)  //~ error at 19: a call names its fields, in braces: write `double{ n = 3 }`
     io::println_i64{ &io, n = a }
 }

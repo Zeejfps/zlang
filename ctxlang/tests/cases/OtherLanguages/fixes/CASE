@@ -1,0 +1,54 @@
+// `ctxc check --fix` rewrites every form of another language whose ctxlang is certain, and the
+// program then has no error. A call with parentheses keeps its error: which argument is which
+// field is a guess, so its braces are a suggestion that `--fix` leaves, there in `--json`.
+//# write a.ctx:
+//| struct P { x: i32 }
+//| fn add(a: i32, b: i32) -> i32 { return a + b }
+//| fn two -> i32 { return 2 }
+//| fn get { p: *P, q: *i32 } -> i32 { return p->x + *q }
+//| fn main() {
+//|     var x = 0
+//|     x += 1
+//|     x *= 2 + 3
+//|     x++
+//|     let b = !(x > 3) && x < 100 || false
+//|     let y: u8 = 3
+//|     let z = y as i32 + (i32)y
+//|     let s: []u8 = "abc"
+//|     let n = s.len()
+//|     let t = b ? 1 : 2
+//|     loop { break }
+//|     _ = add{ a = x, b = two{} } + z + t + @as(i32, n)
+//| }
+//# $ ctxc check --fix {dir}/a.ctx
+//# stderr has:
+//| check: no errors
+//# file a.ctx:
+//| struct P { x: i32 }
+//| fn add { a: i32, b: i32 } -> i32 { return a + b }
+//| fn two {} -> i32 { return 2 }
+//| fn get { p: *P, q: *i32 } -> i32 { return p.x + q.* }
+//| fn main {} {
+//|     let mut x = 0
+//|     x = x + 1
+//|     x = x * (2 + 3)
+//|     x = x + 1
+//|     let b = not (x > 3) and x < 100 or false
+//|     let y: u8 = 3
+//|     let z = @as(i32, y) + @as(i32, y)
+//|     let s: []u8 = "abc"
+//|     let n = s.len
+//|     let t = if b { 1 } else { 2 }
+//|     while true { break }
+//|     _ = add{ a = x, b = two{} } + z + t + @as(i32, n)
+//| }
+//# write b.ctx:
+//| fn add { a: i32, mut b: i32 } -> i32 { return a + b }
+//| fn main {} -> i32 {
+//|     let mut y = 2
+//|     return add(1, y)
+//| }
+//# $ ctxc check --json {dir}/b.ctx
+//# exit: 1
+//# stderr has:
+//| "message":"a call names its fields, in braces: write `add{ a = 1, b = &y }`","notes":[],"fixes":[{"safe":false,"message":"name the fields in their order","edits":[{"file":"{dir}/b.ctx","line":4,"column":15,"end_line":4,"end_column":21,"text":"{ a = 1, b = &y }"}]}]}

@@ -1,0 +1,9 @@
+// `add(x, y)`, names alone, parses as generic arguments: for a function without generic
+// parameters it is the same error as `add(1, 2)`, not one for each name that isn't a type.
+
+fn add { a: i32, b: i32 } -> i32 { return a + b }
+fn main {} -> i32 {
+    let x = 1
+    let y = 2
+    return add(x, y)  //~ error at 15: a call names its fields, in braces: write `add{ a = x, b = y }`
+}

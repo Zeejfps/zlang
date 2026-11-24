@@ -1,0 +1,7 @@
+// `io` used where the function has no field of that name is std's namespace: the error says
+// to add the capability as a field, and is one error, not a second that `io` isn't a place.
+
+fn hello {} {
+    io::println{ &io, s = "hi" }  //~ error at 19: `io` is a namespace here: the capability is a field, so add `mut io: Io` to `hello`'s fields, and pass it in, `hello{ &io }`
+}
+fn main {} {}

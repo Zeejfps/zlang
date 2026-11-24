@@ -1,0 +1,7 @@
+// `p->x` is `p.x`: a field through a pointer is read as on a value.
+
+struct P { x: i32 }
+fn get { p: *P } -> i32 {
+    return p->x  //~ error at 13: a field through a pointer is `p.x` in ctxlang, as on a value: write `.`, not `->`
+}
+fn main {} {}

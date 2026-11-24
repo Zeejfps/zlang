@@ -1,0 +1,7 @@
+// `*p` is `p.*`, and `*q.p` is `(q.p).*`.
+
+struct Q { p: *i32 }
+fn get { p: *i32, q: Q } -> i32 {
+    return *p + *q.p  //~ error at 12: the value a pointer points to is written after it in ctxlang: write `p.*`, not `*p`  //~ error at 17: the value a pointer points to is written after it in ctxlang: write `p.*`, not `*p`
+}
+fn main {} {}

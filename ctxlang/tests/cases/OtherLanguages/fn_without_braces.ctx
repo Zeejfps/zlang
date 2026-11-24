@@ -1,0 +1,4 @@
+// `fn two -> i32` has no braces for its fields: `fn two {} -> i32`.
+
+fn two -> i32 { return 2 }  //~ error at 8: a function without fields still has its braces in ctxlang: write `fn two {} -> ...`
+fn main {} -> i32 { return two{} }

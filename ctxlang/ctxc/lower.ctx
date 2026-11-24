@@ -2327,6 +2327,7 @@ namespace lower {
                 return is_ex{ &l, x = x.*, pats }
             }
             error => { @panic("lower: an expression that didn't parse") }
+            paren_call => { @panic("lower: a call with parentheses, which the checker reports") }
         }
     }
 

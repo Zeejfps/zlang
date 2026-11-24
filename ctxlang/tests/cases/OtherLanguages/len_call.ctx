@@ -1,0 +1,6 @@
+// `s.len()` is the field `s.len`.
+
+fn size { s: []u8 } -> usize {
+    return s.len()  //~ error at 17: `len` is a field, not a method: write `s.len`, without `()`
+}
+fn main {} {}
