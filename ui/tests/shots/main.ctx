@@ -54,8 +54,8 @@ fn run_shots_tests {
         let all: [1][]u8 = [""]
         return ui_check::run_tests_without{ &io, &fs, &mem, &proc, &t, args, count, case, run, without = all[..], reason = utf8::view{ b = reason }.bytes }
     }
-    let latin = ui_check::find_latin_font{ &fs, &proc, &heap }
-    if latin.bytes == null {
+    let latin = ui_check::find_latin_font{ &fs, &proc }
+    if not latin.found {
         _ = @fmt(&reason, "no font at {} (set UI_FONT)", latin.path)
         let text: [1][]u8 = ["draws_text_in_an_outline_font"]
         return ui_check::run_tests_without{ &io, &fs, &mem, &proc, &t, args, count, case, run, without = text[..], reason = utf8::view{ b = reason }.bytes }

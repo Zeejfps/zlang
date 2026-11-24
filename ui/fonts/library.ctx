@@ -16,9 +16,13 @@
 // Nothing here panics on what a program or a font hands it. A handle that names no face, a zero or
 // huge size, a full size table, a missing glyph, a bitmap larger than the buffer, a FreeType error and
 // bytes that are not UTF-8 each give an empty or partial answer and are counted in `Library.stats`.
-// Malformed font bytes make `add_face` fail. `Library.live` counts the FreeType and HarfBuzz objects
-// alive, and `count_freed` what HarfBuzz reports freed, so a test can see that `close` released
-// everything.
+// Malformed font bytes make `add_face` and `add_face_file` fail. `Library.live` counts the FreeType
+// and HarfBuzz objects alive, and `count_freed` what HarfBuzz reports freed, so a test can see that
+// `close` released everything.
+//
+// A face comes from a file (`add_face_file`, which maps it: the program never holds its bytes, and
+// only the pages read are resident) or from bytes the program holds (`add_face`, which copies
+// them). A font that is a file is added from its file.
 namespace ui_fonts {
     // Permission to call FreeType and HarfBuzz: `fn main { ..., mut fonts: ui_fonts::Fonts }`. Every
     // extern fn takes it. Its statics count the blobs and buffers HarfBuzz reported freed, and are
@@ -35,6 +39,8 @@ namespace ui_fonts {
     error bad_layout{ field: []u8, got: i64, want: i64 }       // a mirrored FreeType field read wrong (freetype.ctx)
     error no_room                                              // the face table is full
     error closed                                               // the library was closed
+    error no_file{ path: []u8 }                                // add_face_file: HarfBuzz could not open the file (missing, a directory, unreadable)
+    error bad_path{ path: []u8 }                               // add_face_file: an empty path, one of MAX_PATH bytes or more, or one holding a NUL
 
     // Pixel sizes past this are refused: no glyph of a UI is that big.
     const MAX_PIXELS: u32 = 2048
@@ -42,6 +48,8 @@ namespace ui_fonts {
     const MAX_FALLBACKS: usize = 8
     // The pixel size add_face checks a new face at.
     const CHECK_PIXELS: u32 = 32
+    // add_face_file's limit on a path, in bytes, with the NUL C needs after it (POSIX's PATH_MAX).
+    const MAX_PATH: usize = 4096
 
     // How much room `open` allocates: faces and their sized variants alive at once; the run cache's
     // generations (each holds `runs` shaped runs, `run_bytes` bytes of their text and `run_glyphs`
@@ -52,7 +60,8 @@ namespace ui_fonts {
     // A face added to the library: `FontKind::outline{ handle = id }` names it to the core. 0 is none.
     struct Face { id: u32 = 0 }
 
-    // A face: its FreeType and HarfBuzz objects over one copy of the bytes, which the blob owns. id 0: free.
+    // A face: its FreeType and HarfBuzz objects over one copy of the bytes, or one mapping of the
+    // file, which the blob owns. id 0: free.
     struct FaceSlot { id: u32, ft: ?*mut FtFace, hb: ?*mut HbFace, blob: ?*mut HbBlob, units_per_em: u32, glyph_count: u32 }
     // A sized variant of face `face` at `pixels`. ascent, descent and height are in device pixels. id 0: free.
     struct SizeSlot { id: u32, face: u32, pixels: u32, ft: ?*mut FtSize, hb: ?*mut HbFont, ascent: f32, descent: f32, height: f32 }
@@ -92,6 +101,7 @@ namespace ui_fonts {
         fallbacks: [MAX_FALLBACKS]u32, fallback_count: u32,     // face ids, in the order added
         cur: RunCache, old: RunCache,       // the run cache's two generations (shape.ctx)
         scratch: []mut ui::Shaped,          // one shaping call's glyphs
+        name: []mut u8,                     // add_face_file's path with its NUL, MAX_PATH bytes
         stats: Stats,
         live: Live,
     }
@@ -104,6 +114,7 @@ namespace ui_fonts {
         let cur = try make_runs(S){ realloc, &heap, cap }
         let old = try make_runs(S){ realloc, &heap, cap }
         let scratch = try alloc::make(ui::Shaped, S){ realloc, &heap, count = @as(usize, ui::pick_max_u32{ a = cap.scratch, b = 16 }) }
+        let name = try alloc::make(u8, S){ realloc, &heap, count = MAX_PATH }
         let mut ft: ?*mut FtLibrary = null
         let code = FT_Init_FreeType{ &fonts, library = &ft }
         if code != 0 { return freetype_failed{ code } }
@@ -119,7 +130,7 @@ namespace ui_fonts {
             fonts, layout = LAYOUT, ft = library, buffer,
             faces, next_face = 1, sizes, next_size = 1,
             fallbacks = [0, 0, 0, 0, 0, 0, 0, 0], fallback_count = 0,
-            cur, old, scratch,
+            cur, old, scratch, name,
             stats = Stats{ .. },
             live = Live{ ft_libraries = 1, hb_buffers = 1, .. },
         }
@@ -156,25 +167,80 @@ namespace ui_fonts {
         return null
     }
 
-    // Adds the face `index` of a font file's bytes (TrueType, OpenType, or a collection of them).
-    // The bytes are copied (into a HarfBuzz blob, which FreeType reads too), so the program may free
-    // its own as soon as this returns. Every mirrored FreeType field is checked on the new face
-    // before it is used: a mismatch fails with `bad_layout` and leaves nothing behind.
+    // Adds the face `index` of a font's bytes (TrueType, OpenType, or a collection of them) that
+    // the program holds in memory: a font it made, unpacked or embedded. The bytes are copied (into
+    // a HarfBuzz blob, which FreeType reads too), so the program may free its own as soon as this
+    // returns; the copy is whole, and resident, until the face is released. For a font that is a
+    // file, prefer `add_face_file`, which maps it and costs only the pages read. Every mirrored
+    // FreeType field is checked on the new face before it is used: a mismatch fails with
+    // `bad_layout` and leaves nothing behind.
     fn add_face { mut lib: Library, data: []u8, index: u32 } -> !Face {
-        let ft = lib.ft ifnull { return closed }
+        if lib.ft == null { return closed }
         if data.len == 0 or data.len > 2147483647 { return bad_font{ code = -1 } }
-        let mut free: ?usize = null
-        for f at i in lib.faces {
-            if f.id == 0 {
-                free = i
-                break
-            }
-        }
-        let slot = free ifnull { return no_room }
+        let slot = try find_free_face{ lib }
         let blob = hb_blob_create{ &lib.fonts, data = data.ptr, length = @as(u32, data.len), mode = MEMORY_MODE_DUPLICATE, user_data = null, destroy = null }
         if hb_blob_get_length{ &lib.fonts, blob } != @as(u32, data.len) {
             hb_blob_destroy{ &lib.fonts, blob }
             return alloc::out_of_memory
+        }
+        return try add_blob{ &lib, blob, slot, index }
+    }
+
+    // Adds the face `index` of the font file at `path` (TrueType, OpenType, or a collection of
+    // them), memory-mapped by HarfBuzz (hb_blob_create_from_file_or_fail), so the program never
+    // holds the file's bytes: only the pages FreeType and HarfBuzz read become resident, and they
+    // are the file's, which the system may drop and read again. Prefer it to `add_face` for every
+    // font that is a file. Where the file cannot be mapped HarfBuzz reads it whole into memory of
+    // its own instead, which works the same and costs what `add_face` does. The checks are
+    // add_face's.
+    //
+    // `path` is UTF-8, as std's fs takes it; it is copied, with the NUL C needs, into the
+    // library's MAX_PATH bytes for it (`Library.name`, allocated by `open`). On Windows HarfBuzz
+    // (11.2.1) makes a wide path of it as UTF-8 (the ANSI code page only for bytes that are not
+    // UTF-8), so a name with characters past ASCII opens (ui/tests/fonts checks one). Only when
+    // the mapping fails and HarfBuzz reads the file instead does it hand the bytes to fopen, which
+    // takes them in the ANSI code page: there such a name is not found, and the call fails with
+    // `no_file`.
+    //
+    // While the face is alive its file is mapped. On Windows the file cannot be written over then
+    // (the system refuses with ERROR_USER_MAPPED_FILE), but it can be read, renamed and deleted (its
+    // name goes at once, its pages stay the face's). Elsewhere nothing locks it, and a program
+    // must not change a font file it has added: the face would read the change, and a file cut
+    // short under it can crash the program. Releasing the face (`release_face`) or closing the
+    // library unmaps it at once, and HarfBuzz reports its blob freed (`count_freed`).
+    //
+    // Fails with `bad_path` for an empty path, one of MAX_PATH bytes or more, or one holding a NUL;
+    // `no_file` when HarfBuzz could not open the file (missing, a directory, unreadable);
+    // `bad_font` for an empty file or one that is not a font (or has no face `index`); `no_room`
+    // and `closed` as add_face does. A failure leaves nothing behind, the mapping included.
+    fn add_face_file { mut lib: Library, path: []u8, index: u32 } -> !Face {
+        if lib.ft == null { return closed }
+        if path.len == 0 or path.len >= MAX_PATH { return bad_path{ path } }
+        for b in path { if b == 0 { return bad_path{ path } } }
+        let slot = try find_free_face{ lib }
+        slice::copy(u8){ dst = lib.name[..path.len], src = path }
+        lib.name[path.len] = 0
+        let blob = hb_blob_create_from_file_or_fail{ &lib.fonts, file_name = c::String{ ptr = lib.name.ptr } } ifnull { return no_file{ path } }
+        let length = hb_blob_get_length{ &lib.fonts, blob }
+        if length == 0 or length > 2147483647 {
+            hb_blob_destroy{ &lib.fonts, blob }
+            return bad_font{ code = -1 }
+        }
+        return try add_blob{ &lib, blob, slot, index }
+    }
+
+    // The first free face slot.
+    fn find_free_face { lib: Library } -> !usize {
+        for f at i in lib.faces { if f.id == 0 { return i } }
+        return no_room
+    }
+
+    // Makes face slot `slot` over `blob`, which it takes (a failure destroys it): FreeType's face
+    // over the blob's data, HarfBuzz's face over the blob, and the start-up check.
+    fn add_blob { mut lib: Library, blob: *mut HbBlob, slot: usize, index: u32 } -> !Face {
+        let ft = lib.ft ifnull {
+            hb_blob_destroy{ &lib.fonts, blob }
+            return closed
         }
         _ = hb_blob_set_user_data{ &lib.fonts, blob, key = &lib.fonts.blob_key, data = null, destroy = count_blob_freed, replace = 1 }
         lib.live.hb_blobs = lib.live.hb_blobs + 1
@@ -187,7 +253,7 @@ namespace ui_fonts {
             return alloc::out_of_memory
         }
         let mut face: ?*mut FtFace = null
-        let code = FT_New_Memory_Face{ &lib.fonts, library = ft, base = bytes, size = @as(i64, data.len), face_index = @as(i64, index), face = &face }
+        let code = FT_New_Memory_Face{ &lib.fonts, library = ft, base = bytes, size = @as(i64, length), face_index = @as(i64, index), face = &face }
         let f = face ifnull {
             drop_face{ &lib, index = slot }
             return bad_font{ code = if code != 0 { code } else { -1 } }
@@ -285,7 +351,7 @@ namespace ui_fonts {
     }
 
     // Releases a face slot and every sized variant of it, HarfBuzz's objects before the FreeType
-    // face, and the blob, which owns the bytes FreeType reads, last.
+    // face, and the blob, which owns the bytes FreeType reads (a copy, or the file's mapping), last.
     fn drop_face { mut lib: Library, index: usize } {
         let id = lib.faces[index].id
         for i in 0..lib.sizes.len {
@@ -352,7 +418,7 @@ namespace ui_fonts {
     }
 
     // Releases `face`: its sized variants, its FreeType and HarfBuzz objects and its copy of the
-    // bytes. It is no longer a fallback, and the run cache is emptied. Its handle and its sized
+    // bytes or its file's mapping. It is no longer a fallback, and the run cache is emptied. Its handle and its sized
     // faces' ids name nothing from then on (they are never given out again). Call it between frames,
     // once nothing draws text in it.
     fn release_face { mut lib: Library, face: Face } {

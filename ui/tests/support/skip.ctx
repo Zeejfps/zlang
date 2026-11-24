@@ -92,26 +92,31 @@ namespace ui_check {
         return false
     }
 
-    // A font file's bytes: the path environment variable `variable` names, else the first of
-    // `defaults` that can be read. `path` is the one read, or what was tried when none was.
-    struct Found { path: []u8, bytes: ?[]u8 }
+    // A font file: the path environment variable `variable` names, else the first of `defaults`
+    // that opens. `path` is the one found, or what was tried when none was (`found` false). The
+    // file is opened to see that it is there, not read: a test adds it with
+    // `ui_fonts::add_face_file`, or reads it itself when it needs the bytes.
+    struct Found { path: []u8, found: bool }
 
     // What a test that needs a font returns when the file is not there: its `#test_main` left it
     // out of the run unless the file went away since.
     error missing_font{ path: []u8 }
 
-    fn find_font { mut fs: Fs, mut proc: Proc, mut heap: arena::Arena, variable: []u8, defaults: [][]u8 } -> Found {
+    fn find_font { mut fs: Fs, mut proc: Proc, variable: []u8, defaults: [][]u8 } -> Found {
         if let path = proc::env{ &proc, name = variable } {
-            if path.len > 0 {
-                let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { return Found{ path, bytes = null } }
-                return Found{ path, bytes }
-            }
+            if path.len > 0 { return Found{ path, found = can_open{ &fs, path } } }
         }
         for path in defaults {
-            let bytes = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } iferr { continue }
-            return Found{ path, bytes }
+            if can_open{ &fs, path } { return Found{ path, found = true } }
         }
-        return Found{ path = if defaults.len > 0 { defaults[0] } else { "" }, bytes = null }
+        return Found{ path = if defaults.len > 0 { defaults[0] } else { "" }, found = false }
+    }
+
+    // Whether the file at `path` opens for reading (a directory does not).
+    fn can_open { mut fs: Fs, path: []u8 } -> bool {
+        let file = fs::open{ &fs, path, mode = fs::Mode::read } iferr { return false }
+        fs::close{ &fs, file } iferr {}
+        return true
     }
 
     // The platform's fonts, the first that exists of each kind: a Latin face, a face with CJK
@@ -127,20 +132,20 @@ namespace ui_check {
     const ITALIC_LINUX: [2][]u8 = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf", "/usr/share/fonts/TTF/DejaVuSans-Oblique.ttf"]
 
     // The Latin face: UI_FONT, else the platform's.
-    fn find_latin_font { mut fs: Fs, mut proc: Proc, mut heap: arena::Arena } -> Found {
+    fn find_latin_font { mut fs: Fs, mut proc: Proc } -> Found {
         let defaults = match target::OS { windows => { LATIN_WINDOWS[..] } macos => { LATIN_MACOS[..] } linux => { LATIN_LINUX[..] } }
-        return find_font{ &fs, &proc, &heap, variable = "UI_FONT", defaults }
+        return find_font{ &fs, &proc, variable = "UI_FONT", defaults }
     }
 
     // A face with CJK characters: UI_CJK_FONT, else the platform's.
-    fn find_cjk_font { mut fs: Fs, mut proc: Proc, mut heap: arena::Arena } -> Found {
+    fn find_cjk_font { mut fs: Fs, mut proc: Proc } -> Found {
         let defaults = match target::OS { windows => { CJK_WINDOWS[..] } macos => { CJK_MACOS[..] } linux => { CJK_LINUX[..] } }
-        return find_font{ &fs, &proc, &heap, variable = "UI_CJK_FONT", defaults }
+        return find_font{ &fs, &proc, variable = "UI_CJK_FONT", defaults }
     }
 
     // An italic face: UI_ITALIC_FONT, else the platform's.
-    fn find_italic_font { mut fs: Fs, mut proc: Proc, mut heap: arena::Arena } -> Found {
+    fn find_italic_font { mut fs: Fs, mut proc: Proc } -> Found {
         let defaults = match target::OS { windows => { ITALIC_WINDOWS[..] } macos => { ITALIC_MACOS[..] } linux => { ITALIC_LINUX[..] } }
-        return find_font{ &fs, &proc, &heap, variable = "UI_ITALIC_FONT", defaults }
+        return find_font{ &fs, &proc, variable = "UI_ITALIC_FONT", defaults }
     }
 }

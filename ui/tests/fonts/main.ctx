@@ -15,7 +15,12 @@
 // glyphs in a staged level; caret offsets are monotonic and end at the measured width; wrapped lines
 // keep to the width; bad input (bytes that are not a font, bytes that are not UTF-8, a zero size, a
 // handle that names nothing, a buffer too small, a full run cache) is answered and counted; `close`
-// leaves no FreeType or HarfBuzz object alive.
+// leaves no FreeType or HarfBuzz object alive. The faces are added from their files
+// (`add_face_file`), but in the tests of `add_face` itself: a face from a file is the face from its
+// bytes; a missing file, a directory, an empty file, one that is not a font and a path C cannot
+// take are refused, each with its error, leaving nothing behind; a file named past ASCII opens, is
+// mapped while its face is alive, and is unmapped when it is released or the library closes. The
+// files these write go under ui/out.
 
 const EPS: f32 = 0.001
 
@@ -27,16 +32,15 @@ fn run_fonts_tests {
 } -> i32 {
     let in_process = args.len > 0 and args[0] == "--run"
     if in_process { return test::main{ &io, &fs, &mem, &proc, &t, args, count, case, run } }
-    let mut heap = ui_check::make_heap{ &mem }
-    let latin = ui_check::find_latin_font{ &fs, &proc, &heap }
-    if latin.bytes == null {
+    let latin = ui_check::find_latin_font{ &fs, &proc }
+    if not latin.found {
         let all: [1][]u8 = [""]
         let mut reason: [512]u8
         let n = write_reason{ into = reason[..], what = "no font at ", path = latin.path, variable = " (set UI_FONT)" }
         return ui_check::run_tests_without{ &io, &fs, &mem, &proc, &t, args, count, case, run, without = all[..], reason = reason[..n] }
     }
-    let cjk = ui_check::find_cjk_font{ &fs, &proc, &heap }
-    if cjk.bytes == null {
+    let cjk = ui_check::find_cjk_font{ &fs, &proc }
+    if not cjk.found {
         let fallback: [1][]u8 = ["falls_back_to_a_cjk_face"]
         let mut reason: [512]u8
         let n = write_reason{ into = reason[..], what = "no CJK font at ", path = cjk.path, variable = " (set UI_CJK_FONT)" }
@@ -56,16 +60,25 @@ fn write_reason { into: []mut u8, what: []u8, path: []u8, variable: []u8 } -> us
     return n
 }
 
-// The Latin face's bytes (UI_FONT, else the platform's).
-fn read_latin { mut fs: Fs, mut proc: Proc, mut heap: arena::Arena } -> ![]u8 {
-    let found = ui_check::find_latin_font{ &fs, &proc, &heap }
-    return found.bytes ifnull { return ui_check::missing_font{ path = found.path } }
+// The Latin face (UI_FONT, else the platform's) added from its file, mapped.
+fn add_latin { mut fs: Fs, mut proc: Proc, mut lib: ui_fonts::Library } -> !ui_fonts::Face {
+    let found = ui_check::find_latin_font{ &fs, &proc }
+    if not found.found { return ui_check::missing_font{ path = found.path } }
+    return try ui_fonts::add_face_file{ &lib, path = found.path, index = 0 }
 }
 
-// The CJK face's bytes (UI_CJK_FONT, else the platform's).
-fn read_cjk { mut fs: Fs, mut proc: Proc, mut heap: arena::Arena } -> ![]u8 {
-    let found = ui_check::find_cjk_font{ &fs, &proc, &heap }
-    return found.bytes ifnull { return ui_check::missing_font{ path = found.path } }
+// The CJK face (UI_CJK_FONT, else the platform's) added from its file, mapped.
+fn add_cjk { mut fs: Fs, mut proc: Proc, mut lib: ui_fonts::Library } -> !ui_fonts::Face {
+    let found = ui_check::find_cjk_font{ &fs, &proc }
+    if not found.found { return ui_check::missing_font{ path = found.path } }
+    return try ui_fonts::add_face_file{ &lib, path = found.path, index = 0 }
+}
+
+// The Latin face's bytes, for the tests of add_face itself.
+fn read_latin { mut fs: Fs, mut proc: Proc, mut heap: arena::Arena } -> ![]u8 {
+    let found = ui_check::find_latin_font{ &fs, &proc }
+    if not found.found { return ui_check::missing_font{ path = found.path } }
+    return try fs::read_all{ &fs, &heap, realloc = arena::alloc, path = found.path }
 }
 
 // A number with up to two digits after the point (std prints 10.0 as 1e+01).
@@ -81,11 +94,10 @@ fn write_number { mut io: Io, v: f32 } -> ! {
 #test
 fn loads_a_face_past_the_start_up_check { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
     let version = ui_fonts::get_version{ &lib }
     _ = @fmt(&io, "FreeType {}.{}.{}, HarfBuzz {}\n", version.major, version.minor, version.patch, ui_fonts::hb_version_string{ &fonts })
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let slot = ui_fonts::find_face{ lib, id = face.id } ifnull { return ui_fonts::closed }
     _ = @fmt(&io, "face {}: {} units per em, {} glyphs; the mirrored fields check out\n", face.id, lib.faces[slot].units_per_em, lib.faces[slot].glyph_count)
     // a face loads and its mirrored FreeType fields pass the start-up check
@@ -97,10 +109,9 @@ fn loads_a_face_past_the_start_up_check { mut t: Test, mut io: Io, mut fs: Fs, m
 #test
 fn closes_every_freetype_and_harfbuzz_object { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let freed_before = ui_fonts::count_freed{ &fonts }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let provider = ui_fonts::get_provider{ lib = &lib }
     let mut out: [16]ui::Shaped
     let shaped = shape{ provider, face, pixels = 16, text = "Hello, close", out = out[..] }
@@ -193,6 +204,195 @@ fn is_bad_font { mut lib: ui_fonts::Library, data: []u8 } -> bool {
     return false
 }
 
+// ---- add_face_file
+
+// Where the tests below write the files they add: under ui/out, which git ignores. Each test names
+// its own files, since the tests run at once.
+const SCRATCH_DIR: []u8 = "ui/out"
+
+// A face added from its file is the face added from its bytes: the same tables, the same glyphs
+// and advances. A face of a collection by its index too, where the CJK face is a collection.
+#test
+fn adds_a_face_from_a_file_as_from_its_bytes { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let from_bytes = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let from_file = try add_latin{ &fs, &proc, &lib }
+    let a = ui_fonts::find_face{ lib, id = from_bytes.id }
+    let b = ui_fonts::find_face{ lib, id = from_file.id }
+    // both faces are alive
+    @require(&t, a != null and b != null)
+    _ = @fmt(&io, "from bytes: {} units per em, {} glyphs; from the file: {} and {}\n",
+        lib.faces[a].units_per_em, lib.faces[a].glyph_count, lib.faces[b].units_per_em, lib.faces[b].glyph_count)
+    // the face from the file has the tables of the face from the bytes
+    @expect(&t, lib.faces[a].units_per_em == lib.faces[b].units_per_em and lib.faces[a].glyph_count == lib.faces[b].glyph_count)
+    let provider = ui_fonts::get_provider{ lib = &lib }
+    let text = "Typography: AV Wa To office ffl, 0123 \xC3\xA9t\xC3\xA9"
+    let mut one: [64]ui::Shaped
+    let mut two: [64]ui::Shaped
+    let x = shape{ provider, face = from_bytes, pixels = 20, text, out = one[..] }
+    let y = shape{ provider, face = from_file, pixels = 20, text, out = two[..] }
+    let mut same = x.len == y.len and x.len > 20
+    if same {
+        for g at i in x {
+            if g.glyph != y[i].glyph or g.cluster != y[i].cluster or g.x_advance != y[i].x_advance or g.x_offset != y[i].x_offset { same = false }
+        }
+    }
+    // the face from the file shapes a line to the glyphs and advances of the face from the bytes
+    @expect(&t, same)
+    let cjk = ui_check::find_cjk_font{ &fs, &proc }
+    let n = cjk.path.len
+    if cjk.found and n > 4 and (cjk.path[n - 4..] == ".ttc" or cjk.path[n - 4..] == ".TTC") {
+        let first = ui_fonts::add_face_file{ &lib, path = cjk.path, index = 0 } iferr { ui_fonts::Face{ .. } }
+        let second = ui_fonts::add_face_file{ &lib, path = cjk.path, index = 1 } iferr { ui_fonts::Face{ .. } }
+        _ = @fmt(&io, "faces 0 and 1 of the collection {}: {} and {}\n", cjk.path, first.id != 0, second.id != 0)
+        // faces 0 and 1 of a collection are added from its file by their index
+        @expect(&t, first.id != 0 and second.id != 0)
+    }
+    ui_fonts::close{ &lib }
+}
+
+// A missing file, a directory, an empty file, a file that is not a font, a face index the file
+// lacks, and paths C cannot take: each an error of its own, and nothing left behind.
+#test
+fn refuses_files_that_are_not_fonts { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = ui_check::find_latin_font{ &fs, &proc }
+    @require(&t, latin.found)
+    _ = fs::make_dir{ &fs, path = SCRATCH_DIR }
+    let empty = "ui/out/fonts-empty.ttf"
+    _ = try fs::write_all{ &fs, path = empty, bytes = "" }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ faces = 2, sizes = 4, runs = 4, run_bytes = 256, run_glyphs = 256, scratch = 64 } }
+    let live = lib.live
+    let freed = ui_fonts::count_freed{ &fonts }
+    let missing = name_refusal{ &io, &lib, path = "ui/out/fonts-there-is-no-such-file.ttf", index = 0 }
+    let directory = name_refusal{ &io, &lib, path = "ui/tests/fonts", index = 0 }
+    let nothing = name_refusal{ &io, &lib, path = empty, index = 0 }
+    let text = name_refusal{ &io, &lib, path = "ui/tests/fonts/build.ctx", index = 0 }
+    let index = name_refusal{ &io, &lib, path = latin.path, index = 7 }
+    let no_path = name_refusal{ &io, &lib, path = "", index = 0 }
+    let nul = name_refusal{ &io, &lib, path = "ui/out/a\x00b.ttf", index = 0 }
+    let mut long: [4200]u8
+    for i in 0..long.len { long[i] = 'a' }
+    let too_long = name_refusal{ &io, &lib, path = long[..], index = 0 }
+    // a missing file and a directory are no_file
+    @expect(&t, missing == Refusal::no_file and directory == Refusal::no_file)
+    // an empty file, a file that is not a font and a face index the file lacks are bad_font
+    @expect(&t, nothing == Refusal::bad_font and text == Refusal::bad_font and index == Refusal::bad_font)
+    // an empty path, one holding a NUL and one too long for C are bad_path
+    @expect(&t, no_path == Refusal::bad_path and nul == Refusal::bad_path and too_long == Refusal::bad_path)
+    let after = lib.live
+    let freed_after = ui_fonts::count_freed{ &fonts }
+    _ = @fmt(&io, "after the refusals: {} faces, {} blobs, {} hb faces alive (before: {}, {}, {}); HarfBuzz freed {} blobs\n",
+        after.ft_faces, after.hb_blobs, after.hb_faces, live.ft_faces, live.hb_blobs, live.hb_faces, freed_after.blobs - freed.blobs)
+    // nothing is left behind: the live counters are where they were
+    @expect(&t, after.ft_faces == live.ft_faces and after.hb_blobs == live.hb_blobs and after.hb_faces == live.hb_faces and after.ft_sizes == live.ft_sizes)
+    // the files that opened and were refused by FreeType were released (their blobs freed)
+    @expect(&t, freed_after.blobs - freed.blobs == 2)
+    ui_fonts::close{ &lib }
+    _ = fs::remove{ &fs, path = empty }
+}
+
+// How add_face_file refused a path.
+enum Refusal: u8 { added, no_file, bad_path, bad_font, other }
+
+fn name_refusal { mut io: Io, mut lib: ui_fonts::Library, path: []u8, index: u32 } -> Refusal {
+    let face = ui_fonts::add_face_file{ &lib, path, index } iferr err{ error } {
+        let kind = match error {
+            ui_fonts::no_file{ path } => { Refusal::no_file }
+            ui_fonts::bad_path{ path } => { Refusal::bad_path }
+            ui_fonts::bad_font{ code } => { Refusal::bad_font }
+            else => { Refusal::other }
+        }
+        if path.len < 256 {
+            _ = @fmt(&io, "index {}: {}\n", index, error)
+        } else {
+            _ = @fmt(&io, "a path of {} bytes, index {}: refused\n", path.len, index)
+        }
+        return kind
+    }
+    ui_fonts::release_face{ &lib, face }
+    return Refusal::added
+}
+
+// A file added with a name past ASCII (UTF-8) opens; while its face is alive the file is mapped
+// (on Windows it cannot be written over, though it can be renamed and deleted), and releasing the
+// face, or closing the library, unmaps it: HarfBuzz reports the blob freed, and the file can be
+// written over, renamed and deleted at once.
+#test
+fn releases_a_files_mapping_with_its_face { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let latin = try read_latin{ &fs, &proc, &heap }
+    _ = fs::make_dir{ &fs, path = SCRATCH_DIR }
+    let path = "ui/out/fonts-mapped-\xC3\xBC\xE5\xAD\x97.ttf"            // fonts-mapped-ü字.ttf
+    let moved = "ui/out/fonts-mapped-moved.ttf"
+    _ = fs::remove{ &fs, path }
+    _ = fs::remove{ &fs, path = moved }
+    _ = try fs::write_all{ &fs, path, bytes = latin }
+    let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
+    let freed = ui_fonts::count_freed{ &fonts }
+    let face = ui_fonts::add_face_file{ &lib, path, index = 0 } iferr err{ error } {
+        _ = @fmt(&io, "{}: {}\n", path, error)
+        ui_fonts::Face{ .. }
+    }
+    // a file whose name is past ASCII is added
+    @require(&t, face.id != 0)
+    let provider = ui_fonts::get_provider{ lib = &lib }
+    let mut out: [16]ui::Shaped
+    // the mapped face shapes
+    @expect(&t, shape{ provider, face, pixels = 16, text = "Mapped", out = out[..] }.len == 6)
+    // Writing over a mapped file is what Windows refuses (ERROR_USER_MAPPED_FILE); elsewhere it
+    // would change what the face reads, so it is tried on Windows only.
+    let windows = match target::OS { windows => { true } macos => { false } linux => { false } }
+    if windows {
+        // on Windows a file mapped by a face alive cannot be written over
+        @expect(&t, not can_write{ &fs, path, bytes = latin })
+    }
+    let renamed = can_rename{ &fs, from = path, to = moved }
+    if renamed { _ = fs::rename{ &fs, from = moved, to = path } }
+    _ = @fmt(&io, "while the face is alive the file {} be renamed\n", if renamed { "can" } else { "cannot" })
+    ui_fonts::release_face{ &lib, face }
+    // releasing the face frees its blob, which unmaps the file
+    @expect(&t, ui_fonts::count_freed{ &fonts }.blobs == freed.blobs + 1)
+    // once the face is released the file can be written over and renamed
+    @expect(&t, can_write{ &fs, path, bytes = latin } and can_rename{ &fs, from = path, to = moved })
+
+    // Closing the library unmaps a file whose face is alive, which may be deleted meanwhile.
+    let again = try ui_fonts::add_face_file{ &lib, path = moved, index = 0 }
+    // the renamed file is added again
+    @expect(&t, again.id != 0 and lib.live.hb_blobs == 1)
+    let deleted = can_remove{ &fs, path = moved }
+    let mut big: [8]ui::Shaped
+    let drawn = shape{ provider, face = again, pixels = 40, text = "Deleted", out = big[..] }
+    _ = @fmt(&io, "while the face is alive the file {} be deleted\n", if deleted { "can" } else { "cannot" })
+    // the face still shapes, at a new size, after its file's name is deleted
+    @expect(&t, drawn.len == 7)
+    ui_fonts::close{ &lib }
+    // closing the library frees the blob of the face still alive
+    @expect(&t, ui_fonts::count_freed{ &fonts }.blobs == freed.blobs + 2 and lib.live.hb_blobs == 0)
+    // once the library is closed the file is deleted, or can be, and its name taken again
+    @expect(&t, (deleted or can_remove{ &fs, path = moved }) and can_write{ &fs, path = moved, bytes = "x" } and can_remove{ &fs, path = moved })
+}
+
+// Whether `bytes` could be written over the file at `path`.
+fn can_write { mut fs: Fs, path: []u8, bytes: []u8 } -> bool {
+    _ = fs::write_all{ &fs, path, bytes } iferr { return false }
+    return true
+}
+
+// Whether the file at `from` could be renamed `to`.
+fn can_rename { mut fs: Fs, from: []u8, to: []u8 } -> bool {
+    fs::rename{ &fs, from, to } iferr { return false }
+    return true
+}
+
+// Whether the file at `path` could be deleted.
+fn can_remove { mut fs: Fs, path: []u8 } -> bool {
+    fs::remove{ &fs, path } iferr { return false }
+    return true
+}
+
 // The glyphs of `text` in `face` at `pixels`, shaped by the provider.
 fn shape { provider: ui::TextProvider, face: ui_fonts::Face, pixels: u32, text: []u8, out: []mut ui::Shaped } -> []mut ui::Shaped {
     let n = provider.shape{ state = provider.state, handle = face.id, pixels, text, out }
@@ -209,9 +409,8 @@ fn sum_advances { glyphs: []ui::Shaped } -> f32 {
 #test
 fn rasterises_a_glyph_to_ink_on_the_baseline { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let provider = ui_fonts::get_provider{ lib = &lib }
     let mut out: [8]ui::Shaped
     let a = shape{ provider, face, pixels = 32, text = "A", out = out[..] }
@@ -279,9 +478,8 @@ fn sum_width { mut m: Measure, provider: ui::TextProvider, size: i32, text: []u8
 #test
 fn kerns_av_narrower_than_a_and_v_apart { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let provider = ui_fonts::get_provider{ lib = &lib }
     let mut m = try make_measure{ &heap, lib, face }
     let av = sum_width{ &m, provider, size = 32, text = "AV" }
@@ -311,9 +509,8 @@ fn kerns_av_narrower_than_a_and_v_apart { mut t: Test, mut io: Io, mut fs: Fs, m
 #test
 fn hits_the_run_cache_on_a_second_shaping { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let provider = ui_fonts::get_provider{ lib = &lib }
     let mut first: [64]ui::Shaped
     let mut second: [64]ui::Shaped
@@ -353,9 +550,8 @@ fn has_good_clusters { glyphs: []ui::Shaped, len: usize } -> bool {
 #test
 fn answers_bad_input_and_counts_it { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let provider = ui_fonts::get_provider{ lib = &lib }
     let mut out: [64]ui::Shaped
     let bad: [12]u8 = [0xFF, 'a', 0xC3, 0x28, 0xE2, 0x82, 'b', 0xED, 0xA0, 0x80, 0xC3, 0xA9]
@@ -394,9 +590,8 @@ fn answers_bad_input_and_counts_it { mut t: Test, mut io: Io, mut fs: Fs, mut me
 #test
 fn steps_carets_and_wraps_in_whole_pixels { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let provider = ui_fonts::get_provider{ lib = &lib }
     let line = "Typography: AV Wa To office ffl, 0123 \xC3\xA9t\xC3\xA9 \xE2\x80\x94 done."
     let paragraph = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs; how vexingly quick daft zebras jump! A well-known, rather extraordinarily long word: incomprehensibilities."
@@ -476,9 +671,8 @@ fn widest_of { lines: []ui::text::Line } -> i32 {
 #test
 fn measures_through_a_ui_at_the_frames_scale { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let provider = ui_fonts::get_provider{ lib = &lib }
     let mut ui = try ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ elements = 64, text = 4096, cmds = 256, hits = 64, states = 16, nodes = 64, lines = 64, .. } }
     let font = ui_fonts::make_font{ &lib, &ui, face } ifnull {
@@ -519,18 +713,17 @@ fn measures_through_a_ui_at_the_frames_scale { mut t: Test, mut io: Io, mut fs: 
 #test
 fn holds_every_glyph_inside_the_line_box { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let provider = ui_fonts::get_provider{ lib = &lib }
-    let cjk = ui_check::find_cjk_font{ &fs, &proc, &heap }.bytes
+    let cjk = ui_check::find_cjk_font{ &fs, &proc }
     let slot = ui_fonts::find_face{ lib, id = face.id } ifnull { return ui_fonts::closed }
     let ft = lib.faces[slot].ft ifnull { return ui_fonts::closed }
     let design = ui_fonts::get_design_metrics{ face = ft, layout = lib.layout }
     let upem = @as(f32, lib.faces[slot].units_per_em)
     let mut other: ?ui_fonts::Face = null
-    if let bytes = cjk {
-        let added = try ui_fonts::add_face{ &lib, data = bytes, index = 0 }
+    if cjk.found {
+        let added = try ui_fonts::add_face_file{ &lib, path = cjk.path, index = 0 }
         ui_fonts::add_fallback{ &lib, face = added }
         other = added
     }
@@ -603,17 +796,15 @@ fn holds_every_glyph_inside_the_line_box { mut t: Test, mut io: Io, mut fs: Fs, 
 #test
 fn falls_back_to_a_cjk_face { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let provider = ui_fonts::get_provider{ lib = &lib }
-    let cjk = try read_cjk{ &fs, &proc, &heap }
     let mixed = "Hello \xE4\xB8\x96\xE7\x95\x8C and \xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E!"     // Hello 世界 and 日本語!
     let mut out: [64]ui::Shaped
     let missing = lib.stats.missing
     let alone = shape{ provider, face, pixels = 24, text = mixed, out = out[..] }
     _ = @fmt(&io, "without a fallback: {} glyphs, {} of them missing\n", alone.len, lib.stats.missing - missing)
-    let other = try ui_fonts::add_face{ &lib, data = cjk, index = 0 }
+    let other = try add_cjk{ &fs, &proc, &lib }
     ui_fonts::add_fallback{ &lib, face = other }
     let missing_after = lib.stats.missing
     let g = shape{ provider, face, pixels = 24, text = mixed, out = out[..] }
@@ -656,10 +847,9 @@ fn falls_back_to_a_cjk_face { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem,
 #test
 fn frees_a_released_faces_glyphs { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
     let provider = ui_fonts::get_provider{ lib = &lib }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try add_latin{ &fs, &proc, &lib }
     let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 64, text = 4096, clips = 4, fonts = 4 }
     let mut staged = try ui_stage::make{ realloc = arena::alloc, &heap, cap = ui_stage::Capacity{
         rects = 64, glyphs = 1024, images = 16, shapes = 16, draws = 64, passes = 2,
@@ -701,9 +891,8 @@ fn frees_a_released_faces_glyphs { mut t: Test, mut io: Io, mut fs: Fs, mut mem:
 #test
 fn retires_runs_from_a_full_run_cache { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = try read_latin{ &fs, &proc, &heap }
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ faces = 2, sizes = 2, runs = 4, run_bytes = 64, run_glyphs = 64, scratch = 24 } }
-    let face = ui_fonts::add_face{ &lib, data = latin, index = 0 } iferr {
+    let face = add_latin{ &fs, &proc, &lib } iferr {
         // a face loads into a small library
         @expect(&t, false)
         ui_fonts::close{ &lib }
@@ -733,7 +922,7 @@ fn retires_runs_from_a_full_run_cache { mut t: Test, mut io: Io, mut fs: Fs, mut
     let whole = ui::text::sum_text{ &cache, list, provider, font = ui::Font{ index = 0 }, size = 16, text = long }
     let mut bigger: [128]ui::Shaped
     let mut full = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
-    let full_face = try ui_fonts::add_face{ lib = &full, data = latin, index = 0 }
+    let full_face = try add_latin{ &fs, &proc, lib = &full }
     let full_provider = ui_fonts::get_provider{ lib = &full }
     let reference = sum_advances{ glyphs = shape{ provider = full_provider, face = full_face, pixels = 16, text = long, out = bigger[..] } }
     if ui::abs_f32{ x = whole - reference } > 0.01 { m_ok = false }

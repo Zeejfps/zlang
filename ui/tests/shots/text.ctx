@@ -25,14 +25,15 @@ const TEXT_PARAGRAPH: []u8 = "Wrapped in the real font: the core breaks at space
 #test
 fn draws_text_in_an_outline_font { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let latin = ui_check::find_latin_font{ &fs, &proc, &heap }
-    let latin_bytes = latin.bytes ifnull { return ui_check::missing_font{ path = latin.path } }
-    let cjk = ui_check::find_cjk_font{ &fs, &proc, &heap }
-    let italic = ui_check::find_italic_font{ &fs, &proc, &heap }
-    _ = @fmt(&io, "text: font {}; fallback {}{}; italic {}{}\n", latin.path, cjk.path, if cjk.bytes == null { " (absent)" } else { "" },
-        italic.path, if italic.bytes == null { " (absent)" } else { "" })
+    let latin = ui_check::find_latin_font{ &fs, &proc }
+    if not latin.found { return ui_check::missing_font{ path = latin.path } }
+    let cjk = ui_check::find_cjk_font{ &fs, &proc }
+    let italic = ui_check::find_italic_font{ &fs, &proc }
+    _ = @fmt(&io, "text: font {}; fallback {}{}; italic {}{}\n", latin.path, cjk.path, if cjk.found { "" } else { " (absent)" },
+        italic.path, if italic.found { "" } else { " (absent)" })
     let mut log: [16384]u8
-    run_text{ &io, &fs, &sdl, &fonts, &t, &heap, latin = latin_bytes, cjk = cjk.bytes, italic = italic.bytes, out_dir = get_out_dir{ &proc }, log = log[..] } iferr err{ error } {
+    run_text{ &io, &fs, &sdl, &fonts, &t, &heap, latin = latin.path, cjk = if cjk.found { cjk.path } else { null },
+        italic = if italic.found { italic.path } else { null }, out_dir = get_out_dir{ &proc }, log = log[..] } iferr err{ error } {
         say_gl_error{ &io, &sdl, error, log = log[..] }
         return error
     }
@@ -43,6 +44,7 @@ struct TextFaces { latin: ui_fonts::Face, has_cjk: bool, has_italic: bool }
 
 fn run_text { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts::Fonts, mut t: Test, mut heap: arena::Arena,
               latin: []u8, cjk: ?[]u8, italic: ?[]u8, out_dir: []u8, log: []mut u8 } -> ! {
+    // latin, cjk and italic are the faces' files, added mapped.
     try ui_sdl::init{ &sdl }
     defer ui_sdl::quit{ &sdl }
     let mut host = try ui_sdl::open_gl_window{ &sdl, realloc = arena::alloc, &heap, title = "ui text shots",
@@ -53,18 +55,18 @@ fn run_text { mut io: Io, mut fs: Fs, mut sdl: ui_sdl::Sdl, mut fonts: ui_fonts:
 
     let mut lib = try ui_fonts::open{ &fonts, realloc = arena::alloc, &heap, cap = ui_fonts::Capacity{ .. } }
     defer ui_fonts::close{ &lib }
-    let face = try ui_fonts::add_face{ &lib, data = latin, index = 0 }
+    let face = try ui_fonts::add_face_file{ &lib, path = latin, index = 0 }
     let mut faces = TextFaces{ latin = face, has_cjk = false, has_italic = false }
-    if let bytes = cjk {
-        let other = try ui_fonts::add_face{ &lib, data = bytes, index = 0 }
+    if let path = cjk {
+        let other = try ui_fonts::add_face_file{ &lib, path, index = 0 }
         ui_fonts::add_fallback{ &lib, face = other }
         faces.has_cjk = true
     }
     let mut list = try ui::draw::make{ realloc = arena::alloc, &heap, cmds = 256, text = 8192, clips = 8, fonts = 4 }
     let def = ui_fonts::describe_face{ lib, face } ifnull { return ui_fonts::closed }
     _ = ui::draw::add_font{ &list, font = def }
-    if let bytes = italic {
-        let slanted = try ui_fonts::add_face{ &lib, data = bytes, index = 0 }
+    if let path = italic {
+        let slanted = try ui_fonts::add_face_file{ &lib, path, index = 0 }
         let italic_def = ui_fonts::describe_face{ lib, face = slanted } ifnull { return ui_fonts::closed }
         _ = ui::draw::add_font{ &list, font = italic_def }
         faces.has_italic = true

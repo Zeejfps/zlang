@@ -1,5 +1,5 @@
-// ui_fonts: the part of HarfBuzz (hb.h, hb-ot.h; 2.6 or later) the font library calls: a blob over
-// the font's bytes, a face and a font per size, one buffer, and hb_shape.
+// ui_fonts: the part of HarfBuzz (hb.h, hb-ot.h; 2.8.2 or later) the font library calls: a blob over
+// the font's bytes or its file's mapping, a face and a font per size, one buffer, and hb_shape.
 //
 // The extern fns are HarfBuzz's own, under their C names. Objects are opaque. The structs that
 // cross (hb_glyph_info_t, hb_glyph_position_t, hb_font_extents_t) are HarfBuzz's public ones, made
@@ -28,6 +28,9 @@ namespace ui_fonts {
 
     extern fn hb_version_string { mut fonts: Fonts } -> c::String
     extern fn hb_blob_create { mut fonts: Fonts, data: *u8, length: u32, mode: i32, user_data: ?*mut u8, destroy: ?DestroyFn } -> *mut HbBlob
+    // A blob over the file at `file_name`, mapped (read whole where it cannot be); null when it
+    // cannot be opened. HarfBuzz 2.8.2 and later.
+    extern fn hb_blob_create_from_file_or_fail { mut fonts: Fonts, file_name: c::String } -> ?*mut HbBlob
     extern fn hb_blob_get_length { mut fonts: Fonts, blob: *mut HbBlob } -> u32
     extern fn hb_blob_get_data { mut fonts: Fonts, blob: *mut HbBlob, mut length: u32 } -> ?*u8
     extern fn hb_blob_set_user_data { mut fonts: Fonts, blob: *mut HbBlob, key: *mut UserDataKey, data: ?*mut u8, destroy: ?DestroyFn, replace: i32 } -> i32
