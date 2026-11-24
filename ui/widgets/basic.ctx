@@ -16,8 +16,9 @@
 // rounds down, as the layout does.
 //
 // Every interactive widget here is a tab stop, is worked by Enter or Space while focused, draws a
-// ring in `focus_ring` while it has the focus, describes itself, shows the hand cursor while it
-// can be used and the pointer is over it, and shows `opts.tip` as its tooltip.
+// ring in `focus_ring` while it has the focus and the focus is shown (it came by keys, not by a
+// click: `ui::is_focus_visible`), describes itself, shows the hand cursor while it can be used and
+// the pointer is over it, and shows `opts.tip` as its tooltip.
 namespace ui {
     // A tick box's and a radio button's side, in logical units: a little over the text size.
     fn get_mark_size { theme: Theme } -> f32 {

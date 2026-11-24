@@ -69,8 +69,11 @@ namespace ui {
 
     // A ring in the focus colour over the edge of the element open now, rounded by `radius`
     // (logical units), taking no part in its layout: a placed child that fills it, with a border
-    // and no fill, recorded after the element's content so it draws over it.
+    // and no fill, recorded after the element's content so it draws over it. A widget calls it while
+    // it has the focus; the ring is drawn only while the focus is shown (`ui::is_focus_visible`: it
+    // came by keys or by hover-focus), so a widget focused by a click shows no ring.
     fn add_focus_ring { mut ui: Ui, radius: f32 } {
+        if not is_focus_visible{ ui } { return }
         let box = Box{
             width = GROW, height = GROW, place = Place{ .. },
             border = color_sides{ color = ui.theme.focus_ring },

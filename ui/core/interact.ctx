@@ -69,7 +69,11 @@ namespace ui {
             ui.interact.active_clicks = now.clicks[b]
             it.pressed = true
             it.clicks = now.clicks[b]
-            if opts.focusable { focus::take_focus{ &ui, id, claimed = true } }
+            if opts.focusable {
+                focus::take_focus{ &ui, id, claimed = true }
+                // A press shows where it is; under hover-focus the hovered widget keeps its highlight.
+                if not opts.focus_on_hover { ui.focus.visible = false }
+            }
         }
         if ui.interact.active == id and ui.interact.active_button == opts.button {
             ui.interact.active_seen = true
@@ -84,7 +88,10 @@ namespace ui {
         }
         if opts.focusable {
             focus::add_stop{ &ui, id }
-            if opts.focus_on_hover and it.entered { focus::take_focus{ &ui, id, claimed = false } }
+            if opts.focus_on_hover and it.entered {
+                focus::take_focus{ &ui, id, claimed = false }
+                ui.focus.visible = true
+            }
             if ui.focus.focused == id {
                 ui.focus.seen = true
                 it.focused = true

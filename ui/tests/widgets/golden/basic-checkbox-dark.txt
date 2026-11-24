@@ -9,9 +9,14 @@ text 32,17 font=0 size=14 E4E7EDFF clip=0 "Remember me"
 == pressed
 frame 240x80
 rect 10,16 16x16 fill=424B59FF radius=2,2,2,2 border=1,1,1,1 888E9AFF,888E9AFF,888E9AFF,888E9AFF clip=0
-rect 10,16 16x16 fill=00000000 radius=2,2,2,2 border=2,2,2,2 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=0
 text 32,17 font=0 size=14 E4E7EDFF clip=0 "Remember me"
-== focused
+== focused by a click
+frame 240x80
+rect 10,16 16x16 fill=356FE0FF radius=2,2,2,2 border=0,0,0,0 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
+line 13.2,24.32 16.56,27.52 width=1.75 cap=round FFFFFFFF clip=0
+line 16.56,27.52 22.8,20.8 width=1.75 cap=round FFFFFFFF clip=0
+text 32,17 font=0 size=14 E4E7EDFF clip=0 "Remember me"
+== focused by keys
 frame 240x80
 rect 10,16 16x16 fill=356FE0FF radius=2,2,2,2 border=0,0,0,0 356FE0FF,356FE0FF,356FE0FF,356FE0FF clip=0
 line 13.2,24.32 16.56,27.52 width=1.75 cap=round FFFFFFFF clip=0

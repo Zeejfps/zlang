@@ -10,8 +10,11 @@ text 22,17 font=0 size=14 E4E7EDFF clip=0 "Save"
 frame 240x80
 rect 10,10 52x28 fill=424B59FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
 text 22,17 font=0 size=14 E4E7EDFF clip=0 "Save"
-rect 10,10 52x28 fill=00000000 radius=4,4,4,4 border=2,2,2,2 7AA7FFFF,7AA7FFFF,7AA7FFFF,7AA7FFFF clip=0
-== focused
+== focused by a click
+frame 240x80
+rect 10,10 52x28 fill=303641FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
+text 22,17 font=0 size=14 E4E7EDFF clip=0 "Save"
+== focused by keys
 frame 240x80
 rect 10,10 52x28 fill=303641FF radius=4,4,4,4 border=1,1,1,1 4B5362FF,4B5362FF,4B5362FF,4B5362FF clip=0
 text 22,17 font=0 size=14 E4E7EDFF clip=0 "Save"

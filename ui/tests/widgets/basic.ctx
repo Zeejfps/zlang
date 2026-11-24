@@ -40,6 +40,8 @@ fn check_basic { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena:
     check_slider_keys{ &io, &t, &heap }
     check_button_keys{ &io, &t, &heap }
     check_radio_click{ &io, &t, &heap }
+    check_focus_ring{ &io, &t, &heap }
+    check_hover_ring{ &io, &t, &heap }
     check_themes{ &io, &t }
 }
 
@@ -157,8 +159,9 @@ fn get_path { widget: Widget } -> []u8 {
 
 // ---- goldens
 
-// One widget in its five looks, a frame each: at rest; hovered; pressed; focused (after the
-// click, with the pointer gone); not enabled.
+// One widget in its six looks, a frame each: at rest; hovered; pressed; focused by the click (with
+// the pointer gone), which draws no ring; focused by keys (Shift+Tab and Tab, which come back to
+// it), which draws the ring; not enabled.
 fn record_states {
     mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
     widget: Widget, dark: bool, name: []u8, theme: []u8,
@@ -186,9 +189,17 @@ fn record_states {
     ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // 5: the click
     _ = ui_test::move_pointer{ ui = &gui, x = 1, y = 1 }
     ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // 6
-    write_frame{ &sink, ui = gui, name = "focused" } iferr { return }
+    write_frame{ &sink, ui = gui, name = "focused by a click" } iferr { return }
     let node = ui::find_node{ ui = gui, path } ifnull ui::Node{ .. }
     let focused = (node.flags & ui::NODE_FOCUSED) != 0
+    let unringed = not has_border{ ui = gui, width = 2, color = gui.theme.focus_ring }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = ui::MOD_SHIFT }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // the keys move focus at its end
+    ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
+    write_frame{ &sink, ui = gui, name = "focused by keys" } iferr { return }
+    let keyed = ui::find_node{ ui = gui, path } ifnull ui::Node{ .. }
+    let ringed = (keyed.flags & ui::NODE_FOCUSED) != 0 and (has_border{ ui = gui, width = 2, color = gui.theme.focus_ring } or widget == Widget::slider)
     s.enabled = false
     ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }                // 7
     write_frame{ &sink, ui = gui, name = "not enabled" } iferr { return }
@@ -199,6 +210,8 @@ fn record_states {
     ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "states: every frame is clean" }
     ui_test::expect{ &io, &t, ok = hand, what = "states: the hand cursor over a widget that can be used" }
     ui_test::expect{ &io, &t, ok = focused, what = "states: the widget has the focus after its click" }
+    ui_test::expect{ &io, &t, ok = unringed, what = "states: focus that came by a click draws no ring" }
+    ui_test::expect{ &io, &t, ok = ringed, what = "states: focus that came by keys draws the ring" }
     ui_test::expect{ &io, &t, ok = (off.flags & ui::NODE_DISABLED) != 0 and (off.flags & ui::NODE_FOCUSED) == 0, what = "states: a widget not enabled says so and has no focus" }
 }
 
@@ -571,4 +584,96 @@ fn check_themes { mut io: Io, mut t: ui_test::Tally } {
         what = "themes: derive_theme fills a state colour left at alpha 0 and keeps the others" }
     let half = ui::mix_color{ a = ui::Color{ r = 0, g = 0, b = 0, a = 0 }, b = ui::Color{ r = 255, g = 100, b = 1, a = 255 }, amount = 0.5 }
     ui_test::expect{ &io, &t, ok = half.r == 128 and half.g == 50 and half.b == 1 and half.a == 128, what = "themes: mix_color rounds each channel to the nearest level" }
+}
+
+// ---- the focus ring: drawn for focus that came by keys, not for focus a click gave
+
+struct Pair { clicks: u32 }
+
+// Two buttons in a row.
+fn show_pair { mut ui: ui::Ui, mut p: Pair } {
+    let row = ui::begin_row{ &ui, opts = ui::Opts{ box = ui::place_pixels{ rect = ui::Rect{ x = 10, y = 10, w = 200, h = 40 } }, .. } }
+    if ui::add_button{ &ui, label = "Save", opts = ui::Opts{ .. } } { p.clicks = p.clicks + 1 }
+    if ui::add_button{ &ui, label = "Open", opts = ui::Opts{ .. } } { p.clicks = p.clicks + 1 }
+    ui::end{ &ui, scope = row }
+}
+
+fn is_node_focused { ui: ui::Ui, path: []u8 } -> bool {
+    let n = ui::find_node{ ui, path } ifnull { return false }
+    return (n.flags & ui::NODE_FOCUSED) != 0
+}
+
+// The rectangle of the first focus ring drawn (a border of 2 in the ring's colour); one of -1s when
+// there is none.
+fn find_ring { ui: ui::Ui } -> ui::Rect {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            rect{ rect, style } => {
+                let c = style.border_color.top
+                let f = ui.theme.focus_ring
+                if style.border.top == 2 and c.r == f.r and c.g == f.g and c.b == f.b { return rect }
+            }
+            else => {}
+        }
+    }
+    return ui::Rect{ x = -1, y = -1, w = -1, h = -1 }
+}
+
+fn has_ring { ui: ui::Ui } -> bool {
+    return find_ring{ ui }.w >= 0
+}
+
+// A click focuses a button and draws no ring; Tab to it draws the ring; a click on another takes
+// the ring away; Tab after a click draws the ring on the next stop.
+fn check_focus_ring { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    let mut d = make_driver{ &heap, width = 240, height = 80, scale = 1.0 } iferr { return }
+    let mut p = Pair{ clicks = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pair{ &p, _ } }
+    _ = ui_test::click{ &d, ui = &gui, path = "Save", show = show_pair{ &p, _ } }
+    _ = ui_test::move_pointer{ ui = &gui, x = 1, y = 70 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pair{ &p, _ } }
+    ui_test::expect{ &io, &t, ok = is_node_focused{ ui = gui, path = "Save" } and not has_ring{ ui = gui } and not ui::is_focus_visible{ ui = gui },
+        what = "focus ring: a click focuses the button and draws no ring" }
+    // Shift+Tab and Tab come back to Save: focus that came by keys.
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = ui::MOD_SHIFT }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_pair{ &p, _ }, count = 2 }
+    let save = ui::find_node{ ui = gui, path = "Save" } ifnull ui::Node{ .. }
+    let keyed = find_ring{ ui = gui }
+    ui_test::expect{ &io, &t, ok = is_node_focused{ ui = gui, path = "Save" } and keyed.x == save.rect.x and keyed.w == save.rect.w,
+        what = "focus ring: Tab to the button draws the ring on it" }
+    _ = ui_test::click{ &d, ui = &gui, path = "Open", show = show_pair{ &p, _ } }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pair{ &p, _ } }
+    ui_test::expect{ &io, &t, ok = is_node_focused{ ui = gui, path = "Open" } and not has_ring{ ui = gui }, what = "focus ring: a click on another button takes the ring away" }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_pair{ &p, _ }, count = 2 }
+    let ring = find_ring{ ui = gui }
+    ui_test::expect{ &io, &t, ok = is_node_focused{ ui = gui, path = "Save" } and ring.x == save.rect.x and ring.w == save.rect.w,
+        what = "focus ring: Tab after a click draws the ring on the next stop (wrapping to Save)" }
+    ui_test::expect{ &io, &t, ok = p.clicks == 2 and d.unclean == 0, what = "focus ring: every frame is clean" }
+}
+
+// With hover as focus (KOTOR's screens), the hovered button takes the focus and shows the ring,
+// and a press of it keeps the ring.
+fn check_hover_ring { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+    gui.config.hover_focus = true
+    let mut d = make_driver{ &heap, width = 240, height = 80, scale = 1.0 } iferr { return }
+    let mut p = Pair{ clicks = 0 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pair{ &p, _ } }
+    let at = ui_test::find_center{ ui = gui, path = "Open" } ifnull {
+        ui_test::expect{ &io, &t, ok = false, what = "hover ring: the button is found" }
+        return
+    }
+    _ = ui_test::move_pointer{ ui = &gui, x = at.x, y = at.y }
+    ui_test::step_frames{ &d, ui = &gui, show = show_pair{ &p, _ }, count = 2 }
+    let hovered = is_node_focused{ ui = gui, path = "Open" } and has_ring{ ui = gui }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }
+    ui_test::step_frame{ &d, ui = &gui, show = show_pair{ &p, _ } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
+    ui_test::step_frames{ &d, ui = &gui, show = show_pair{ &p, _ }, count = 2 }
+    ui_test::expect{ &io, &t, ok = hovered, what = "hover ring: a hover that gives focus shows the ring" }
+    ui_test::expect{ &io, &t, ok = p.clicks == 1 and is_node_focused{ ui = gui, path = "Open" } and has_ring{ ui = gui }, what = "hover ring: a press under hover-focus keeps it" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "hover ring: every frame is clean" }
 }

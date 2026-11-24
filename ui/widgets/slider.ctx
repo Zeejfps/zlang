@@ -97,8 +97,9 @@ namespace ui {
         let done = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = take{ part }, height = GROW, fill = ink, radius = rail, .. } }
         end{ &ui, scope = done }
         let knob_fill = if opts.enabled { t.on_accent } else { t.control }
-        let knob_edge = if not opts.enabled { t.border } else if it.focused { t.focus_ring } else if it.held or it.hovered { t.accent } else { get_border_strong{ theme = t } }
-        let knob_width = if it.focused and opts.enabled { get_ring_width{ theme = t } } else { t.border_width }
+        let ringed = it.focused and is_focus_visible{ ui }
+        let knob_edge = if not opts.enabled { t.border } else if ringed { t.focus_ring } else if it.held or it.hovered { t.accent } else { get_border_strong{ theme = t } }
+        let knob_width = if ringed and opts.enabled { get_ring_width{ theme = t } } else { t.border_width }
         let thumb = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{
             width = fix{ size = knob }, height = fix{ size = knob },
             place = Place{ anchor_x = part, anchor_y = 0.5, x = -half, y = -half },
