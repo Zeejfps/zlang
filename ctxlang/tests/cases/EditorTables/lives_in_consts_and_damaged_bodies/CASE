@@ -1,4 +1,4 @@
-// What the checker records for an editor (todo.md, Language server), as `ctxc decls` prints it.
+// What the checker records for an editor (docs/todo/lsp.md), as `ctxc decls` prints it.
 // A const's binders have theirs too; a body with errors still records what it declared.
 //# build text: {home}/tests/helpers/text.ctx
 

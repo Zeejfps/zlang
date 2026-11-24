@@ -1,4 +1,4 @@
-// What the checker records for an editor (todo.md, Language server), as `ctxc decls` prints it.
+// What the checker records for an editor (docs/todo/lsp.md), as `ctxc decls` prints it.
 // Each local's name is in scope from where it takes effect to the end of its scope: a
 // context field's in the whole body, a let's after its statement, a pattern's binders in
 // their arm or after the let-else, a narrowed view after the `if` that narrows it, and an

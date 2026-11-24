@@ -5,7 +5,7 @@ its platform's bootstrap, `bootstrap/ctxc.linux.c`, `ctxc.macos.c` or `ctxc.wind
 nothing but a C compiler.
 
 This file is the reference: how to work on ctxc, how ctxlang maps to C, how it is tested, and the
-design decisions behind them. What is left to do is in [todo.md](todo/todo.md). The old plan, with the
+design decisions behind them. What is left to do is in [todo/](todo), a file per area. The old plan, with the
 history of finished stages, is `PLAN.md` in git history (its last version is at the commit that
 removed it; the stages 0–12 version is at `f53a93f`). ctxi, the Python interpreter ctxc replaced,
 is at `8436f4d`.
@@ -33,7 +33,7 @@ cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctx
 - `ctxc0 run tools/suite` runs every case through ctxc for the current source
   ([tests/README.md](../tests/README.md)).
 - Python is left in `tools/recover.py` alone, with the part of `tools/toolchain.py` that builds
-  ctxc for it. Moving it to ctxlang is in [todo.md](todo/todo.md).
+  ctxc for it. Moving it to ctxlang is in [todo/tools.md](todo/tools.md).
 - Friction found while writing ctxc, and the KOTOR port, is logged in [friction.md](todo/friction.md).
 
 ### Changing the language
@@ -126,7 +126,7 @@ program asks for one (spec §19).
   checked at every 50th copy: each check takes as long as checking ctxc. std's 131K copies take
   about 4 minutes on 24 processors, and ctxc's 951K about 54. This is the test that guards
   editor use.
-- **Editor queries** (the language server, [todo.md](todo/todo.md); not built yet). Fixture files mark positions (`/*^def*/`, `/*^hover*/`) and state
+- **Editor queries** (the language server, [todo/lsp.md](todo/lsp.md); not built yet). Fixture files mark positions (`/*^def*/`, `/*^hover*/`) and state
   the expected answer, which covers the semantic model without a client.
 - **Float text.** `f64_digits` must copy Python's `repr` exactly: shortest round-trip digits,
   exponent form below `1e-4` and from `1e16`, and a `.0` suffix; `f32_digits` is the same over

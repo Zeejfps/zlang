@@ -269,7 +269,7 @@ What isn't here, and why:
   `api.ctx` would write them, and each is an error; an unfamiliar word sends it to the spec. Everything
   in `api.ctx` is public already, so the file is the export, and the directive does something else:
   it passes a nested module's api out through this boundary. In a language this close to C, "export"
-  also means making a symbol visible to the linker, which `#c::export` does (todo.md).
+  also means making a symbol visible to the linker, which `#c::export` does (c-interop.md).
 
 ## Tooling
 

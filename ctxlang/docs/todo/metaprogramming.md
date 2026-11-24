@@ -1,0 +1,77 @@
+# Metaprogramming: what is left
+
+Code generation and build logic written in ctxlang, without macros and without making types
+compile-time values. Generated files, build programs of several files, `deny_unchecked`,
+`build::declarations` and attributes on fields are done (spec §19).
+
+*Done when:* a JSON generator in ctxlang derives `write` and `read` functions for `#json::derive`
+structs, and `examples/json` uses them for a typed round trip.
+
+## What a generator needs
+
+Found while asking whether a build program could derive JSON serialization. For JSON, 1 and 5 are
+the ones that matter; 2, 4, 6 and 7 are small, and 3 only matters for renaming enum values.
+Separately, JSON needs a real library for the generated code to call: `examples/json` is a sample
+program, not a library.
+
+- **1. Types are text.** `build::declarations` gives a field's type as a string
+  (`"?game::Pos"`), so a generator can't tell what it names: a struct, an enum, or an alias of
+  something else. lib/ecs_gen (on the `ecs` branch) looks names up itself in text.ctx and matches
+  types by spelling. *Build:* `declarations` resolves names itself (from the declaration's
+  namespace outward, through `type` aliases, as spec §10 says) and gives a structured type: a
+  named one with its full path and arguments, a slice (and whether it's `mut`), an array, an
+  optional, a pointer, a fn. It keeps the written text beside it, and marks a name that resolves
+  to nothing, such as a type a generator writes. (Reflection, below, would give the checker's
+  types instead.)
+- **2. std's types aren't seen.** An alias of `utf8::String` or `list::List` isn't seen
+  through, since `declarations` reads only the executable's files. *Build:* `declarations` reads
+  std's declarations too, for 1 to resolve into.
+- **3. Variants have no attributes.** An enum's or a union's variants can't carry one, so
+  there is no `#json::rename` on a variant. *Build:* attributes on variants in the parser and the
+  checker, and `attrs` on `build::Variant`.
+- **4. Fields have no position.** `build::Field` has no line or column, so an error about a
+  field can only point at its declaration. *Build:* `line` and `col` on `build::Field`.
+- **5. A generator can't report errors.** It prints `FILE:LINE:COL: error: ...` to stderr
+  and fails the build by returning 1, which ctxc and the suite's runner treat as a crash.
+  *Build:* `build::error{ &b, file, line, col, msg }`, which ctxc reports as its own errors, and
+  then fails the build.
+- **6. A generator can't live inside its library.** `add_sources` takes every
+  subdirectory, so a generator in `lib/json/gen` would be compiled into every executable that
+  adds `lib/json`, and those can't build it. *Build:* `add_sources{ ..., deep = false }`, or a
+  rule that a directory a build program takes with `#build::sources` is no executable's.
+- **7. A generator can't add the library its code calls.** Only build.ctx's `fn build` names
+  directories, with paths relative to build.ctx, so every build.ctx must add `lib/json` itself
+  beside the generator. *Build:* a way for a generator library to add its own directories to an
+  executable, by paths relative to the library.
+- **8. `@fmt` doubles every brace.** Generated ctxlang is full of `{` and `}`, so formats
+  that write it are full of `{{` and `}}`: lib/ecs_gen has 58 in 24 of its 40 formats. *Build:* a
+  string literal or format that writes code without doubling them. Convenience, not a blocker.
+
+## Reflection and cross-compiling
+
+- **Cross-compiling.** `build::os` is the host's: building for another platform needs std's layer
+  for it, its C compiler, and a build program run on the host but describing the target.
+- **Reflection: the checked program.** `build::declarations` gives declarations as the parser
+  sees them. What it can't give is what only the checker knows: names resolved, types as types,
+  layouts, and attributes' values folded, the `Analysis`. *Direction:* ctxc's checker answers,
+  either over a two-way channel between ctxc and the running build program, or by running build
+  programs in ctxc's interpreter (eval.ctx), where its calls can reach the checker directly.
+  Either avoids a second copy of the front end in every build program.
+
+## Smaller gaps in `declarations`
+
+- Not in the model: a capability's inclusions (`..Base`), whether its field is a C variable or a
+  static, which generic parameters are error sets (`E: error`), and a fn's body.
+- A declaration with a syntax error in it is there as far as it parsed, beside the error.
+- The ctxc front end is in every build program, used or not (about 50 ms a run): the driver could
+  add it only to build programs whose tokens name `declarations`.
+- std remembers at most 64 KiB of roots and directories (`build::Known`); a build that gives more
+  panics at `declarations`, not before.
+
+## Smaller gaps in build programs
+
+- The driver reads `#build::sources` as written: a `dir` from a const isn't one, and a namespace
+  `build` of the program's own, which would shadow std's for the checker, doesn't hide it.
+- Windows device names (`CON`, `NUL` and the like) aren't refused as executables' names.
+- `build_project`'s generated files under build/cbackend/gen are never removed, as the rest of
+  that cache isn't.

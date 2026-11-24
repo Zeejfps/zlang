@@ -1,4 +1,4 @@
-// What the checker records for an editor (todo.md, Language server), as `ctxc decls` prints it.
+// What the checker records for an editor (docs/todo/lsp.md), as `ctxc decls` prints it.
 // The fields each braces take: a call's (a generic one's with its type arguments
 // inferred, a function value's), a struct's, a variant's and an error's. Braces whose
 // callee doesn't resolve take nothing the checker knows.

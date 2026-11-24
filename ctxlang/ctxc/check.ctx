@@ -409,7 +409,7 @@ namespace check {
         held:       u32,
     }
 
-    // Where a name of a local is in scope, for an editor (todo.md, Language server): var, from the offset `from`,
+    // Where a name of a local is in scope, for an editor (docs/todo/lsp.md): var, from the offset `from`,
     // where it takes effect, to `to`, where its scope ends, both in the file of var's `at`. A
     // local declared again, or narrowed, has another, from where that takes effect; the one with
     // the latest `from` is the name's there. A local without a name (a view's) has none.
@@ -11887,7 +11887,7 @@ namespace check {
     }
 
     // The fields supplied in braces e must exist and be supplied once. `what` names the callee.
-    // e takes fields, for an editor (todo.md, Language server).
+    // e takes fields, for an editor (docs/todo/lsp.md).
     fn supplied { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, what: utf8::String } {
         try! map::put{ m = &c.braces, key = expr_key{ e }, value = fields }
         let mut i: usize = 0
