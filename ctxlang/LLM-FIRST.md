@@ -234,11 +234,31 @@ What a model writes by default should compile, or fail with the exact fix.
     Removed as proof: 30 index casts in KOTOR's lib/walk/bwm.ctx and lib/rules/progress.ctx,
     and 12 `@as(i32, gl::...)` in lib/render_gl's fx.ctx and fx_shadow.ctx.
 
-- [ ] **3.4 `iferr` and `ifnull` chain.**
+- [x] **3.4 `iferr` and `ifnull` chain.**
   `f{} iferr { return } ifnull { return }` on a `!?T` is a parse error. Also, `x == f{} ifnull y`
   parses as `x == (f{} ifnull y)`; at least make that an error that says so.
   - Details: F#8; [spec §8, Optional, rule 7](spec.md#optional), [§8, Errors, rule 8](spec.md#errors), [§11, Expressions](spec.md#expressions).
   - *Done when:* the chain compiles and the comparison case is unambiguous or an error.
+  - *Done:* [spec §11, Expressions, rule 7](spec.md#expressions), one rule for `ifnull`, `iferr`
+    and `ifoverflow`. A handler's right side is a block or an expression. An expression takes
+    every handler after it, as before (`a ifnull b ifnull 0`); a block ends at its `}`, so a
+    handler after one takes the whole expression before it, on the same line or the next:
+    `f{} iferr { return } ifnull { return }` is `(f{} iferr { return }) ifnull { return }`.
+    Nothing that compiled changes: a handler after a block's `}` was a syntax error. Handlers
+    go in the order of the type; the other order and a repeated handler are type errors that
+    now say what to write: ``handle its error first, as `f{} iferr { ... } ifnull { ... }` ``
+    for a `!?T`, the mirror for a `?!T`, and ``this `iferr` has handled it, and the one after
+    it has nothing left to handle``.
+    Beside a comparison, `is`, `and` or `or`, a handler is an error that shows both
+    spellings, e.g. ``write `x == (f{} ifnull y)` or `(x == f{}) ifnull y` ``, rather than a
+    grouping to remember: other languages put `??` below comparison and ctxlang's handlers
+    are above it, and with a `?bool` both readings of `f{} ifnull a == b` compile. A handler
+    on the left with a block reads one way and stays allowed (`f{} ifnull { return } == y`).
+    An `ifnull` or `iferr` after an operator's expression, which could never have the type,
+    says where the handler was meant: ``write `a + (f{} ifnull 0)` ``. Arithmetic stays as it
+    was on both sides (`a * b + c ifoverflow x`, `a ifnull n + 1`), where ctxlang and `??`
+    agree. No site in ctxc, std or KOTOR mixed a handler with a comparison; three of the
+    suite's programs did, on purpose, and are now written with parentheses.
 
 - [ ] **3.5 A condition may continue on the next line.**
   `if a\n or b {` is a parse error pointing at the wrong place, since a call's `}` ending a line

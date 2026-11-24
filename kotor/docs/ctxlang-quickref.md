@@ -136,6 +136,10 @@ defer list::free{ list = &xs }                    // runs at block exit
   tests one.
 - Optionals narrow: after `if p == null { return }`, `p` is the payload type (`let` locals only;
   copy a `let mut` first).
+- Handlers (§11, Expressions, rule 7): `let v = f{} iferr { return } ifnull { return }` takes a
+  `!?T` apart, its error first. Beside `==`, `<`, `is`, `and` or `or`, put the handler in
+  parentheses, `x == (f{} ifnull y)` and `(m ifnull 0) > 3`, and after arithmetic too:
+  `a + (f{} ifnull 0)`. The compiler's error shows the spelling.
 - A `{` after an expression in a condition is a call only if the line continues after its `}`.
   Break long conditions after an operator, not after a call's `}`.
 

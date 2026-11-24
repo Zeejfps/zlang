@@ -80,10 +80,6 @@ as the write-ups gave them.
     which were most of the sites. *Hit by 4:* glspike (11), rules (about 150, and about 60
     bools), walk (84), video.
 
-8. **`iferr` and `ifnull` don't chain, and bind tighter than comparison.** A `!?T` wants `f{}
-    iferr { return } ifnull { return }`, which is "expected a newline or ';' after statement,
-    found 'ifnull'", so it is two statements; with parentheses it groups right to left. `x ==
-    f{} ifnull y` is `x == (f{} ifnull y)`. *Hit by 4:* engine, data (3), dialog (9), gui (2).
 
 9. **A condition continued on the next line must break after the operator.** `if a\n or b {`
     is a parse error, since a call's `}` ending a line starts the block, and the error points at

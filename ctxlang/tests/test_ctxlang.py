@@ -664,6 +664,156 @@ fn main { mut io: Io } {
                 self.assertCompileError(self.DECLS + body, msg)
 
 
+class Handlers(Base):
+    """§11, Expressions, rule 7: how `ifnull`, `iferr` and `ifoverflow` group, with each other
+    and beside the other operators."""
+
+    DECLS = r"""
+error bad
+fn f { n: i32 } -> !?i32 {
+    if n == 0 { return null }
+    if n < 0 { return bad }
+    return n
+}
+fn g { n: i32 } -> ?i32 { if n == 0 { return null }; return n }
+fn r { n: i32 } -> !i32 { if n == 0 { return bad }; return n }
+fn h { n: i32 } -> ?!i32 {
+    if n == 0 { return null }
+    let x: !i32 = if n < 0 { bad } else { n }
+    return x
+}
+fn t { n: i32 } -> ?bool { if n == 0 { return null }; return n > 0 }
+"""
+    MAIN = DECLS + 'fn main { mut io: Io } {\n    let n = 1\n    %s\n}\n'
+
+    def assertErrorAt(self, body, msg, line, col):
+        with self.assertRaises(CompileError) as cm:
+            run(self.MAIN % body)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), body)
+        return cm.exception
+
+    def test_a_handler_after_a_block_takes_what_is_before_it(self):
+        self.assertOutput(self.DECLS + r"""
+fn both { n: i32 } -> i32 { return f{ n } iferr { return -1 } ifnull { return 0 } }
+fn next_line { n: i32 } -> i32 {
+    let v = f{ n } iferr { -1 }
+        ifnull 7                                    // a handler may begin the next line
+    return v
+}
+fn bound { n: i32 } -> i32 {
+    // the last `ifnull` is the right side of the one before it
+    return f{ n } iferr err{ error } { return -2 } ifnull g{ n = n + 5 } ifnull 4
+}
+fn inside_out { n: i32 } -> i32 { return h{ n } ifnull { return 0 } iferr 5 }      // a ?!T: its null first
+fn parens { n: i32 } -> i32 { return (f{ n } iferr null) ifnull 9 }
+fn dropped { mut io: Io, n: i32 } {
+    _ = f{ n } iferr { io::println{ &io, s = "err" }; return } ifnull { io::println{ &io, s = "null" }; return }
+    io::println{ &io, s = "value" }
+}
+fn main { mut io: Io } {
+    for n in [1, 0, -1, -5] {
+        _ = @fmt(&io, "{} {} {} {} {}\n", both{ n }, next_line{ n }, bound{ n }, inside_out{ n }, parens{ n })
+        dropped{ &io, n }
+    }
+}
+""", '1 1 1 1 1\nvalue\n0 7 5 0 9\nnull\n-1 -1 -2 5 9\nerr\n-1 -1 -2 5 9\nerr\n')
+
+    def test_an_expression_takes_the_handlers_after_it(self):
+        self.assertOutput(self.DECLS + r"""
+fn main { mut io: Io } {
+    let a = g{ n = 0 } ifnull g{ n = 0 } ifnull 3           // a ifnull (b ifnull 3)
+    let b = g{ n = 0 } ifnull r{ n = 0 } iferr 4            // a ifnull (b iferr 4)
+    let c = r{ n = 0 } iferr 2147483647 + 1 ifoverflow 5    // a iferr (b + 1 ifoverflow 5)
+    let d = g{ n = 0 } ifnull c + 1                         // a ifnull (c + 1)
+    _ = @fmt(&io, "{} {} {} {}\n", a, b, c, d)
+}
+""", '3 4 5 6\n')
+
+    def test_beside_a_comparison_and_or(self):
+        for body, msg, line, col in [
+            ('let x = n == g{ n } ifnull 0',
+             '`ifnull` beside `==` needs parentheses: write `n == (g{ n } ifnull 0)` or `(n == g{ n }) ifnull 0`', 18, 25),
+            ('let x = g{ n } ifnull 0 == n',
+             '`ifnull` beside `==` needs parentheses: write `(g{ n } ifnull 0) == n` or `g{ n } ifnull (0 == n)`', 18, 20),
+            # A block ends the handler, but not what is before it.
+            ('let x = n == g{ n } ifnull { return }',
+             '`ifnull` beside `==` needs parentheses: write `n == (g{ n } ifnull { return })` or `(n == g{ n }) ifnull { return }`', 18, 25),
+            ('let x = n > 0 and t{ n } ifnull false',
+             '`ifnull` beside `and` needs parentheses: write `n > 0 and (t{ n } ifnull false)` or `(n > 0 and t{ n }) ifnull false`', 18, 30),
+            ('let x = t{ n } ifnull false or n > 0',
+             '`ifnull` beside `or` needs parentheses: write `(t{ n } ifnull false) or n > 0` or `t{ n } ifnull (false or n > 0)`', 18, 20),
+            ('let x = n + 1 ifoverflow 0 < 5',
+             '`ifoverflow` beside `<` needs parentheses: write `(n + 1 ifoverflow 0) < 5` or `n + 1 ifoverflow (0 < 5)`', 18, 19),
+            ('let x = n < n * 2 ifoverflow 0',
+             '`ifoverflow` beside `<` needs parentheses: write `n < (n * 2 ifoverflow 0)` or `(n < n * 2) ifoverflow 0`', 18, 23),
+            ('let x = r{ n } iferr 0 is 3',
+             '`iferr` beside `is` needs parentheses: write `(r{ n } iferr 0) is 3` or `r{ n } iferr (0 is 3)`', 18, 20),
+            # In a condition, and with several handlers: the last one's right side is in question.
+            ('if g{ n } ifnull r{ n } iferr 0 != 2 { }',
+             '`iferr` beside `!=` needs parentheses: write `(g{ n } ifnull r{ n } iferr 0) != 2` or `g{ n } ifnull r{ n } iferr (0 != 2)`', 18, 29),
+            # Over two lines, the message is on one.
+            ('let x = t{ n } ifnull false or\n        n > 0',
+             '`ifnull` beside `or` needs parentheses: write `(t{ n } ifnull false) or n > 0` or `t{ n } ifnull (false or n > 0)`', 18, 20),
+        ]:
+            with self.subTest(body=body):
+                e = self.assertErrorAt(body, msg, line, col)
+                self.assertEqual(e.text.count('error:'), 1, e.text)
+
+    def test_in_parentheses_or_before_a_block(self):
+        self.assertOutput(self.MAIN % r"""let x = (g{ n } ifnull 0) == n and (t{ n } ifnull false)
+    let y = g{ n } ifnull { 0 } == n                // one reading: a block ends the handler
+    let z = n == (g{ n = 0 } ifnull 5) or (t{ n = 0 } ifnull { false })
+    if (g{ n = 0 } ifnull 7) > 6 and r{ n = 0 } iferr { 2 } is 2 { io::println{ &io, s = "cond" } }
+    _ = @fmt(&io, "{} {} {}\n", x, y, z)""", 'cond\ntrue true false\n')
+
+    def test_after_an_operator(self):
+        # One error each: the handler's left side isn't checked as it stands.
+        for body, msg, line, col in [
+            ('let x = n + g{ n } ifnull 0',
+             '`ifnull` takes all of `n + g{ n }` before it, which is never optional: write `n + (g{ n } ifnull 0)`', 18, 24),
+            ('let x = n * 2 + -g{ n } ifnull 0',
+             '`ifnull` takes all of `n * 2 + -g{ n }` before it, which is never optional: write `n * 2 + -(g{ n } ifnull 0)`', 18, 29),
+            ('let x = not t{ n } ifnull false',
+             '`ifnull` takes all of `not t{ n }` before it, which is never optional: write `not (t{ n } ifnull false)`', 18, 24),
+            ('let x = ~g{ n } ifnull 0',
+             '`ifnull` takes all of `~g{ n }` before it, which is never optional: write `~(g{ n } ifnull 0)`', 18, 21),
+            ('let x = n + r{ n } iferr { return } ifnull 3',
+             '`iferr` takes all of `n + r{ n }` before it, which is never a `!T`: write `n + (r{ n } iferr { return } ifnull 3)`', 18, 24),
+            ('let x = n | 1 << r{ n } iferr 0',
+             '`iferr` takes all of `n | 1 << r{ n }` before it, which is never a `!T`: write `n | 1 << (r{ n } iferr 0)`', 18, 29),
+            # In parentheses it is taken as written, and the types say no.
+            ('let x = (n + 1) ifnull 0', '`ifnull` needs an optional value, got {integer}', 18, 16),
+        ]:
+            with self.subTest(body=body):
+                e = self.assertErrorAt(body, msg, line, col)
+                self.assertEqual(e.text.count('error:'), 1, e.text)
+        # `ifoverflow` covers the arithmetic before it, and `try` gives a handler its value.
+        self.assertOutput(self.DECLS + r"""
+fn run { n: i32 } -> !i32 { return n * 2 + (try f{ n } ifnull 100) ifoverflow -1 }
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {} {}\n", run{ n = 4 } iferr 0, run{ n = 0 } iferr 0, run{ n = 2000000000 } iferr 0)
+    _ = @fmt(&io, "{}\n", run{ n = -1 } is bad)
+}
+""", '12 100 -1\ntrue\n')
+
+    def test_in_the_order_of_the_type(self):
+        for body, msg, line, col in [
+            ('let x = f{ n } ifnull { return } iferr { return }',
+             '`ifnull` needs an optional value, got !?i32: handle its error first, as `f{ n } iferr { ... } ifnull { ... }`', 18, 14),
+            ('let x = h{ n } iferr { return } ifnull { return }',
+             '`iferr` needs a `!T` value, got ?!i32: handle its null first, as `h{ n } ifnull { ... } iferr { ... }`', 18, 14),
+            ('let x = r{ n } iferr { return } iferr { return }',
+             '`iferr` needs a `!T` value, got i32: this `iferr` has handled it, and the one after it has nothing left to handle', 18, 20),
+            ('let x = g{ n } ifnull { return } ifnull { return }',
+             '`ifnull` needs an optional value, got i32: this `ifnull` has handled it, and the one after it has nothing left to handle', 18, 20),
+            ('let x = f{ n } iferr null ifnull 9',
+             "`ifnull` needs an optional value, got null: a handler's expression takes the handlers after it, so put the handler "
+             'before in parentheses, as `(e iferr null) ifnull x`', 18, 26),
+        ]:
+            with self.subTest(body=body):
+                self.assertErrorAt(body, msg, line, col)
+
+
 class ListExample(Base):
     def test_runs(self):
         self.assertOutput(LIST_SRC, '10\n20\n30\n40\n100\n10\n')
@@ -1320,7 +1470,7 @@ fn main { mut io: Io } { let a: [N]u8 = [0; N] }
 """, 'an array length must be a compile-time integer constant')
 
     def test_covers_nothing(self):
-        for e in ['x ifoverflow 0', 'x * x < 9 ifoverflow false', 'f * f ifoverflow 0.0', 'x & x ifoverflow 0']:
+        for e in ['x ifoverflow 0', '(x * x < 9) ifoverflow false', 'f * f ifoverflow 0.0', 'x & x ifoverflow 0']:
             with self.subTest(e=e):
                 self.assertCompileError("""
 fn main { mut io: Io } {
@@ -7836,7 +7986,7 @@ fn main { mut io: Io } {
     let b: ?Ref = null
     io::println_bool{ &io, n = a is local and b is null }
     io::println_bool{ &io, n = not b is local }
-    io::println_bool{ &io, n = b ifnull a is local | enumval }
+    io::println_bool{ &io, n = (b ifnull a) is local | enumval }
 }
 """, 'true\ntrue\ntrue\n')
 
@@ -8196,17 +8346,17 @@ fn main { mut io: Io } {
 """, '3\n0\n')
 
     def test_precedence(self):
-        # Tighter than comparison and `and`, looser than arithmetic.
+        # Looser than arithmetic; beside a comparison or `and`, in parentheses (class Handlers).
         self.assertOutput("""
 fn main { mut io: Io } {
     let n: ?i32 = null
     let m: ?i32 = 2
     io::println_i64{ &io, n = n ifnull 1 + 1 }
     io::println_i64{ &io, n = m ifnull 1 + 1 }
-    io::println_bool{ &io, n = m ifnull 0 == 2 }
+    io::println_bool{ &io, n = (m ifnull 0) == 2 }
     let b: ?bool = null
-    io::println_bool{ &io, n = b ifnull true and false }
-    if n ifnull 0 < 1 { io::println{ &io, s = "cond" } }
+    io::println_bool{ &io, n = (b ifnull true) and false }
+    if (n ifnull 0) < 1 { io::println{ &io, s = "cond" } }
     if b ifnull { true } { io::println{ &io, s = "block" } }
 }
 """, '2\n2\ntrue\nfalse\ncond\nblock\n')

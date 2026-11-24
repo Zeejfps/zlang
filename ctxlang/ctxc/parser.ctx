@@ -33,12 +33,20 @@ namespace parser {
         bad:     bool,                 // an error, not yet recovered from
         errored: bool,                 // an error has been reported, when the
         err_at:  usize,                // parser was at this token
+        hand:    Handler,              // what null_expr last returned
     }
+
+    // Whether the expression null_expr returned is a handler's, `l ifnull r`, `l iferr r` or
+    // `l ifoverflow r`, as written, without parentheses round it (bare), for the operators that
+    // can't sit beside one (mixed). With several, l is the first's left side and r the last's
+    // right side: block if that is a block. first and last are their keywords.
+    struct Handler { bare: bool, block: bool, first: tok::Token, last: tok::Token, left_end: u32, right_start: u32 }
 
     fn parse { text: []u8, file: u32, tokens: []tok::Token, mut heap: arena::Arena, mut diags: diag::Diags } -> syntax::File {
         let mut p = Parser{
             text, file, toks = tokens, i = 0, heap = &heap, diags = &diags, ids = 0,
             in_cond = false, depth = 0, bad = false, errored = false, err_at = 0,
+            hand = Handler{ bare = false, block = false, first = tokens[0], last = tokens[0], left_end = 0, right_start = 0 },
         }
         let decls = decl_list{ &p, top = true }
         return syntax::File{ decls, ids = p.ids }
@@ -998,10 +1006,14 @@ namespace parser {
     fn or_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let mut e = and_expr{ &p }
+        let mut h = p.hand
         while next_is{ p, k = tok::Kind::kw_or } {
             let op = take{ &p }
             let b = and_expr{ &p }
+            mixed{ &p, a = e, ha = h, op, b_start = b.span.start, hb = p.hand }
             e = binary{ &p, start, op, a = e, b }
+            h.bare = false
+            p.hand.bare = false
         }
         return e
     }
@@ -1009,10 +1021,14 @@ namespace parser {
     fn and_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let mut e = cmp_expr{ &p }
+        let mut h = p.hand
         while next_is{ p, k = tok::Kind::kw_and } {
             let op = take{ &p }
             let b = cmp_expr{ &p }
+            mixed{ &p, a = e, ha = h, op, b_start = b.span.start, hb = p.hand }
             e = binary{ &p, start, op, a = e, b }
+            h.bare = false
+            p.hand.bare = false
         }
         return e
     }
@@ -1020,15 +1036,23 @@ namespace parser {
     fn cmp_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
         let mut e = null_expr{ &p }
+        let h = p.hand
         if next_is{ p, k = tok::Kind::kw_is } {
+            let op = p.toks[p.i]
+            let a = e
             e = is_expr{ &p, start, e }
+            let mut none = h
+            none.bare = false
+            mixed{ &p, a, ha = h, op, b_start = 0, hb = none }
         } else if is_cmp{ k = kind{ p, ahead = 0 } } {
             let op = take{ &p }
             let b = null_expr{ &p }
+            mixed{ &p, a = e, ha = h, op, b_start = b.span.start, hb = p.hand }
             e = binary{ &p, start, op, a = e, b }
         } else {
             return e
         }
+        p.hand.bare = false
         if is_cmp{ k = kind{ p, ahead = 0 } } or next_is{ p, k = tok::Kind::kw_is } { fail{ &p, msg = "comparisons do not chain" } }
         return e
     }
@@ -1056,26 +1080,54 @@ namespace parser {
                or k == tok::Kind::gt or k == tok::Kind::ge
     }
 
-    // `e ifnull x` and `e iferr x`, right to left: a match on e marked is_ifnull or is_iferr
-    // (syntax::Match). x is a block, or an expression of this level or tighter. After `iferr`,
-    // `err{ binders }` before a block binds the error, as after a let-else's `else`.
-    // `e ifoverflow x` is at the same level, an ExprKind::overflow.
+    // The handlers, `e ifnull x`, `e iferr x` and `e ifoverflow x` (§11, Expressions, rule 7).
+    // x is a block, or an expression of this level or tighter, which takes every handler after
+    // it: `a ifnull b ifnull 0` is `a ifnull (b ifnull 0)`. A block ends at its `}`, so a
+    // handler after one takes all that is before it: `f{} iferr { return } ifnull { return }`
+    // is `(f{} iferr { return }) ifnull { return }`.
     fn null_expr { mut p: Parser } -> syntax::Expr {
         let start = p.i
-        let e = bin_expr{ &p, level = 0 }
+        let left = bin_expr{ &p, level = 0 }
+        let mut e = left
+        let mut hand = Handler{ bare = false, block = false, first = p.toks[p.i], last = p.toks[p.i], left_end = left.span.end, right_start = 0 }
+        // `a + f{} ifnull 0` is an error (whole_left), and the handler's left side an error
+        // node in place of `a + f{}`, so that the checker has nothing to add.
+        let whole = (next_is{ p, k = tok::Kind::kw_ifnull } or next_is{ p, k = tok::Kind::kw_iferr }) and last_operand{ p, e = left } != left.span.start
+        if whole { e = syntax::Expr{ id = new_id{ &p }, span = left.span, at = left.span.start, k = syntax::ExprKind::error } }
+        while is_handler{ k = kind{ p, ahead = 0 } } {
+            if not hand.bare { hand.first = p.toks[p.i] }
+            e = handler{ &p, start, e }
+            hand.bare = true
+            hand.block = p.hand.block
+            hand.last = p.hand.last
+            hand.right_start = p.hand.right_start
+        }
+        if whole { whole_left{ &p, left, e, op = hand.first } }
+        p.hand = hand
+        return e
+    }
+
+    fn is_handler { k: tok::Kind } -> bool {
+        return k == tok::Kind::kw_ifnull or k == tok::Kind::kw_iferr or k == tok::Kind::kw_ifoverflow
+    }
+
+    // One handler, at its keyword, after its left side e, which began at token `start`.
+    // `e ifnull x` and `e iferr x` are a match on e marked is_ifnull or is_iferr (syntax::Match).
+    // After `iferr`, `err{ binders }` before a block binds the error, as after a let-else's
+    // `else`. `e ifoverflow x` is an ExprKind::overflow.
+    fn handler { mut p: Parser, start: usize, e: syntax::Expr } -> syntax::Expr {
         if next_is{ p, k = tok::Kind::kw_ifoverflow } {
-            // `e ifoverflow x`: x as after `ifnull`
             let id = new_id{ &p }
             let op = take{ &p }
-            let els = if next_is{ p, k = tok::Kind::lbrace } { block{ &p } } else { null_value{ &p } }
+            let els = handler_value{ &p, op, at = p.toks[p.i].span.start }
             let k = syntax::ExprKind::overflow{ e = box{ &p, value = e }, els }
             return syntax::Expr{ id, span = span_from{ p, start }, at = op.span.start, k }
         }
         let is_null = next_is{ p, k = tok::Kind::kw_ifnull }
-        if not is_null and not next_is{ p, k = tok::Kind::kw_iferr } { return e }
         let id = new_id{ &p }
         let op_i = p.i
         let op = take{ &p }
+        let right_at = p.toks[p.i].span.start
         let here = source::Span{ file = p.file, start = op.span.start, end = op.span.start }
         let no_quals = slice::empty(syntax::Name){}
         let mut binders = list::new(syntax::Binder){ realloc = arena::alloc, heap = p.heap }
@@ -1099,7 +1151,7 @@ namespace parser {
         } else {
             try! list::push{ list = &nulls, item = syntax::Pattern{ span = here, quals = no_quals, variant = made_name{ &p, at = here, text = "err" }, binders = slice::empty(syntax::Binder){}, value = null, upto = null } }
         }
-        let null_body = if next_is{ p, k = tok::Kind::lbrace } { block{ &p } } else { null_value{ &p } }
+        let null_body = handler_value{ &p, op, at = right_at }
         try! list::push{ list = &arms, item = syntax::Arm{ span = span_from{ p, start = op_i }, pats = list::items{ list = nulls }, body = null_body } }
         let x = syntax::Match{ scrut = box{ &p, value = e }, arms = list::items{ list = arms }, is_ifnull = is_null, is_iferr = not is_null, is_iflet = false }
         return syntax::Expr{ id, span = span_from{ p, start }, at = op.span.start, k = syntax::ExprKind::matchx{ x } }
@@ -1113,6 +1165,109 @@ namespace parser {
         let mut q = p
         q.i = p.i + 1
         return braces_then_brace{ p = q }
+    }
+
+    // A handler's right side, which begins at offset `at`, after its keyword op: a block, or an
+    // expression with every handler after it. It leaves the handler in p.hand, but for its
+    // left side.
+    fn handler_value { mut p: Parser, op: tok::Token, at: u32 } -> syntax::Block {
+        if next_is{ p, k = tok::Kind::lbrace } {
+            let b = block{ &p }
+            p.hand = Handler{ bare = true, block = true, first = op, last = op, left_end = 0, right_start = at }
+            return b
+        }
+        let b = null_value{ &p }
+        if not p.hand.bare { p.hand = Handler{ bare = true, block = false, first = op, last = op, left_end = 0, right_start = at } }
+        return b
+    }
+
+    // `ifnull` or `iferr` (op) after an operator's expression, `a + f{} ifnull 0`: it takes all
+    // of `a + f{}`, which is never an optional or a `!T`, so the error says what was meant,
+    // with the handler on the last operand. left is the handler's left side as written, and e
+    // the whole expression. Parentheses round left say it was meant, and the checker has it.
+    fn whole_left { mut p: Parser, left: syntax::Expr, e: syntax::Expr, op: tok::Token } {
+        if p.bad { return }
+        let leaf = last_operand{ p, e = left }
+        let mut b = message{ p }
+        try! @fmt(&b, "`{}` takes all of `", utf8::String{ bytes = text_of{ p, t = op } })
+        put_source{ p, &b, lo = left.span.start, hi = left.span.end }
+        try! @fmt(&b, "` before it, which is never {}: write `", if op.kind == tok::Kind::kw_ifnull { "optional" } else { "a `!T`" })
+        put_source{ p, &b, lo = left.span.start, hi = leaf }
+        try! @fmt(&b, "(")
+        put_source{ p, &b, lo = leaf, hi = e.span.end }
+        try! @fmt(&b, ")`")
+        diag::error{ diags = p.diags, span = op.span, msg = utf8::view{ b } }
+    }
+
+    // Where the last operand of an operator's expression begins: `f{}` in `a + -f{}`. e's own
+    // start if it is no operator's, or is in parentheses, which only its span shows.
+    fn last_operand { p: Parser, e: syntax::Expr } -> u32 {
+        match e.k {
+            binary{ a, b } => {
+                if a.span.start == e.span.start { return last_operand{ p, e = b.* } }
+            }
+            neg{ e = x } | lnot{ e = x } | bnot{ e = x } => {
+                if p.text[e.span.start] != '(' { return last_operand{ p, e = x.* } }
+            }
+            else => {}
+        }
+        return e.span.start
+    }
+
+    // A handler beside a comparison, `is`, `and` or `or` (op), without parentheses: an error
+    // that shows both ways to write them (§11, Expressions, rule 7). a is the left operand and
+    // ha its handler, if it is one; hb is the right operand's, which began at offset b_start
+    // and has just ended. A handler on the left whose right side is a block reads one way only.
+    fn mixed { mut p: Parser, a: syntax::Expr, ha: Handler, op: tok::Token, b_start: u32, hb: Handler } {
+        if p.bad { return }
+        let lo = a.span.start
+        let hi = prev_end{ p }
+        let mut b = message{ p }
+        if ha.bare and not ha.block {
+            // `l h r op b`: `(l h r) op b` or `l h (r op b)`
+            try! @fmt(&b, "`{}` beside `{}` needs parentheses: write `(", utf8::String{ bytes = text_of{ p, t = ha.last } }, utf8::String{ bytes = text_of{ p, t = op } })
+            put_source{ p, &b, lo, hi = a.span.end }
+            try! @fmt(&b, ")")
+            put_source{ p, &b, lo = a.span.end, hi }
+            try! @fmt(&b, "` or `")
+            put_source{ p, &b, lo, hi = ha.right_start }
+            try! @fmt(&b, "(")
+            put_source{ p, &b, lo = ha.right_start, hi }
+            try! @fmt(&b, ")`")
+            diag::error{ diags = p.diags, span = ha.last.span, msg = utf8::view{ b } }
+        } else if hb.bare {
+            // `a op l h r`: `a op (l h r)` or `(a op l) h r`
+            try! @fmt(&b, "`{}` beside `{}` needs parentheses: write `", utf8::String{ bytes = text_of{ p, t = hb.first } }, utf8::String{ bytes = text_of{ p, t = op } })
+            put_source{ p, &b, lo, hi = b_start }
+            try! @fmt(&b, "(")
+            put_source{ p, &b, lo = b_start, hi }
+            try! @fmt(&b, ")` or `(")
+            put_source{ p, &b, lo, hi = hb.left_end }
+            try! @fmt(&b, ")")
+            put_source{ p, &b, lo = hb.left_end, hi }
+            try! @fmt(&b, "`")
+            diag::error{ diags = p.diags, span = hb.first.span, msg = utf8::view{ b } }
+        }
+    }
+
+    // The source from lo to hi, for a message, each run of spaces and line ends as one space.
+    fn put_source { p: Parser, mut b: utf8::Builder(arena::Arena), lo: u32, hi: u32 } {
+        let mut i: usize = lo
+        while i < hi {
+            let mut k = i
+            if is_space{ c = p.text[i] } {
+                while k < hi and is_space{ c = p.text[k] } { k = k + 1 }
+                try! @fmt(&b, " ")
+            } else {
+                while k < hi and not is_space{ c = p.text[k] } { k = k + 1 }
+                try! @fmt(&b, "{}", utf8::String{ bytes = p.text[i..k] })
+            }
+            i = k
+        }
+    }
+
+    fn is_space { c: u8 } -> bool {
+        return c == ' ' or c == '\t' or c == '\r' or c == '\n'
     }
 
     // The right side of `ifnull`, if it isn't a block: a block of it alone.

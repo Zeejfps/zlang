@@ -5543,6 +5543,32 @@ namespace check {
         return 0
     }
 
+    // What to write where `ifnull` (opt), or `iferr`, is given a scrut of type t it can't
+    // take, for the two cases that have one answer (§11, Expressions, rule 7): a `!?T` or a
+    // `?!T` handled inside out, and a handler after one of its own kind, which left it nothing
+    // to handle; and `null` alone, the right side of the handler before. Empty for any other.
+    fn handler_fix { mut c: Checker, scrut: syntax::Expr, t: Id, opt: bool } -> utf8::String {
+        let mut inner = types::ERROR
+        match types::get{ s = c.ty, id = t } {
+            res{ ok } => { if opt { inner = types::prune{ s = c.ty, t = ok } } }
+            opt{ elem } => { if not opt { inner = types::prune{ s = c.ty, t = elem } } }
+            else => {}
+        }
+        let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
+        let text = str{ s = source_text{ c, span = scrut.span } }
+        if opt and inner != types::ERROR and is_opt{ c, t = inner } {
+            try! @fmt(&b, ": handle its error first, as `{} iferr {{ ... }} ifnull {{ ... }}`", text)
+        } else if not opt and inner != types::ERROR and is_res{ c, t = inner } {
+            try! @fmt(&b, ": handle its null first, as `{} ifnull {{ ... }} iferr {{ ... }}`", text)
+        } else if scrut.k is nil {
+            // `e iferr null ifnull x`: the `null` is this handler's left side
+            try! @fmt(&b, ": a handler's expression takes the handlers after it, so put the handler before in parentheses, as `(e iferr null) ifnull x`")
+        } else if scrut.k is matchx{ x } and ((opt and x.is_ifnull) or (not opt and x.is_iferr)) {
+            try! @fmt(&b, ": this `{}` has handled it, and the one after it has nothing left to handle", str{ s = if opt { "ifnull" } else { "iferr" } })
+        }
+        return utf8::view{ b }
+    }
+
     // A `match` (§8, Match), through a pointer if the scrutinee is one. As an expression (value),
     // its type as for check_if.
     // With drop, x is a discard's `ifnull` or `iferr`, whose fallback may give no value.
@@ -5562,7 +5588,7 @@ namespace check {
             narrowed_test{ &c, e = scrut, t = st, test = if x.is_ifnull { "ifnull" } else { "if let" } }
             ok = false
         } else if ok and x.is_ifnull and not is_opt{ c, t = st } {
-            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`ifnull` needs an optional value, got {}", tstr{ c, t = st }) }
+            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`ifnull` needs an optional value, got {}{}", tstr{ c, t = st }, handler_fix{ &c, scrut, t = st, opt = true }) }
             ok = false
         } else if ok and x.is_iflet and not is_opt{ c, t = ut } {
             errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`if let` needs an optional value, got {}", tstr{ c, t = st }) }
@@ -5575,7 +5601,7 @@ namespace check {
             errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`if let &{}` binds a place inside the optional, so it needs a pointer to one: write `if let &{} = &{}`", str{ s = name.text }, str{ s = name.text }, text) }
             ok = false
         } else if ok and x.is_iferr and not is_res{ c, t = st } {
-            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`iferr` needs a `!T` value, got {}", tstr{ c, t = st }) }
+            errorf{ &c, at = expr_at{ e = scrut }, msg = @fmt("`iferr` needs a `!T` value, got {}{}", tstr{ c, t = st }, handler_fix{ &c, scrut, t = st, opt = false }) }
             ok = false
         } else if ok and (is_res{ c, t = ut } or is_errs{ c, t = ut }) {
             if not through { return check_fail_match{ &c, x, at, exp, value, may_leave, t = ut, drop } }
