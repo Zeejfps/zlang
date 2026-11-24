@@ -25,7 +25,7 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
   sections, and list the common mistakes with their fixes.
   - *Done when:* it lives in ctxlang, kotor's AGENTS.md points to it, and it's current with this checklist's changes.
 
-- [ ] **1.2 Every code block in the spec and the reference compiles.**
+- [x] **1.2 Every code block in the spec and the reference compiles.**
   The spec has drifted: hex literals work but aren't in §11 (F#16), and §14's folded consts
   aren't what the folder takes (F#37). A test extracts each block (marked as a whole program,
   a fragment, or an expected error) and checks it with ctxc.

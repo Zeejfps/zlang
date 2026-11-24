@@ -11,7 +11,7 @@ Examples: [examples/list.ctx](examples/list.ctx) (lists, allocators, bound funct
 
 ## 2. Functions and contexts
 
-```
+```text
 fn name(Generics) { field: T, mut field: T, ... } -> R { body }
 ```
 
@@ -25,7 +25,7 @@ fn name(Generics) { field: T, mut field: T, ... } -> R { body }
 
 ## 3. Calls
 
-```
+```text
 f{ a = expr, b = &place, c, &d, &g.e, g.h, .. }
 ```
 
@@ -45,12 +45,31 @@ f{ a = expr, b = &place, c, &d, &g.e, g.h, .. }
     - Places are compared field by field, as §3.1 compares them: changing `s.n` doesn't conflict with reading `s.m`. Places through a pointer or a slice aren't checked (§3.1, rule 6).
     - A `&p` the call itself takes for a `mut` field is neither a read nor a change: the callee gets the place, as it is when the callee runs. Nor is a bound function the call is given: it runs only when it is called.
 
-```
-show{ n = s.n, z = bump{ &s } }     // error: `n` reads `s.n`, which `z` changes, in one call
+<!-- context:
+struct S { n: i32, m: i32 }
+struct Vec3 { x: f64, y: f64, z: f64 }
+fn bump { mut s: S } -> i32 {
+    s.n = s.n + 1
+    return s.n
+}
+fn show { n: i32, z: i32 } { _ = n + z }
+fn rand { mut rng: u64 } -> f64 {
+    rng = rng + 1
+    return 0.5
+}
+fn main {} {
+    let mut s = S{ n = 0, m = 0 }
+    let mut rng: u64 = 1
+    let mut v = Vec3{ x = 0.0, y = 0.0, z = 0.0 }
+    ...
+}
+-->
+```ctx
+show{ n = s.n, z = bump{ &s } }     // error: `n` reads `s.n`, which `z` changes, in one call: ...
 let z = bump{ &s }                  // the change first,
 show{ n = s.n, z }                  // then the read: n sees it
 show{ n = s.m, z = bump{ &s } }     // fine: bump changes only s.n
-v = Vec3{ x = rand{ &rng }, y = rand{ &rng }, z = 0.0 }   // error: both change `rng`
+v = Vec3{ x = rand{ &rng }, y = rand{ &rng }, z = 0.0 }   // error: `x` and `y` both change `rng` in one literal: ...
 ```
 
 ### 3.1 Exclusivity
@@ -75,25 +94,34 @@ v = Vec3{ x = rand{ &rng }, y = rand{ &rng }, z = 0.0 }   // error: both change 
    - Not allowed: a bound function beside a `&p` of a place it holds, which the callee uses too, as in `tick{ &world, engine }` with `engine` bound to `&world`. The bound function may run whenever the callee calls it, whatever the callee holds of `p` by then, such as a slice of a list that the bound function goes on to grow, and pointers aren't followed (rule 6). Bind where the function is called instead, in a call that isn't given the place: `run{ &vm, engine = call{ &world, _ } }`.
    - Not compared: memory reached through a pointer or a slice that the places hold (rule 6; §2, rule 3). Two references whose places hold the same slice both reach its elements, as two copies of a slice always do; what is compared is the slice itself, so a function that grows a list through one field and reads its items through the other is an error.
 
-```
+<!-- context:
+struct List { len: usize }
+fn push { mut list: List } { list.len = list.len + 1 }
+fn main {} {
+    let mut e = E{ n = 0, list = List{ len = 0 } }
+    grow{ &e }
+}
+-->
+```ctx
 struct E { n: i32, list: List }
 fn add { mut e: E, mut xs: List } {
     e.n = e.n + 1                   // through e: e.n
     push{ list = &xs }              // through xs: e.list
 }
-add{ &e, xs = &e.list }             // fine: add uses e.list through xs only
-
 fn reset { mut e: E, mut xs: List } {
     e.list.len = 0                  // through e: e.list.len
     push{ list = &xs }
 }
-reset{ &e, xs = &e.list }           // error: reset changes `e.list.len` through its field `e`,
-                                    // and reads it through `xs`, in push
+
+fn grow { mut e: E } {
+    add{ &e, xs = &e.list }         // fine: add uses e.list through xs only
+    reset{ &e, xs = &e.list }       // error: two mut references to `e` in one call: `reset` changes `e.list.len` through its field `e` ...
+}
 ```
 
 ## 4. Binding
 
-```
+```text
 f{ a = expr, _ }
 ```
 
@@ -104,7 +132,7 @@ f{ a = expr, _ }
 
 ## 5. Function types
 
-```
+```text
 fn{ field: T, mut field: T, ... } -> R      // unbound: a plain function
 &fn{ field: T, mut field: T, ... } -> R     // bound: may hold addresses of places (§6)
 ```
@@ -121,28 +149,42 @@ A function `g` of type `fn{Cg} -> Rg` (or `&fn`) is accepted where `fn{Cs} -> Rs
 
 `Cs` may have fields that `Cg` lacks. Those fields are dropped when the value is called. A field read-only in `Cg` may be `mut` in `Cs`: a call through the converted value passes a `*mut T` for it (§2, rule 6), and the value reads the field through that pointer when it is called and passes `g` the value it read, as any read-only argument is passed (§14, rule 6): `g` sees that value, whatever the call's other arguments point to. A result of the second kind in rule 1 is **widened**: when `g` fails, the value's error is the same error, with its payload, in the numbering of `Rs`'s set: any error's, or the declared set's (§8, Errors, rule 13). All of these happen in one step: calling the converted value calls `g` once with the fields it takes, read through their pointers where they are `mut` in `Cs`, and widens what it returns. It is implicit wherever widening is (§11, Widening, rule 1), the `T` of an implicit `T` to `?T` conversion included.
 
-```
-fn number { s: []u8 } -> !u64 { ... }            // fails with number's set, inferred
-fn word { s: []u8 } -> !u64 { ... }
-
-// Before: a function with an inferred set wasn't a value, so a table of parsers was a chain
-// of calls.
-fn parse_with { kind: u8, s: []u8 } -> !u64 {
-    if kind == 0 { return number{ s } }
-    return word{ s }
+<!-- context:
+namespace parse {
+    error empty
+    error bad_digit{ at: usize }
 }
+fn main {} {
+    _ = run{ s = "12" }
+}
+...
+-->
+```ctx
+fn number { s: []u8 } -> !u64 {                  // fails with number's set, inferred
+    if s.len == 0 { return parse::empty }
+    let mut n: u64 = 0
+    for c at i in s {
+        if c < '0' or c > '9' { return parse::bad_digit{ at = i } }
+        n = n * 10 + @as(u64, c - '0')
+    }
+    return n
+}
+fn word { s: []u8 } -> !u64 { return @as(u64, s.len) }
 
-// Now: each converts to the table's type, whose `!T` may fail with any error.
+// Each converts to the table's type, whose `!T` may fail with any error.
 fn parse_with { table: []fn{ s: []u8 } -> !u64, kind: u8, s: []u8 } -> !u64 {
     return table[kind]{ s }
 }
-let parsers: [2]fn{ s: []u8 } -> !u64 = [number, word]
-match parse_with{ table = parsers[..], kind = 0, s } {
-    ok{ value } => { ... }
-    err{ error } => {
-        match error {
-            parse::bad_digit{ at } => { ... }     // number's error, with its payload
-            else => { ... }                       // any error: `else` is needed (§8, Errors, rule 10)
+
+fn run { s: []u8 } -> u64 {
+    let parsers: [2]fn{ s: []u8 } -> !u64 = [number, word]
+    match parse_with{ table = parsers[..], kind = 0, s } {
+        ok{ value } => { return value }
+        err{ error } => {
+            match error {
+                parse::bad_digit{ at } => { return at }     // number's error, with its payload
+                else => { return 0 }                       // any error: `else` is needed (§8, Errors, rule 10)
+            }
         }
     }
 }
@@ -150,11 +192,16 @@ match parse_with{ table = parsers[..], kind = 0, s } {
 
 A function that only reads a field is accepted where the field is `mut`:
 
-```
+<!-- context:
+fn main {} {}
+-->
+```ctx
 fn show { mut io: Io, a: i64 } { _ = @fmt(&io, "{} ", a) }
 fn each { mut a: i64, f: &fn{ mut a: i64 } } { f{ &a } }
 
-each{ a = &x, f = show{ &io, _ } }      // show only reads `a`: it gets the i64 `&x` points to
+fn show_x { mut io: Io, mut x: i64 } {
+    each{ a = &x, f = show{ &io, _ } }      // show only reads `a`: it gets the i64 `&x` points to
+}
 ```
 
 ## 6. Bound functions
@@ -166,7 +213,7 @@ each{ a = &x, f = show{ &io, _ } }      // show only reads `a`: it gets the i64 
 
 ## 7. Structs
 
-```
+```text
 struct Name(Generics) { field: T, field: T = e, ... }
 Name{ field = expr, field, ... }
 Name{ field = expr, .. }
@@ -180,7 +227,7 @@ Name{ field = expr, .. }
 
 ## 8. Unions
 
-```
+```text
 union Name(Generics) {
     variant{ field: T, ... },
     variant,
@@ -193,7 +240,7 @@ union Name(Generics) {
 
 ### Match
 
-```
+```text
 match e {
     variant{ f, g }           => { ... }
     variant                   => { ... }
@@ -217,16 +264,26 @@ let name = match k { a => "A", b => "B" }       // arms without braces
 
 ### Match on integers
 
-```
-match op {
-    0 => { ... }
-    OP_ADD | OP_SUB => { ... }          // folded consts (§14)
-    gl::TRIANGLES => { ... }
-    'a'..='z' | '_' => { ... }          // a range includes both ends
-    -8..=-1 => { ... }
-    else => { ... }
+<!-- context:
+const OP_ADD: u8 = 1
+const OP_SUB: u8 = 2
+namespace gl { const TRIANGLES: u32 = 4 }
+fn main {} {
+    let op: i32 = 0
+    let c: u8 = '7'
+    ...
 }
-if c is '0'..='9' { ... }
+-->
+```ctx
+match op {
+    0 => {}
+    OP_ADD | OP_SUB => {}               // folded consts (§14)
+    gl::TRIANGLES => {}
+    'a'..='z' | '_' => {}               // a range includes both ends
+    -8..=-1 => {}
+    else => {}
+}
+if c is '0'..='9' {}
 ```
 
 1. A scrutinee of an integer type (`i8`..`i64`, `u8`..`u64`, `usize`) is matched by value. Its patterns are integer literals (a character literal is one), with a `-` or not; names of consts, with their path, whose values are folded (§14, rule 1); and ranges `lo..=hi` of these, which include `lo` and `hi`. `lo..hi` is a syntax error.
@@ -257,12 +314,26 @@ if c is '0'..='9' { ... }
 6. Representation: `?*T` and `?*mut T` are a pointer, the size of one, with `null` the address 0. A pointer is never null (§12), so no tag is needed, and the layout is C's nullable pointer, which is what lets one cross into C (§18). So are `?extern fn{C} -> R` (§12) and `?c::String` (§18), whose pointer is never null either. Every other `?T`, `??*T` included, holds a tag and its payload.
 7. `e ifnull x`, for `e` of type `?T`, is `e`'s value if it has one, and otherwise `x`, which is evaluated only then. `x` is an expression, or a block that gives a value or leaves, as a branch of an `if` expression does (§11, If and match expressions): `f{} ifnull { return 1 }`. It is the expression `match e { some{ value } => { value } null => { x } }`, and its type is that match's: `T` when `x` converts to `T`, and `?T` when `x` is a `?T` (or `null`). An `x` that is an expression takes every handler after it, so `a ifnull b ifnull 0` tries `a`, then `b` (§11, Expressions, rule 7). It is an error if `e` isn't an optional; a narrowed `x` (rule 3) isn't one.
 
-```
+<!-- context:
+struct Obj { name: ?utf8::String }
+fn hex_digit { c: u8 } -> ?u32 {
+    if c >= '0' and c <= '9' { return @as(u32, c - '0') }
+    return null
+}
+fn print { s: utf8::String } {}
+fn value { c: u8, o: ?Obj, s: utf8::String, m: map::Map(u32, u32, arena::Arena), key: u32 } -> ?u32 {
+    let mut v: u32 = 0
+    ...
+    return v
+}
+fn main {} {}
+-->
+```ctx
 let d = hex_digit{ c }            // ?u32
 if d == null { return null }
 v = v * 16 + d                    // d: u32
 
-if o == null or o.name == null { return }
+if o == null or o.name == null { return null }
 print{ s = o.name }               // o: Obj, o.name: utf8::String
 
 let n = utf8::parse_i64{ s } ifnull 0              // i64
@@ -271,15 +342,27 @@ let e = map::get{ m, key } ifnull { return null }   // leaves when the key is mi
 
 ### Is
 
-```
+<!-- context:
+union Ref { local{ var: u32 }, constant, variant, enumval }
+union Cut { some{ to: usize }, slice{ to: usize }, none }
+enum Kind: u8 { field, method }
+fn use { var: u32 } {}
+fn take { r: Ref } {}
+fn test { mut fs: Fs, path: []u8, mode: fs::Mode, r: ?Ref, c: Cut, m: map::Map(u32, Kind, arena::Arena), key: u32 } {
+    ...
+}
+fn main {} {}
+-->
+```ctx
 if r is local{ var } { use{ var } }             // r: ?Ref, for a union Ref
-if fs::remove{ &fs, path } is ok { ... }        // a !T: ok, err or errors
-if fs::open{ &fs, path, mode } is fs::not_found | fs::is_directory { ... }
-if not (r is local{ var }) { return }           // var is bound from here to the end of the block
-if r is constant | variant | enumval { ... }
-if c is some{ to } | slice{ to } { use{ to } }  // both bind `to`, of one type
+if fs::remove{ &fs, path } is ok {}             // a !T: ok, err or errors
+if fs::open{ &fs, path, mode } is fs::not_found | fs::is_directory {}
+if r is constant | variant | enumval {}
+if c is some{ to } | slice{ to } { _ = to }     // both bind `to`, of one type
 if r is local { take{ r } }                     // r: Ref here
 let found = map::get{ m, key } is field         // ?Kind for an enum Kind: null doesn't match
+if not (r is local{ var }) { return }           // var is bound from here to the end of the block
+use{ var }
 ```
 
 1. `e is P` is a `bool`: true when `e` holds `P`'s variant. `P` is a pattern as in a match arm (§8, Match), its variant named alone, or several separated by `|`: then it is true for any of them, and each must bind the same names, each with the same type, as an arm's patterns do (§8, Match, rule 3). A binding is read-only: `&f` is an error.
@@ -294,7 +377,13 @@ let found = map::get{ m, key } is field         // ?Kind for an enum Kind: null 
 
 ### Errors
 
-```
+<!-- context:
+fn report { e: error } {}
+fn main {} {
+    _ = sum{ a = "1", b = "2" }
+}
+-->
+```ctx
 namespace parse {
     error empty
     error bad_digit{ at: usize }                 // an error with a payload
@@ -302,7 +391,11 @@ namespace parse {
 
 fn number { s: []u8 } -> !u64 {                  // a u64, or one of the errors its body returns
     if s.len == 0 { return parse::empty }
-    ...
+    let mut n: u64 = 0
+    for c at i in s {
+        if c < '0' or c > '9' { return parse::bad_digit{ at = i } }
+        n = n * 10 + @as(u64, c - '0')
+    }
     return n
 }
 
@@ -312,13 +405,15 @@ fn pair { a: []u8, b: []u8 } -> !u64 {
     return x + y
 }
 
-match pair{ a, b } {
-    ok{ value }  => { ... }
-    err{ error } => {
-        report{ error }                          // code every error shares, once
-        match error {                            // then by kind, exhaustive over pair's set
-            parse::empty        => { ... }
-            parse::bad_digit{ at } => { ... }
+fn sum { a: []u8, b: []u8 } -> usize {
+    match pair{ a, b } {
+        ok{ value }  => { return @as(usize, value) }
+        err{ error } => {
+            report{ e = error }                  // code every error shares, once
+            match error {                        // then by kind, exhaustive over pair's set
+                parse::empty        => { return 0 }
+                parse::bad_digit{ at } => { return at }
+            }
         }
     }
 }
@@ -351,7 +446,7 @@ match pair{ a, b } {
 
 ## 10. Namespaces
 
-```
+```text
 namespace name { declarations }
 name::item
 ```
@@ -361,16 +456,28 @@ name::item
 3. `::` resolves namespace members and union and enum variants. `.` resolves struct fields.
 4. Two `namespace` declarations of one name in one scope, in one file or in several, declare one namespace: each adds its declarations to it, and inside either, the other's items are referenced unqualified. A name still can't be declared twice in it, from one file or two. A namespace nested in one of them joins the one of its name nested in the other, as `gff::inner` does below. std's namespaces and the program's are in different scopes (§17), so a program's `list` never joins std's: it shadows it.
 
-```
+<!-- context:
+namespace gff {
+    struct Gff { size: usize }
+    error truncated
+}
+fn main {} {}
+-->
+```ctx
 // gff/read.ctx
 namespace gff {
-    fn read { bytes: []u8 } -> !Gff { ... check{ bytes } ... }
+    fn read { bytes: []u8 } -> !Gff {
+        try check{ bytes }
+        return Gff{ size = bytes.len }
+    }
     namespace inner { fn base {} -> i64 { return 1 } }
 }
 
 // gff/write.ctx
 namespace gff {
-    fn check { bytes: []u8 } -> ! { ... }      // gff::check, which read calls unqualified
+    fn check { bytes: []u8 } -> ! {             // gff::check, which read calls unqualified
+        if bytes.len < 4 { return truncated }
+    }
     namespace inner { fn more {} -> i64 { return base{} + 1 } }
 }
 ```
@@ -391,7 +498,7 @@ namespace gff {
 
 ## 11. Statements and control flow
 
-```
+```text
 let x = e      let mut x = e      let x: T = e      let x: T      let mut x: T
 let variant{ f, g = y } = e else { }      let ok{ value } = e else err{ error } { }
 x = e
@@ -414,9 +521,19 @@ f{ ... }
 2. `{` after `else` or `=>` begins a block. In a condition or scrutinee, outside any brackets, a `{` after an expression begins a call or literal only if the expression goes on after its matching `}`: with a token on the same line that isn't `else`, `;`, `,`, `}`, `)` or `]`, or on the next line as rule 3 has it. Otherwise it begins the block: in `if ok{ r } { }` the first `{` is a call and the second the block, and in `if done { }` the `{` is the block. Everywhere else, `{` after an expression begins a call or literal. In a let-else, `{` after the `else`'s variant holds its pattern if another `{` follows its `}`, and is the block otherwise.
 3. Statements are separated by newlines or `;`. An expression goes on to the next line where that line starts with a token that continues an expression and begins none: a binary operator other than `-` and `&`, `and`, `or`, `is`, a handler (`ifnull`, `iferr`, `ifoverflow`), or the `.` of a field or a `.*`. That is so in a condition, a `let`'s or an assignment's value, an argument and a `return`'s value alike, and after a call's `}` as after anything else:
 
-   ```
+   <!-- context:
+   struct World { open: bool }
+   namespace door { fn open { w: World, d: u32 } -> bool { return w.open and d > 0 } }
+   namespace inventory { fn has { w: World, key: u32 } -> bool { return key > 1 } }
+   fn price { item: u32 } -> i64 { return 3 }
+   fn decide { w: World, d: u32, key: ?u32, item: u32, count: i64, a: []u8, b: []u8 } -> bool {
+       ...
+   }
+   fn main {} {}
+   -->
+   ```ctx
    if door::open{ w, d }
-      or key != null and inventory::has{ w, key } { ... }
+      or key != null and inventory::has{ w, key } { return true }
    let total = price{ item }
        * count
    return a.len == b.len
@@ -432,7 +549,16 @@ f{ ... }
 9. `while true` without a `break` that leaves it ends a path, like `return`.
 10. Labels: `name:` before a `while` or a `for`, on the same line or the line above, labels it. Only a loop can be labeled. `break name` and `continue name` act on the enclosing loop labeled `name` instead of the innermost one, leaving any loops in between. It is an error if no enclosing loop has that label, or if a loop is labeled with a name an enclosing loop already uses. A jump in a `defer` body sees only the loops inside that body (§11, Defer). Deferred bodies run for every block the jump leaves, innermost first.
 
-```
+<!-- context:
+fn find { grid: [3][3]i32, want: i32 } -> usize {
+    let n: usize = 3
+    let mut r: usize = 0
+    ...
+    return r
+}
+fn main {} {}
+-->
+```ctx
 rows:
 while r < n {
     let mut c = 0
@@ -446,7 +572,16 @@ while r < n {
 
 ### For
 
-```
+<!-- context:
+fn find { xs: []mut i32, grid: [3][3]i32, want: i32 } -> usize {
+    let n: usize = 3
+    let mut total: i32 = 0
+    ...
+    return 0
+}
+fn main {} {}
+-->
+```ctx
 for i in 0..n { total = total + xs[i] }             // i has n's type: 0, 1, ... n - 1
 for x in xs { total = total + x }                   // each element, copied
 for &x in xs { x = x * 2 }                          // each element's place: xs is a []mut T or a mutable array
@@ -468,7 +603,25 @@ for r in 0..n {
 
 ### Let-else
 
-```
+<!-- context:
+error odd
+union Ref { decl{ i: u32 }, other }
+const NONE: u32 = 0
+fn half { n: u32 } -> !u32 {
+    if n % 2 == 1 { return odd }
+    return n / 2
+}
+fn peek { p: []u8 } -> ?u8 {
+    if p.len == 0 { return null }
+    return p[0]
+}
+fn first { n: u32, p: []u8, cached: ?u32, found: ?Ref } -> !?u32 {
+    ...
+    return h + @as(u32, c) + i
+}
+fn main {} {}
+-->
+```ctx
 let ok{ value = h } = half{ n } else err{ error } { return error }
 let some{ value = c } = peek{ p } else { return null }
 let null = cached else { @panic() }
@@ -483,7 +636,18 @@ let decl{ i } = found else { return NONE }        // found: ?Ref; null takes the
 
 ### If let
 
-```
+<!-- context:
+struct Tlk { n: i32 }
+struct W { tlk: ?Tlk }
+fn show { n: i32 } {}
+fn bump { mut t: Tlk } { t.n = t.n + 1 }
+fn talk { mut w: W, m: map::Map(u32, i32, arena::Arena), key: u32 } -> i32 {
+    ...
+    return n
+}
+fn main {} {}
+-->
+```ctx
 if let t = w.tlk { show{ n = t.n } } else { show{ n = 0 } }
 let n = if let v = map::get{ m, key } { v } else { 0 }
 if let &t = &w.tlk { bump{ &t } }               // t is the place inside w.tlk
@@ -498,7 +662,14 @@ if let &t = &w.tlk { bump{ &t } }               // t is the place inside w.tlk
 
 ### Defer
 
-```
+<!-- context:
+fn fill { mut heap: arena::Arena } -> ! {
+    ...
+    try list::push{ list = &xs, item = 1 }
+}
+fn main {} {}
+-->
+```ctx
 let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
 defer list::free{ list = &xs }
 ```
@@ -513,7 +684,19 @@ defer list::free{ list = &xs }
 
 ### If and match expressions
 
-```
+<!-- context:
+error bad
+fn parse { s: []u8 } -> !i32 {
+    if s.len == 0 { return bad }
+    return 1
+}
+fn signed { n: i32, s: []u8 } -> !i32 {
+    ...
+    return v * sign
+}
+fn main {} {}
+-->
+```ctx
 let sign = if n < 0 { -1 } else if n == 0 { 0 } else { 1 }
 let v = match parse{ s } {
     ok{ value }  => { value }
@@ -576,7 +759,15 @@ Precedence, tightest first:
 
 `e ifoverflow x` is `e`'s value, unless an operation `e` covers overflows. Then `e` stops there, and the value is `x`'s. `x` is an expression, or a block that gives a value or leaves, as after `ifnull` (§8, Optional, rule 7).
 
-```
+<!-- context:
+error too_big{ count: u32 }
+fn sizes { count: u32, len: usize, a: i32, b: i32, c: i32 } -> !u32 {
+    ...
+    return size + n + @as(u32, total)
+}
+fn main {} {}
+-->
+```ctx
 let size = count * 16 ifoverflow { return too_big{ count } }
 let n = @as(u32, len) ifoverflow 0
 let total = a * b + c ifoverflow 0                  // covers the * and the +
@@ -611,7 +802,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 
 ### Literals
 
-1. An integer literal (`42`) has an integer type that is inferred from every use within the enclosing function body, including uses of locals it initializes. If no use fixes it, it is `i32`.
+1. An integer literal is decimal (`42`), hexadecimal after `0x` (`0xFF`, `0x1f`), or binary after `0b` (`0b1010`); there is no octal. `_` among its digits is ignored: `1_000_000`, `0xFFFF_0000`. It has an integer type that is inferred from every use within the enclosing function body, including uses of locals it initializes. If no use fixes it, it is `i32`.
 2. A float literal (`1.5`, `2e3`) is inferred the same way among float types, and defaults to `f64`. It rounds to the nearest value of its type, a tiny one to zero, but a literal that would round to an infinity is an error, as `1e300` is for an `f32` and `1e999` for any type: the infinities are std's `math::INF` and `math::INF_F32` (§17), and the error says so.
 3. `true` and `false` are the `bool` values. `null` is described in §8.
 4. `[a, b, c]` is a `[3]T` array. Every element has type `T`. Where a `[]T` is expected (Widening, rule 1, also inside `?` or as a `!T`'s value, and as the value of an `if` or `match` branch that has one), it is instead a **view** of that array, a `[]T`, with each element checked against `T`: so `[[1, 2], [3]]` where a `[][]u32` is expected is a view of two views, `["a", "bb"]` where a `[]utf8::String` is converts each literal, and `[]` is the empty view. The view is read-only: where a `[]mut T` is expected it is an error.
@@ -630,7 +821,10 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 7. A character literal `'a'` is an integer literal whose value is the character's byte.
 8. String and character literals hold ASCII characters only. Escapes, except in a multi-line literal: `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, and `\xNN` for any byte.
 9. A **multi-line literal** is a string literal written as lines that each start with `\\`, with only spaces and tabs before it on its line. Each line's text is what follows its `\\`, as it is: there are no escapes, and a `\r` that ends the line isn't part of it. The literal's bytes are those texts joined with `\n`, with none after the last; an empty `\\` line at the end adds one. It ends at the first line that doesn't start with `\\`, so a comment can't be among its lines. Otherwise it is a string literal like any other (rule 6), for GLSL or any other text:
-   ```
+   <!-- context:
+   fn main {} {}
+   -->
+   ```ctx
    const MESH_VS: c::String =
        \\#version 410 core
        \\layout(location = 0) in vec3 pos;
@@ -639,7 +833,7 @@ A value of numeric type `A` converts implicitly to numeric type `B` when every v
 
 ### Places
 
-```
+```text
 place := root step*
 root  := local | context field | match binding | expr.*
 step  := .field | [index]
@@ -711,16 +905,22 @@ step  := .field | [index]
 
 ### Enums
 
-```
+<!-- context:
+fn main {} {}
+-->
+```ctx
 enum Kind: u8 {
     ident,                  // 0
     number,                 // 1
     lbrace = 40,
     rbrace,                 // 41
 }
-let k = Kind::lbrace
-if k == Kind::rbrace { ... }
-let i = @as(usize, k)       // 40
+
+fn code {} -> usize {
+    let k = Kind::lbrace
+    if k == Kind::rbrace { return 0 }
+    return @as(usize, k)    // 40
+}
 ```
 
 1. An enum is an integer type with named values. `T`, its base type, is one of `i8`..`i64`, `u8`..`u64` and `usize`. An enum has `T`'s size, alignment and representation.
@@ -736,17 +936,22 @@ An enum is for a closed set whose values matter: table indexes, file formats, a 
 
 ### Distinct types
 
-```
+<!-- context:
+fn main {} {}
+-->
+```ctx
 type Meters = distinct f64
 type Seconds = distinct f64
 type Id(T) = distinct u64              // Id(User) and Id(Order) are different types
 
 fn speed { d: Meters, t: Seconds } -> f64 { return @as(f64, d) / @as(f64, t) }
 
-let d: Meters = 5.0
-let far = d + d * 2.0                  // a Meters
-speed{ d = far, t = @as(Seconds, 2.0) }
-speed{ d = 2.0, t = far }              // error: expected Seconds, got Meters
+fn run {} -> f64 {
+    let d: Meters = 5.0
+    let far = d + d * 2.0                  // a Meters
+    _ = speed{ d = far, t = @as(Seconds, 2.0) }
+    return speed{ d = 2.0, t = far }       // error: expected Seconds, got Meters
+}
 ```
 
 1. `type Name(G) = distinct T` declares a new type, `Name`, whose **base** is `T`, which may be any type. It has `T`'s size, alignment and representation, so C sees a `T` where an extern fn (§18) takes or returns one. Its generic parameters need not appear in `T`: `Id(User)` and `Id(Order)` are two types.
@@ -758,12 +963,26 @@ speed{ d = 2.0, t = far }              // error: expected Seconds, got Meters
 
 ### C function pointers
 
-```
+<!-- context:
+namespace lib {
+    capability Lib
+    fn lookup { mut lib: Lib, name: []u8 } -> ?*u8 { return null }
+    #c::symbol{ name = "ctx_doc_sub" }
+    #pure
+    extern fn sub { a: i32, b: i32 } -> i32
+}
+fn main {} {}
+-->
+```ctx
 type Op = extern fn{ a: i32, b: i32 } -> i32
-let some{ value = p } = lib::lookup{ &lib, name = "add\0" } else { return 1 }
-let add = @cast(Op, p)                    // the address is a C function of this type
-let n = add{ a = 2, b = 3 }
-let sub: Op = lib::sub                    // a named extern fn: its C symbol's address
+
+fn call { mut lib: lib::Lib } -> i32 {
+    let some{ value = p } = lib::lookup{ &lib, name = "add\0" } else { return 1 }
+    let add = @cast(Op, p)                    // the address is a C function of this type
+    let n = add{ a = 2, b = 3 }
+    let sub: Op = lib::sub                    // a named extern fn: its C symbol's address
+    return n + sub{ a = 3, b = 2 }
+}
 ```
 
 1. `extern fn{C} -> R` is a pointer to a C function, as C's `R (*)(...)`: 8 bytes, never null. Its fields are C's parameters in the order they are written, so two such types are the same only if they have the same fields, in the same order, with the same names, types and mutability, and the same result.
@@ -776,11 +995,18 @@ let sub: Op = lib::sub                    // a named extern fn: its C symbol's a
 
 ### Untagged unions
 
-```
+<!-- context:
+struct Color { r: f32, g: f32, b: f32, a: f32 }
+struct DepthStencil { depth: f32, stencil: u32 }
+fn main {} {}
+-->
+```ctx
 extern union ClearValue { color: Color, depth_stencil: DepthStencil }
 
-let v = ClearValue{ color = Color{ r = 1.0, g = 0.0, b = 0.0, a = 1.0 } }
-let d = v.depth_stencil.depth          // the same bytes, read as another field
+fn depth_of {} -> f32 {
+    let v = ClearValue{ color = Color{ r = 1.0, g = 0.0, b = 0.0, a = 1.0 } }
+    return v.depth_stencil.depth          // the same bytes, read as another field
+}
 ```
 
 1. `extern union Name { field: T, ... }` declares C's union: every field starts at offset 0. Its size is its largest field's, rounded up to its largest alignment, and its alignment is its largest field alignment, as in C. It can't have generic parameters.
@@ -844,10 +1070,18 @@ A slice is a view of `len` consecutive `T`s that it doesn't own. Slices are buil
 
 ### Hashing
 
-```
+<!-- context:
+fn main {} {}
+-->
+```ctx
 struct Cell { x: i32, y: i32 }
-let slot = @hash(cell) % buckets.len                                 // equal cells, equal hashes
-let mut seen = map::make(Cell, bool){ realloc = arena::alloc, &heap }   // std's map hashes its keys this way
+
+fn slot_of { cell: Cell, buckets: []u32 } -> u64 {
+    return @hash(cell) % buckets.len                               // equal cells, equal hashes
+}
+fn cells { mut heap: arena::Arena } {
+    let mut seen = map::make(Cell, bool){ realloc = arena::alloc, &heap }   // std's map hashes its keys this way
+}
 ```
 
 1. `@hash(x)` is a `u64` for a value of any type that has `==` (§11, Expressions, rule 5) and holds no float. Two values that are `==` have the same hash: that is what it is for. It is derived as `==` is, from the parts `==` compares and no others, so it never reads padding, a slice is hashed by its length and its elements, and a pointer, which has `==` only at the top, by its address.
@@ -857,7 +1091,14 @@ let mut seen = map::make(Cell, bool){ realloc = arena::alloc, &heap }   // std's
 
 ### Smallest, largest and clamped
 
-```
+<!-- context:
+struct Line { width: i32 }
+fn sizes { want: usize, buf: []u8, at: usize, widest: i32, line: Line, level: i32, delta: i32, t: f64 } {
+    ...
+}
+fn main {} {}
+-->
+```ctx
 let n = @min(want, buf.len - at)                  // the smaller of two usizes
 let widest = @max(widest, line.width)
 let level = @clamp(level + delta, 0, 100)         // 0 if below, 100 if above
@@ -874,7 +1115,13 @@ let t = @clamp(t, 0.0, 1.0)
 
 ### Rounding and saturating conversions
 
-```
+<!-- context:
+fn convert { x: f64, r: i32, noise: i32, out: []mut i16, i: usize, sample: f64 } {
+    ...
+}
+fn main {} {}
+-->
+```ctx
 let step = @round(i32, x * 16.0)                  // nearest; panics past i32, as @as would
 let px: u8 = @saturate(_, r + noise)              // an i32 clamped to 0..=255
 out[i] = @round_saturate(i16, sample * 32768.0)   // rounded and clipped, never a panic
@@ -897,21 +1144,63 @@ out[i] = @round_saturate(i16, sample * 32768.0)   // rounded and clipped, never 
 
 ### Formatting
 
-```
+<!-- context:
+type Heap = arena::Arena
+struct Span { at: u32 }
+struct Checker { heap: *mut Heap, errors: u32 }
+fn message { c: Checker } -> utf8::Builder(Heap) { return utf8::builder{ realloc = arena::alloc, heap = c.heap } }
+fn error { mut c: Checker, at: Span, msg: utf8::String } { c.errors = c.errors + 1 }
+namespace date {
+    struct Date { year: u32, month: u32, day: u32 }
+    fn write_iso { mut b: utf8::Builder(arena::Arena), d: Date } -> ! { return @fmt(&b, "{}-{:02}-{:02}", d.year, d.month, d.day) }
+}
+fn main {} {}
+
+fn errorf { mut c: Checker, at: Span, msg: utf8::Fmt(Heap) } {
+    let mut b = message{ c }
+    try! msg{ &b }
+    error{ &c, at, msg = utf8::view{ b } }
+}
+fn report { mut io: Io, mut c: Checker, mut b: utf8::Builder(Heap), at: Span, line: u32, col: u32, msg: []u8, name: []u8, kind: []u8, count: u32, flags: u32, ratio: f64, d: date::Date, mark: u32 } -> ! {
+    ...
+}
+-->
+```ctx
 try @fmt(&b, "{}:{}: error: {}", line, col, msg)                    // write into b now
 errorf{ &c, at, msg = @fmt("no variant `{}` in {}", name, kind) }   // a writer, passed on
 _ = @fmt(&io, "{:<16}{:>8}  {:08x}  {:.3}\n", name, count, flags, ratio)   // specs (rule 8)
 _ = @fmt(&b, "due {} at {}", date::write_iso{ d, _ }, utf8::write_char{ c = mark, _ })
+```
 
+A function that takes a writer calls it with its sink, and a `#write` fn writes a type of the program's own:
+
+<!-- context:
+type Heap = arena::Arena
+struct Span { at: u32 }
+struct Checker { heap: *mut Heap, errors: u32 }
+fn message { c: Checker } -> utf8::Builder(Heap) { return utf8::builder{ realloc = arena::alloc, heap = c.heap } }
+fn error { mut c: Checker, at: Span, msg: utf8::String } { c.errors = c.errors + 1 }
+namespace date {
+    struct Date { year: u32, month: u32, day: u32 }
+    fn write_iso { mut b: utf8::Builder(arena::Arena), d: Date } -> ! { return @fmt(&b, "{}-{:02}-{:02}", d.year, d.month, d.day) }
+}
+fn main {} {}
+
+-->
+```ctx
 fn errorf { mut c: Checker, at: Span, msg: utf8::Fmt(Heap) } {
     let mut b = message{ c }
     try! msg{ &b }                                                  // a writer writes when called
     error{ &c, at, msg = utf8::view{ b } }
 }
 
-namespace utf8 {
+namespace geo {
+    struct Point { x: i32, y: i32 }
+
     #write
-    fn push_i64(S) { mut b: Builder(S), n: i64 } -> ! { ... }       // how an i64 goes into a Builder
+    fn write_point(S) { mut b: utf8::Builder(S), p: Point } -> ! {  // how a Point goes into a Builder
+        return @fmt(&b, "({}, {})", p.x, p.y)
+    }
 }
 ```
 
@@ -930,7 +1219,7 @@ namespace utf8 {
 7. `@fmt` is short for the writer calls it stands for, each run only if the one before it succeeded. With a sink first it has no cost beyond them; a writer is a bound function, whose record holds the arguments.
 8. A **spec** lays out an integer, a float or a string in a hole:
 
-   ```
+   ```text
    hole      := '{' '}' | '{' ':' spec '}'
    spec      := [align] ['0'] [width] ['.' precision] [base]     // in this order, and not empty
    align     := '<' | '>' | '^'
@@ -971,7 +1260,19 @@ namespace utf8 {
 
 ### Checks
 
-```
+<!-- context:
+struct Row { name: []u8 }
+namespace cfg_tests {
+    #test
+    fn reads { mut t: Test } {
+        let text: []u8 = "seventeen letters"
+        let name: []u8 = "x"
+        let rows: []Row = []
+        ...
+    }
+}
+-->
+```ctx
 @expect(&t, text.len == 42)                       // cfg.ctx:9: fail: cfg_tests::reads: text.len == 42: 17 == 42
 @expect(&t, slice::eq_bytes{ a = name, b = "x" }) // cfg.ctx:10: fail: cfg_tests::reads: slice::eq_bytes{ a = name, b = "x" }
 @require(&t, rows.len > 0)                        // cfg.ctx:11: fail: cfg_tests::reads: required: rows.len > 0: 0 > 0
@@ -992,7 +1293,7 @@ namespace utf8 {
 8. `@require` is a builtin for `@expect`'s reason (rule 5): the same position, text and sides, which no function is given. The rest is std's here too: it calls `test::require{ &t, held, file, line, text }`, which is `test::check` with the word `required: `, writes the sides, and then calls `test::stop{ &t }`, with a `Test` that the compiler supplies as it does a panic fn's capabilities (§15, Entry point, rule 6). A `Test` may end its own test and nothing else: `test::stop` and `test::skip` (§20, rule 5) are the two functions that do.
 9. **A check in a function the test called.** A check that doesn't hold says where it is, and that isn't which of the test's calls reached it. So under its line, a check in a function other than the test fn has the calls that led there (§15, Call paths), innermost first, up to the test fn, each as two spaces and `called from NAME (FILE:LINE:COL)`: the function that made the call, and where. A check in the test fn itself has none, and neither has one in a test build without call paths (§15, Call paths, rule 7). The lines follow the shapes of a panic's path: `called from NAME (FILE)` where the position isn't known, `called from C code (no position)`, `started from NAME (FILE:LINE:COL)` for a check in a task on a worker, and `... N more frames` in a long one. std writes them: after the failure's line the builtin calls `test::write_callers{ &t }` (§17, `test`), with a `Test` the compiler supplies, as for `test::stop`.
 
-   ```
+   ```text
    lib/formats/table_test.ctx:8: fail: twoda_tests::reads_rows: a.cells[i] == b.cells[i]: 3 == 4
      called from twoda_tests::same_row (lib/formats/table_test.ctx:15:9)
      called from twoda_tests::reads_rows (lib/formats/table_test.ctx:31:5)
@@ -1000,12 +1301,21 @@ namespace utf8 {
 
 ### Atomics
 
-```
+<!-- context:
+struct Shared { count: u32 }
+struct Job { done: u32 }
+struct Slot { state: u32 }
+fn work { mut threads: Threads, mut shared: Shared, job: *mut Job, mut slot: Slot } {
+    ...
+}
+fn main {} {}
+-->
+```ctx
 let before = @atomic_add(&shared.count, 1, atomic::Order::relaxed)
 while @atomic_load(&job.done, atomic::Order::acquire) == 0 { thread::yield_now{ &threads } }
 match @atomic_compare_exchange(&slot.state, 0, 1, atomic::Order::acquire_release) {
-    null => { ... }                       // it was 0, and is 1 now
-    some{ value } => { ... }              // another thread got there first: value is what it found
+    null => {}                            // it was 0, and is 1 now
+    some{ value } => {}                   // another thread got there first: value is what it found
 }
 ```
 
@@ -1086,7 +1396,21 @@ The compiler checks that the address of a local does not outlive it. Direct call
 
 ## 15. Capabilities and the entry point
 
-```
+<!-- context:
+namespace gl {
+    const COLOR_BUFFER_BIT: u32 = 16384
+    fn load_2_0 { get_proc: &fn{ name: c::String } -> ?*u8 } -> ?Gl2_0 {
+        let clear = get_proc{ name = "glClear" } ifnull { return null }
+        let use = get_proc{ name = "glUseProgram" } ifnull { return null }
+        return Gl2_0{ clear = @cast(_, clear), use_program = @cast(_, use) }
+    }
+}
+namespace glfw {
+    fn proc_address { mut glfw: Glfw, name: c::String } -> ?*u8 { return null }
+}
+...
+-->
+```ctx
 capability Glfw                                   // permission to call a C library (§18)
 
 namespace gl {
@@ -1096,12 +1420,13 @@ namespace gl {
 
 namespace os { capability Proc { extern environ: *?c::String } }   // a C variable, read only in os
 
-fn main { mut io: Io, mut fs: Fs, mut glfw: Glfw, args: Args } -> i32 { ... }
-
 fn clear { mut gl: gl::Gl1_1 } { gl.clear{ mask = gl::COLOR_BUFFER_BIT } }  // a call through it
 
-let mut gl = gl::load_2_0{ get_proc = glfw::proc_address{ &glfw, _ } } ifnull { return 1 }   // only gl's functions make one
-clear{ &gl }                                      // a Gl2_0 includes a Gl1_1
+fn main { mut io: Io, mut fs: Fs, mut glfw: Glfw, args: Args } -> i32 {
+    let mut gl = gl::load_2_0{ get_proc = glfw::proc_address{ &glfw, _ } } ifnull { return 1 }   // only gl's functions make one
+    clear{ &gl }                                  // a Gl2_0 includes a Gl1_1
+    return 0
+}
 ```
 
 1. `capability Name` declares a **capability type**: permission to have some effect (§1.3). It has no generic parameters and no zero value. Without fields it takes no space; with them (rule 5) it is a struct of C functions. C variables (rule 12) and statics (rule 13) take no space, and a capability whose only fields are these counts as one without fields.
@@ -1124,9 +1449,17 @@ clear{ &gl }                                      // a Gl2_0 includes a Gl1_1
 
 A **task** is a call of a `#task` fn, made by a bind written in a start's call that supplies every field, that may run concurrently with the code that started it. std's `task` (§17) starts and waits for tasks; this section is what the compiler checks of them. The design and its reasons are in threads.md.
 
-```
+<!-- context:
+struct Buffer { n: usize }
+fn main {} {}
+-->
+```ctx
 #task
-fn load { mut fs: Fs, path: []u8, into: *mut Buffer } -> !usize { ... }
+fn load { mut fs: Fs, path: []u8, into: *mut Buffer } -> !usize {
+    let size = try fs::size{ &fs, path }
+    into.n = @as(usize, size)
+    return into.n
+}
 
 fn load_two { mut fs: Fs, mut threads: Threads, a: *mut Buffer, b: *mut Buffer } -> !usize {
     let mut ta: task::Task(!usize)
@@ -1158,12 +1491,12 @@ fn load_two { mut fs: Fs, mut threads: Threads, a: *mut Buffer, b: *mut Buffer }
 3. `args: Args` holds the command-line arguments that follow the program, as bytes. `Args` is a top-level std alias for `[][]u8` (§17), so either spelling is accepted.
 4. `main` may return `i32`: the program's exit code. Without a return type it exits with 0. It may also return `!` or `!i32` (§8, Errors), so that a small program passes a failure up with `try`: `ok` exits with its value, or with 0 for a bare `!`; an error is written to standard error, after what standard output holds, as `error: ` and the error with its payload and a line break, and the program exits with 1:
 
-   ```
+   ```ctx
    error empty{ path: []u8 }
 
    fn main { mut fs: Fs, args: Args } -> ! {
-       let size = try fs::size{ &fs, path = args[0] }       // error: fs::not_found
-       if size == 0 { return empty{ path = args[0] } }      // error: empty{ path = notes.txt }
+       let size = try fs::size{ &fs, path = args[0] }       // writes error: fs::not_found
+       if size == 0 { return empty{ path = args[0] } }      // writes error: empty{ path = notes.txt }
    }
    ```
 
@@ -1175,7 +1508,7 @@ fn load_two { mut fs: Fs, mut threads: Threads, a: *mut Buffer, b: *mut Buffer }
 
 ### Call paths
 
-```
+```text
 lib/script/nwarg.ctx:41:17: panic: index 5 out of bounds for length 3
   at nwarg::param (lib/script/nwarg.ctx:41:17)
   at routines::get_tag (lib/engine/routines/core.ctx:210:9)
@@ -1246,7 +1579,7 @@ Settled questions are removed, and the rest keep their numbers.
 | `math` | The C library's math functions, with libm's names, `#pure` (§18): for `f64`, `sqrt`, `cbrt`, `hypot`, `pow`, `exp`, `exp2`, `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `floor`, `ceil`, `round` (halfway cases away from zero), `trunc`, `fabs`, `fmod`, `fmin`, `fmax`, `copysign`, and each with an `f` suffix for `f32` (`sqrtf`). They run while compiling too, the only extern fns that do (§14, rule 1), so a const may be `math::sin{ x = math::PI / 8.0 }` or a table a loop fills: ctxc, itself a program built with the C compiler it builds with, calls the same C function, and a program's call is never computed by its C compiler, so a const's call and the program's with the same arguments give the same bits, a NaN's sign and payload included. That holds where ctxc and the program use one C library, as they do on the machine that builds both; ctxc doesn't build for another machine. A program's own declaration of one of these functions, by C's name and with these types, runs while compiling as well. Between C libraries, `sqrt`, `floor`, `ceil`, `round`, `trunc`, `fabs`, `fmod`, `fmin`, `fmax` and `copysign` are exact and the same everywhere; the others may differ in the last bit. `PI`, `TAU`, `E`, `PI_F32`, `TAU_F32`; `INF` and `NAN`, and `INF_F32` and `NAN_F32`: the infinity (`-math::INF` is the negative one) and the quiet NaN with a clear sign and no payload, which no literal is (§11, Literals, rule 2); `is_nan`, `is_inf`, `is_finite` (an `f64`, which an `f32` widens to); `f32_from_bits`, `f32_to_bits`, `f64_from_bits`, `f64_to_bits`. |
 | `io` | `Stream` (an enum: `out`, `err`); `print`, `println`, `eprint`, `eprintln` for `utf8::String`, `newline`, `put_char` (one character), `print_i64`, `print_u64`, `print_f64`, `print_f32`, `print_bool` and their `println_` forms (smaller number types widen to these), `read_line` (bytes that aren't valid UTF-8 become `?`), `write` and `read` (bytes), `flush`, `put` (bytes past the buffer, through `os::write`). `@fmt` writers onto an `Io`, to standard output (`_ = @fmt(&io, "{} files\n", n)`), and onto a `Stderr`, which `to_stderr` makes from one: `write_` and the type, and `ewrite_` and the type, for a `strlit` (`text`), `utf8::String` (`string`), `[]u8` (`bytes`, as they are), `c::String` (`cstring`), `bool`, `f32`, `f64` and each integer type, and for a hole with a spec `fmt_int`, `fmt_uint`, `fmt_f64`, `fmt_f32` and `fmt_text`. They don't fail. Standard output is buffered: it is written out before anything goes to standard error or is read from standard input, and when the program ends or panics. The buffer is io's static (§15, rule 13), since a panic flushes it too: `State`, a capability that `Io` includes, whose `out` is an `Out`, `#thread_local`: each thread has its own, written out when the thread ends, so what threads print interleaves by line, not by byte. |
 
-```
+```ctx
 fn main { mut io: Io } {
     io::println{ &io, s = "hello" }                    // a utf8::String viewing static bytes (utf8::from_literal)
     io::println_i64{ &io, n = 42 }
@@ -1255,7 +1588,11 @@ fn main { mut io: Io } {
 
 ## 18. C functions and attributes
 
-```
+<!-- context:
+capability Glfw
+fn main {} {}
+-->
+```ctx
 #c::symbol{ name = "labs" }
 #pure
 extern fn long_abs { n: i64 } -> i64
@@ -1269,7 +1606,15 @@ extern fn glfwPollEvents { mut glfw: Glfw }      // a capability says who may ca
 
 1. `#path` or `#path{ field = e, ... }`, on its own line before a declaration or a declaration's field, is an **attribute** of it: a field of a struct, an extern union, a union variant's payload, an error, a capability or a fn's or extern fn's context. Any of them may have several. A field's attributes are for build programs (§19, rule 14): except for a capability's (§15, rules 12 and 13), they change nothing the program compiles to. A function type's fields (`fn{ ... } -> R`, §5) declare nothing and can't have attributes, nor can a union's or an enum's variants themselves.
 
-```
+<!-- context:
+namespace ecs {
+    struct key {}
+    struct cascade { depth: u32 }
+    struct by { name: []u8 }
+}
+fn main {} {}
+-->
+```ctx
 struct Pos {
     #ecs::key
     #ecs::cascade{ depth = 2 }
@@ -1281,7 +1626,7 @@ fn movement {
     #ecs::by{ name = "pos" }
     mut pos: Pos,
     dt: f32,
-} { ... }
+} { pos.x = pos.x + dt }
 ```
 
 2. `path` names a struct, and the braces are a literal of it, checked as a const's initializer is and folded (§14): it can't call a function or use a const that isn't folded. `#path` alone means `#path{}`. A field of a number type or `bool` may be left out, and is then 0 or `false`: `#c::callback` is `#c::callback{ any_thread = false }`. A field with a default (§7, rule 4) isn't: `..` takes it from its default, as in any literal.
@@ -1305,19 +1650,25 @@ fn movement {
 
 ### Literal conversions
 
-```
-namespace utf8 {
-    #convert
-    fn from_literal { s: strlit } -> !String { return from{ bytes = s.bytes } }
-}
-
+```ctx
+// std's utf8 has `#convert fn from_literal { s: strlit } -> !String`
 namespace regex {                                // a program's own type
+    struct Regex { source: []u8 }
+    error empty
+
+    fn compile { bytes: []u8 } -> !Regex {
+        if bytes.len == 0 { return empty }
+        return Regex{ source = bytes }
+    }
+
     #convert
     fn from_literal { s: strlit } -> !Regex { return compile{ s.bytes } }
 }
 
-io::println{ &io, s = "hello" }                  // utf8::from_literal, run while compiling
-let r: regex::Regex = "[a-z]+"                   // a bad pattern is a compile error
+fn main { mut io: Io } {
+    io::println{ &io, s = "hello" }              // utf8::from_literal, run while compiling
+    let r: regex::Regex = "[a-z]+"               // a bad pattern is a compile error
+}
 ```
 
 1. `#convert` on a fn makes it a **literal conversion**: a string literal where the type `T` of its result is expected is the fn's result for the literal (§11, Literals). Any namespace may declare one, for any `T`, so a library can give literals to a type it doesn't own.
@@ -1328,14 +1679,21 @@ let r: regex::Regex = "[a-z]+"                   // a bad pattern is a compile e
 
 ### Callbacks
 
-```
+<!-- context:
+capability Glfw
+struct Window { id: u32 }
+fn main {} {}
+-->
+```ctx
 type KeyFn = extern fn{ mut glfw: Glfw, window: *mut Window, key: i32, scancode: i32, action: i32, mods: i32 }
 extern fn glfwSetKeyCallback { mut glfw: Glfw, window: *mut Window, cb: ?KeyFn } -> ?KeyFn
 
 #c::callback
-fn on_key { window: *mut Window, key: i32, action: i32 } { ... }
+fn on_key { window: *mut Window, key: i32, action: i32 } {}
 
-_ = glfwSetKeyCallback{ &glfw, window, cb = on_key }
+fn listen { mut glfw: Glfw, window: *mut Window } {
+    _ = glfwSetKeyCallback{ &glfw, window, cb = on_key }
+}
 ```
 
 1. `#c::callback` on a fn lets C call it. The fn has a body and no generic parameters, and its fields and result follow an extern fn's rules (rule 4 above).
@@ -1348,7 +1706,27 @@ _ = glfwSetKeyCallback{ &glfw, window, cb = on_key }
 
 ## 19. Build programs
 
-```
+<!-- context:
+// file: tools/viewer/build.ctx
+...
+// file: tools/viewer/main.ctx
+fn main {} { _ = format::Format::png }
+// file: lib/derive/derive.ctx
+namespace derive {
+    fn enum_source { mut heap: arena::Arena, name: []u8, variants: [][]u8 } -> []u8 {
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        _ = @fmt(&b, "namespace format {{ enum {}: u8 {{", name)
+        for v in variants { _ = @fmt(&b, " {},", v) }
+        _ = @fmt(&b, " }} }}")
+        return utf8::view{ b }.bytes
+    }
+}
+// file: lib/formats/formats.ctx
+namespace formats { fn count {} -> u32 { return 3 } }
+// file: lib/platform/platform.ctx
+namespace platform { fn word { p: *u8 } -> *u32 { return @cast(*u32, p) } }
+-->
+```ctx
 // tools/viewer/build.ctx: a tool, made of its own directory and of libraries other programs share
 #build::sources{ dir = "../../lib/derive" }            // a generator, which the build program uses
 fn build { mut b: Build } {
@@ -1366,7 +1744,7 @@ fn build { mut b: Build } {
     let mut buf: [65536]u8
     let mut heap = arena::new{ buf = buf[..] }
     let names: [3][]u8 = ["png", "tga", "dds"]
-    // format.ctx, one of the viewer's files: `enum Format { png, tga, dds }` and its names
+    // format.ctx, one of the viewer's files: `enum Format: u8 { png, tga, dds }` and its names
     build::gen_file{ &b, exe, name = "format", text = derive::enum_source{ &heap, name = "Format", variants = names[..] } }
 }
 ```
@@ -1389,7 +1767,29 @@ fn build { mut b: Build } {
 16. A build program has what `declarations` needs with std: std/build/'s files and ctxc's lexer and parser (ctxc/source.ctx, diag.ctx, lexer.ctx, syntax.ctx and parser.ctx) are among std's files (§17) in it, and in no other program. Any program whose entry is `fn build` (rule 2) is one, however ctxc builds it: `ctxc run build.ctx` runs one as a program of its own, whose graph goes to standard output and whose paths are from the working directory. So `declarations` is in std's `build`, and a namespace of the program's named like one of ctxc's (`parser`, `syntax`, `lexer`, `tok`, `source`, `diag`) shadows it (§10, rule 4).
 17. `build::deny_unchecked{ &b, exe, except }` makes the unchecked operations (§13) errors in the executable's files, those of directories added after the call too, but for the files under each directory of `except`, a `[][]u8`, at any depth. `except = []` denies them in every file. Each directory is named as `add_sources` names one (rule 8) and must hold at least one of the executable's files: one that holds none, misspelt or since removed, stops the build, which names it, so the list never excepts more than a reader of it sees. A file the build program generates (rule 13) is under no directory of the program's, so it is always denied: unchecked code is written in a directory, where review finds it, and generated code calls it. std's files are never denied. With several calls for one executable, a file is excepted if any of them excepts it. An executable without a call may use the operations anywhere, as every program did before there was one; the build program's own files (rule 12) are no executable's, and are never denied.
 
-```
+<!-- context:
+// file: build.ctx
+...
+// file: tools/describe.ctx
+namespace describe {
+    fn generate { mut heap: arena::Arena, decls: []build::Decl } -> []u8 {
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        _ = @fmt(&b, "namespace fields {{")
+        for d in decls {
+            if d.kind == build::Kind::structure { _ = @fmt(&b, " fn {} {{}} -> usize {{ return {} }}", d.name, d.fields.len) }
+        }
+        _ = @fmt(&b, " }}")
+        return utf8::view{ b }.bytes
+    }
+}
+// file: src/main.ctx
+struct describe {}
+struct Color { r: u8 }
+#describe
+struct Paint { color: Color, coats: u32 }
+fn main {} { _ = fields::Paint{} }
+-->
+```ctx
 // examples/gen/build.ctx: describe::generate, a library of the build program's, writes a fn for
 // each struct of src's marked #describe that prints its fields
 #build::sources{ dir = "tools" }
@@ -1407,7 +1807,21 @@ fn build { mut b: Build, mut fs: Fs, mut mem: Mem } {
 
 ## 20. Tests
 
-```
+<!-- context:
+namespace cfg {
+    struct Entry { key: []u8, value: u32 }
+    error no_equals{ at: usize }
+    fn parse_line { line: []u8 } -> !Entry {
+        for c at i in line {
+            if c == '=' { return Entry{ key = line[0..i - 1], value = 12 } }
+        }
+        return no_equals{ at = line.len }
+    }
+    fn field { line: []u8, index: usize } -> []u8 { return line[index..index + 1] }
+}
+...
+-->
+```ctx
 // cfg/cfg_test.ctx, beside cfg/cfg.ctx
 namespace cfg_tests {
     #test
@@ -1428,7 +1842,7 @@ namespace cfg_tests {
 }
 ```
 
-```
+```text
 $ ctxc test cfg
 cfg/cfg_test.ctx:6: fail: cfg_tests::reads_a_key_and_its_value: entry.value == 13: 12 == 13
 cfg/cfg_test.ctx:10: fail: cfg_tests::a_line_without_a_value: error: cfg::no_equals{ at = 5 }
@@ -1455,7 +1869,7 @@ tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected, 2 checks
 8. A test that runs longer than 60 seconds, or `--timeout SECONDS`, is ended and fails; `--timeout 0` sets no limit. The time is counted in the runner's own waits, so a test is given at least that long.
 9. **Output.** The runner writes to standard output, one line for each failure and for each skipped test, in the tests' order whatever order they ended in, and then one summary line. A model or a tool reads it by line:
 
-   ```
+   ```text
    FILE:LINE: fail: NAME: TEXT: LEFT OP RIGHT            a comparison that didn't hold
    FILE:LINE: fail: NAME: TEXT                           any other condition that didn't hold
    FILE:LINE: fail: NAME: required: TEXT: LEFT OP RIGHT  a `@require`'s comparison that didn't hold: the test ended there
@@ -1487,7 +1901,16 @@ tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected, 2 checks
 11. `#test_main` on a fn makes it what a test build runs in place of `main`: a fn with a body and no generic parameters that returns the exit code, an `i32`. Its context is capabilities without fields, a `Test` among them if it wants, and any of these read-only fields, which the compiler supplies: `args: Args`, as `main`'s, every argument after PATH; `count: usize`, the number of tests; `case: &fn{ index: usize } -> test::Case`, test `index`'s name, file and line, its file's directory (rule 12), whether it must panic and with what, and whether it is skipped and why (§17, `test`); and `run: &fn{ index: usize } -> i32`, which calls test `index` with its capabilities and gives 0, or 1 after writing the error it returned, as `main`'s is written after `FILE:LINE: fail: NAME: `. `run` only calls the test: whether it passed is what std's `test::run_here{ &t, c, index, run }` gives (§17, `test`), which sets the test's name for its failures' lines and its directory, runs it, and looks at what it checked: `test::checks{ &t }` is then how many checks it made, for a runner that adds them up. std declares one `#test_main` fn, `test::main`, which is rules 7 to 10; a program's own replaces it, as its `#start` fn replaces std's (§15, Entry point, rule 7), for a runner of another kind, such as one that runs every test in one process with `run_here`, which the first `@require` that doesn't hold ends (§13, Checks, rule 7), or the first `test::skip` (rule 5). Two in the program are an error.
 12. **A test's own directory.** `test::dir{ &t }` (§17, `test`) is the directory of the source file that the running test's `#test` fn is in, a `[]u8`: where a test finds a file kept beside it, wherever `ctxc test` was run from.
 
-    ```
+    <!-- context:
+    #test
+    fn reads_rows { mut t: Test, mut fs: Fs, mut mem: Mem } -> ! {
+        let pages = mem::pages{ &mem, size = 65536 } ifnull { return alloc::out_of_memory }
+        let mut heap = arena::new{ buf = pages }
+        ...
+        @expect(&t, data.len > 0)
+    }
+    -->
+    ```ctx
     // lib/formats/twoda_test.ctx reads lib/formats/rows.2da
     let mut path = utf8::builder{ realloc = arena::alloc, &heap }
     try @fmt(&path, "{}/rows.2da", test::dir{ &t })
@@ -1502,7 +1925,7 @@ tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected, 2 checks
     - A `#test_main` fn reads it as `test::Case`'s `dir`, and `test::run_here` sets it for the test it runs.
 13. **Arguments for the tests.** `ctxc test PATH [OPTION...] [FILTER...] -- ARGS...` gives ARGS to every test, which reads them with `test::args{ &t }` (§17, `test`): a `[][]u8`, as `main`'s `args` (§15, Entry point). They are for what a run names and the source can't know, as where a game is installed:
 
-    ```
+    ```ctx
     #test
     fn the_install_has_its_key_file { mut t: Test, mut fs: Fs, mut mem: Mem } -> ! {
         let args = test::args{ &t }
@@ -1517,7 +1940,7 @@ tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected, 2 checks
     }
     ```
 
-    ```
+    ```text
     $ ctxc test formats
     formats/key_test.ctx:2: skip: the_install_has_its_key_file: no game install: give its directory after `--`
     tests: 6 run, 5 passed, 0 failed, 1 skipped, 0 not selected, 14 checks
@@ -1536,7 +1959,7 @@ tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected, 2 checks
 
 15. **Results as JSON.** `ctxc test PATH --json`, `--json` being one of the runner's options (or before PATH, as for `ctxc run`), writes the results as JSON on standard output, in place of rule 9's lines: an object on a line for each test, in the tests' order, passed ones too, and one for the run. The build's diagnostics are JSON as well, on standard error (§21, rules 9 to 11).
 
-    ```
+    ```text
     {"type":"test","name":"cfg_tests::reads","file":"cfg/cfg_test.ctx","line":4,"outcome":"fail","checks":2,"failures":[{"file":"cfg/cfg_test.ctx","line":9,"message":"text.len == 42: 17 == 42"}],"output":[]}
     {"type":"test","name":"cfg_tests::finds_the_game","file":"cfg/cfg_test.ctx","line":14,"outcome":"skip","checks":0,"reason":"no game install"}
     {"type":"tests","run":2,"passed":0,"failed":1,"skipped":1,"not_selected":0,"checks":2}
@@ -1545,7 +1968,7 @@ tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected, 2 checks
     - **A test's record** has `type`, `"test"`; `name`, `file` and `line`, the test fn's; `outcome`, `"pass"`, `"fail"` or `"skip"`; and `checks`, how many it reported (rule 9). A skipped one has `reason`, what its line says after its name. A failed one has `failures`, an array with an object for each of its failure lines, `file`, `line` and `message`, the line's text after `: fail: NAME: `, and so `panic: index 4 out of bounds for length 2`, `timed out after 60 s` or `no check ran: ...` for a failure that isn't a check's; and `output`, an array of the other lines it wrote, as strings, in order.
     - **A failure's call path** is in its object, where the text form has lines under the failure's: `path` for a panic, the whole path from the function the panic is in, and `called_from` for a check, the calls that led to its function; neither where there are no such lines. Each is an array, innermost first, of objects with `kind`: `"call"`, with `function`, `file`, `line` and `column`, the last two 0 where the position isn't known; `"start"`, the same for where a task was started; `"c_code"`, C code that called a callback; and `"omitted"`, with `count`, for the middle of a long path. The lines aren't in `output`.
 
-      ```
+      ```text
       "failures":[{"file":"t.ctx","line":3,"message":"a == b: 3 == 2","called_from":[{"kind":"call","function":"helpers::all_twos","file":"t.ctx","line":7,"column":27},{"kind":"call","function":"in_helpers","file":"t.ctx","line":19,"column":22}]}]
       ```
     - **The run's record** has `type`, `"tests"`, and `run`, `passed`, `failed`, `skipped`, `not_selected` and `checks`, the numbers of rule 9's summary. When no test ran (rule 10) they are 0 and `reason` says why, as the line does.
@@ -1555,7 +1978,7 @@ tests: 3 run, 1 passed, 2 failed, 0 skipped, 0 not selected, 2 checks
 
 ## 21. Checking and diagnostics
 
-```
+```text
 $ ctxc check tools/viewer
 tools/viewer/main.ctx:14:17: error: literal 300 does not fit in u8
 lib/formats/gff.ctx:212:9: error: unknown name `read_feild`
@@ -1578,7 +2001,7 @@ check: 2 errors; not checked until the program has no other error: the order of 
     - **`&p` where `p` is the pointer wanted:** ``take{ &heap }`` for a `mut heap: Heap`, with `heap` a `*mut Heap`, is ``` `heap` is a *mut Heap already, which is what `mut heap` takes: pass it as it is, without the `&` ```, in place of two errors, that `heap` isn't a mutable place and that a pointer to a pointer isn't a pointer.
 8. **Notes.** An error about two places has the other one as a **note**: a place and a message, under the error, indented by two spaces, in the order given here.
 
-    ```
+    ```text
     lib/a.ctx:4:5: error: returned value holds the address of local `v`
       lib/a.ctx:3:5: note: `v` is declared here
     ```
@@ -1590,7 +2013,7 @@ check: 2 errors; not checked until the program has no other error: the order of 
     - **A name declared twice** in one scope: ``` the earlier `x` is declared here ```; and **an integer pattern that an earlier one covers** (§8, Match on integers): `the earlier pattern is here`.
 9. **`--json`** on `check`, `run`, `exe` and `test`, before PATH or after it but before any `--`, writes the diagnostics as JSON instead: one object on a line of standard error for each, with what the text form has, and a summary after them.
 
-    ```
+    ```text
     {"type":"diagnostic","severity":"error","file":"lib/a.ctx","line":4,"column":5,"end_line":4,"end_column":14,"message":"returned value holds the address of local `v`","notes":[{"file":"lib/a.ctx","line":3,"column":5,"end_line":3,"end_column":19,"message":"`v` is declared here"}],"fixes":[]}
     {"type":"summary","errors":1,"more":false,"waiting":["order","tasks","consts"]}
     ```
@@ -1604,7 +2027,7 @@ check: 2 errors; not checked until the program has no other error: the order of 
 11. **Under `run --json`,** a compile error and the program's own output are told apart by the summary: the compiler writes its diagnostics and the summary, and only if `errors` is 0 starts the program, whose standard error is everything after that line; a panic is the program's, lines of text there, its own and its call path's (§15, Call paths, rule 10), not a diagnostic. With errors the exit code is 1 and nothing after the summary. `test --json` is the same, with the tests' results on standard output (§20, rule 15).
 12. **Fixes.** An error whose message says what to write carries that as a **fix**: edits, each a place in a file and the text that goes there, with a message that says what they do. In JSON they are the diagnostic's `fixes`; the text form has no line for them, since the message says the same, and `check`'s last line counts those that `--fix` would apply.
 
-    ```
+    ```text
     "fixes":[{"safe":true,"message":"discard the result","edits":[{"file":"a.ctx","line":6,"column":5,"end_line":6,"end_column":5,"text":"_ = "}]}]
     ```
 

@@ -257,8 +257,34 @@ nothing.
 Programs that cases share are in [helpers/](helpers), each with its uses in its header:
 `child.ctx` is a child process for the cases that start one, `logcc.ctx` a C compiler that logs
 its command lines, `stamp.ctx` says whether a file was written again, and `text.ctx` runs a
-command into a file, compares files and counts a pattern. A case builds one with
-`//# build child: {home}/tests/helpers/child.ctx`.
+command into a file, compares files and counts a pattern, and `docs.ctx` checks the code blocks
+of the docs (below). A case builds one with `//# build child: {home}/tests/helpers/child.ctx`.
+
+## The docs' code blocks
+
+[cases/Docs/code_blocks](cases/Docs/code_blocks) checks every code block of
+[spec.md](../spec.md) and [quickref.md](../quickref.md) with ctxc, so an example can't drift
+from the language. Each block's fence has a mark: `ctx` for ctxlang, `text` for anything else (a
+grammar, a program's output, a shell session); one without fails. A `ctx` block compiles as a
+program of its own, or has exactly the errors its `// error: MESSAGE` comments state at their
+lines (the message whole, or its start before a final `...`; notes aren't compared). A block
+that is part of a program gets the rest from an HTML comment just before it, which a rendered
+doc doesn't show:
+
+```text
+<!-- context:
+fn value { s: []u8 } -> u32 {
+    let mut v: u32 = 0
+    ...
+    return v
+}
+-->
+```
+
+The block goes where a line is `...` alone, or after the context if none is. A context of
+several files starts each with `// file: PATH`, and the directory of the file with the `...` is
+what ctxc checks, a build program's included. A failure is `DOC:LINE: fail: WHAT`, at the
+block's line.
 
 ## Adding a case
 

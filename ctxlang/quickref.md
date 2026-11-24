@@ -12,7 +12,7 @@ needed; it is `ctxc` below.
 
 ## Shape of code
 
-```
+```ctx
 namespace wav {                                       // a namespace may span files (§10)
     error truncated{ at: usize }                      // errors are values (§8, Errors)
     error not_wave
@@ -160,24 +160,43 @@ types). Through a pointer, `p.x` is the field and `p.*` the value: no `->`, no `
 
 ## Control flow (§11)
 
-```
+<!-- context:
+union Value { int{ v: i64 }, text{ s: []u8 }, none }
+enum Kind: u8 { byte, char, word }
+struct P { x: i32 }
+error bad
+fn parse { s: []u8 } -> !P {
+    if s.len == 0 { return bad }
+    return P{ x = 1 }
+}
+fn use { v: i64 } {}
+fn load { s: []u8 } -> i64 { return 1 }
+fn f {} {}
+fn sample { a: bool, c: bool, n: usize, xs: []mut i32, value: Value, kind: Kind, r: Value, m: map::Map(u32, i32, arena::Arena), key: u32, s: []u8, mut words: list::List(u32, arena::Arena) } -> !?i32 {
+    let mut i: usize = 0
+    ...
+    return v
+}
+fn main {} {}
+-->
+```ctx
 let v = if a { 1 } else { 2 }                     // if/match are expressions too
-for i in 0..n { }                                 // i = 0 .. n - 1, of n's type; lo..hi leaves hi out
-for x in xs { }                                   // each element of a slice or an array, copied
+for i in 0..n {}                                  // i = 0 .. n - 1, of n's type; lo..hi leaves hi out
+for x in xs {}                                    // each element of a slice or an array, copied
 for &x in xs { x = 0 }                            // each element's place: changes it, copies nothing
-for x at i in xs { }                              // with its index (usize); `for &x at i` too
+for x at i in xs {}                               // with its index (usize); `for &x at i` too
 while i < n { i = i + 1 }                         // any other loop (`while true` for ever); `label:`, break/continue on both
-match value { int{ v } => { ... } text{ s } => { ... } none => {} }      // exhaustive
-match kind { byte | char => { ... } else => { ... } }                     // enums too
-let s = match kind { byte => "byte", char => "char", else => return null }   // arms without braces
+match value { int{ v } => {} text{ s } => {} none => {} }      // exhaustive
+match kind { byte | char => {} else => {} }                     // enums too
+let name = match kind { byte => "byte", char => "char", else => return null }   // arms without braces
 if r is int{ v } { use{ v } }                     // test one variant and bind (§8, Is)
-let n = map::get{ m, key } ifnull { return null } // ?T: default or leave
-let x = parse{ ... } iferr err{ error } { return 1 }   // !T: handle the error
-let ok{ value = d } = r else err{ error } { return error }
-defer list::free{ list = &xs }                    // runs at block exit
+let k = map::get{ m, key } ifnull { return null } // ?T: default or leave
+let p = parse{ s } iferr err{ error } { return 1 }     // !T: handle the error
+let ok{ value = d } = parse{ s } else err{ error } { return error }
+defer list::free{ list = &words }                 // runs at block exit
 defer if c { f{} }                                // any statement but let/return/break/continue
-{ let tmp = load{ ... }; use{ tmp } }             // a block of its own: a scope, with its defers
-let x = try parse{ ... }.x                        // (try parse{ ... }).x
+{ let tmp = load{ s }; use{ v = tmp } }           // a block of its own: a scope, with its defers
+let x = try parse{ s }.x                          // (try parse{ s }).x
 ```
 
 - **Write a `for`, not a counter** (§11, For): a `while` that forgets `i = i + 1` hangs. The
@@ -219,10 +238,20 @@ errors keep their payloads (`parse::bad_digit{ at } => ...`). A local inferred f
 (`let f = parse_number`) keeps the function's own set and takes no other function. A table of
 them replaces a chain of calls:
 
-```
+<!-- context:
+struct State { n: i32 }
+namespace core { fn run { mut st: State, op: u16 } -> !bool { return op == 1 } }
+namespace vars { fn run { mut st: State, op: u16 } -> !bool { return op == 2 } }
+namespace bits { fn run { mut st: State, op: u16 } -> !bool { return op == 3 } }
+fn main {} {}
+-->
+```ctx
 type Step = fn{ mut st: State, op: u16 } -> !bool
-let steps: [3]Step = [core::run, vars::run, math::run]
-for step in steps { if try step{ &st, op } { return } }
+
+fn dispatch { mut st: State, op: u16 } -> ! {
+    let steps: [3]Step = [core::run, vars::run, bits::run]
+    for step in steps { if try step{ &st, op } { return } }
+}
 ```
 
 `main` (and a build program's `build`) may return `!` or `!i32` and `try` its way out: an error
@@ -233,7 +262,14 @@ without a writer (a struct, a union, an enum, an optional, an array) prints from
 
 ## Memory (§14; std alloc, arena, list, map)
 
-```
+<!-- context:
+struct Point { x: i32, y: i32 }
+fn memory { mut mem: Mem } -> ! {
+    ...
+}
+fn main {} {}
+-->
+```ctx
 let pages = mem::pages{ &mem, size = 1 << 20 } ifnull { return alloc::out_of_memory }
 let mut heap = arena::new{ buf = pages }
 let mut xs = list::new(u32){ realloc = arena::alloc, &heap }
@@ -292,7 +328,10 @@ literal is read-only, so it is no `[]mut u8` (compare a `[]mut u8` with one afte
 `let s: []u8 = bytes`). A multi-line literal (GLSL) is lines that each start with `\\`, raw,
 joined with `\n` (§11, Literals, rule 9):
 
-```
+<!-- context:
+fn main {} {}
+-->
+```ctx
 const MESH_VS: c::String =
     \\#version 410 core
     \\void main() { gl_Position = vec4(0.0); }
@@ -304,7 +343,15 @@ const MESH_VS: c::String =
 and runs it; `ctxc exe DIR -o OUT.exe` only builds. Big programs compile as parallel C units;
 unchanged units are cached. A build program names its sources:
 
-```
+<!-- context:
+// file: gffdump/build.ctx
+...
+// file: gffdump/main.ctx
+fn main {} { _ = lib::answer{} }
+// file: lib/lib.ctx
+namespace lib { fn answer {} -> i32 { return 42 } }
+-->
+```ctx
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "gffdump", root = "." }   // this directory's own .ctx files
     build::add_sources{ &b, exe, dir = "../lib" }             // a directory and all below it
@@ -336,7 +383,26 @@ needs `build::trace_calls{ &b, exe, on = true }` (a few percent slower).
 A test is a fn beside the code it tests, in a file of its own (`wav_test.ctx` next to
 `wav.ctx`):
 
-```
+<!-- context:
+const HEADER: []u8 = "RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x02\x00\x44\xAC\x00\x00"
+namespace wav {
+    error truncated{ at: usize }
+    error not_wave
+    struct Format { channels: u16, rate: u32, bits: u16 = 16 }
+    fn u16_at { b: []u8, at: usize } -> !u16 {
+        if at + 2 > b.len { return truncated{ at } }
+        return @as(u16, b[at]) | (@as(u16, b[at + 1]) << 8)
+    }
+    fn read_format { b: []u8 } -> !Format {
+        if b.len < 12 or b[0..4] != "RIFF" or b[8..12] != "WAVE" { return not_wave }
+        let channels = try u16_at{ b, at = 22 }
+        let lo = try u16_at{ b, at = 24 }
+        let hi = try u16_at{ b, at = 26 }
+        return Format{ channels, rate = @as(u32, lo) | (@as(u32, hi) << 16), .. }
+    }
+}
+-->
+```ctx
 namespace wav_tests {
     #test
     fn a_short_header_is_truncated { mut t: Test, mut mem: Mem } -> ! {

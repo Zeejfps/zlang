@@ -1,0 +1,46 @@
+// The docs' checker (tests/helpers/docs.ctx) fails a block without a mark, an error a block
+// doesn't state, a stated error ctxc doesn't report and an error in a block's context; it
+// passes a block whose stated errors are reported, whole or by their start, and a text block.
+//# build docs: {home}/tests/helpers/docs.ctx
+//# write doc.md:
+//| ```
+//| no mark
+//| ```
+//|
+//| ```ctx
+//| fn main {} { let x: u8 = 300 }
+//| ```
+//|
+//| ```ctx
+//| fn main {} { let x: u8 = 300 }  // error: literal 300 does not fit in u8
+//| ```
+//|
+//| <!-- context:
+//| fn main {} {
+//|     ...
+//| }
+//| -->
+//| ```ctx
+//| let a: u8 = 300                 // error: literal 300 does not ...
+//| let b: i32 = 1                  // error: an error ctxc doesn't report
+//| ```
+//|
+//| <!-- context:
+//| fn main {} { let y: u8 = 256 }
+//| -->
+//| ```ctx
+//| fn other {} {}
+//| ```
+//|
+//| ```text
+//| fn main( { anything
+//| ```
+//# $ {docs} {ctxc} {dir}/blocks {dir}/doc.md
+//# env: CTX_HOME={home}
+//# exit: 1
+//# stdout:
+//| {dir}/doc.md:1: fail: a block needs its mark after the fence: ```ctx for ctxlang, ```text for anything else (found ``)
+//| {dir}/doc.md:6: fail: an error the block doesn't state: literal 300 does not fit in u8
+//| {dir}/doc.md:20: fail: ctxc reports no error `an error ctxc doesn't report` here
+//| {dir}/doc.md:26: fail: an error outside the block, at {dir}/blocks/doc-26/main.ctx:1: literal 256 does not fit in u8
+//| blocks: 4 checked, 1 text
