@@ -51,6 +51,9 @@ namespace ui_fonts {
         long: usize,
         face_num_glyphs: usize,         // FT_FaceRec.num_glyphs, FT_Long
         face_units_per_em: usize,       // FT_FaceRec.units_per_EM, FT_UShort
+        face_ascender: usize,           // FT_FaceRec.ascender, FT_Short (font units)
+        face_descender: usize,          // FT_FaceRec.descender, FT_Short
+        face_height: usize,             // FT_FaceRec.height, FT_Short
         face_glyph: usize,              // FT_FaceRec.glyph, FT_GlyphSlot
         size_y_ppem: usize,             // FT_SizeRec.metrics.y_ppem, FT_UShort
         size_ascender: usize,           // FT_SizeRec.metrics.ascender, FT_Pos (26.6)
@@ -71,26 +74,28 @@ namespace ui_fonts {
 
     const LAYOUT_LLP64: Layout = Layout{
         long = 4,
-        face_num_glyphs = 16, face_units_per_em = 104, face_glyph = 120,
+        face_num_glyphs = 16, face_units_per_em = 104, face_ascender = 106, face_descender = 108, face_height = 110, face_glyph = 120,
         size_y_ppem = 26, size_ascender = 36, size_descender = 40, size_height = 44,
         slot_face = 8, slot_glyph_index = 24, slot_bitmap = 104, slot_bitmap_left = 144, slot_bitmap_top = 148,
         bitmap_rows = 0, bitmap_width = 4, bitmap_pitch = 8, bitmap_buffer = 16, bitmap_num_grays = 24, bitmap_pixel_mode = 26,
     }
     const LAYOUT_LP64: Layout = Layout{
         long = 8,
-        face_num_glyphs = 32, face_units_per_em = 136, face_glyph = 152,
+        face_num_glyphs = 32, face_units_per_em = 136, face_ascender = 138, face_descender = 140, face_height = 142, face_glyph = 152,
         size_y_ppem = 26, size_ascender = 48, size_descender = 56, size_height = 64,
         slot_face = 8, slot_glyph_index = 24, slot_bitmap = 152, slot_bitmap_left = 192, slot_bitmap_top = 196,
         bitmap_rows = 0, bitmap_width = 4, bitmap_pitch = 8, bitmap_buffer = 16, bitmap_num_grays = 24, bitmap_pixel_mode = 26,
     }
     // FT_SizeRec is { FT_Face face; FT_Generic generic; FT_Size_Metrics metrics; ... }: metrics at
     // 24 on both, and the size_* offsets above are 24 plus the field's offset in FT_Size_Metrics.
+    // FT_FaceRec's ascender, descender and height are the three FT_Shorts after units_per_EM.
     const LAYOUT: Layout = if target::OS == build::Os::windows { LAYOUT_LLP64 } else { LAYOUT_LP64 }
 
     // ---- reading mirrored fields
 
     fn read_u8 { at: *u8, offset: usize } -> u8 { return (at + offset).* }
     fn read_u16 { at: *u8, offset: usize } -> u16 { return @cast(*u16, at + offset).* }
+    fn read_i16 { at: *u8, offset: usize } -> i16 { return @cast(*i16, at + offset).* }
     fn read_i32 { at: *u8, offset: usize } -> i32 { return @cast(*i32, at + offset).* }
     fn read_u32 { at: *u8, offset: usize } -> u32 { return @cast(*u32, at + offset).* }
     fn read_long { at: *u8, offset: usize, layout: Layout } -> i64 {
@@ -109,6 +114,20 @@ namespace ui_fonts {
     }
     fn get_units_per_em { face: *mut FtFace, layout: Layout } -> u16 {
         return read_u16{ at = face_bytes{ face }, offset = layout.face_units_per_em }
+    }
+
+    // The face's own line metrics in font units, as FreeType read them (hhea, or OS/2's when hhea
+    // has none): the ascender above the baseline, the descender below it (negative), and the
+    // distance from one baseline to the next.
+    struct DesignMetrics { ascender: i16, descender: i16, height: i16 }
+
+    fn get_design_metrics { face: *mut FtFace, layout: Layout } -> DesignMetrics {
+        let at = face_bytes{ face }
+        return DesignMetrics{
+            ascender = read_i16{ at, offset = layout.face_ascender },
+            descender = read_i16{ at, offset = layout.face_descender },
+            height = read_i16{ at, offset = layout.face_height },
+        }
     }
 
     // A size's metrics in device pixels: y_ppem, and the ascender, descender and line height as

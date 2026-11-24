@@ -239,6 +239,13 @@ namespace ui_fonts {
         if not (m.ascender > 0.0 and m.ascender < px * 4.0) { return bad_layout{ field = "FT_Size_Metrics.ascender", got = @as(i64, m.ascender), want = @as(i64, CHECK_PIXELS) } }
         if not (m.descender <= 0.0 and m.descender > -px * 4.0) { return bad_layout{ field = "FT_Size_Metrics.descender", got = @as(i64, m.descender), want = 0 } }
         if not (m.height > 0.0 and m.height < px * 4.0) { return bad_layout{ field = "FT_Size_Metrics.height", got = @as(i64, m.height), want = @as(i64, CHECK_PIXELS) } }
+        // The face's design metrics, scaled to the size, are what FreeType rounded to the size's
+        // own: within a pixel of them.
+        let design = get_design_metrics{ face = f, layout }
+        let k = px / @as(f32, upem)
+        if not is_near{ a = @as(f32, design.ascender) * k, b = m.ascender } { return bad_layout{ field = "FT_FaceRec.ascender", got = @as(i64, design.ascender), want = @as(i64, m.ascender) } }
+        if not is_near{ a = @as(f32, design.descender) * k, b = m.descender } { return bad_layout{ field = "FT_FaceRec.descender", got = @as(i64, design.descender), want = @as(i64, m.descender) } }
+        if not is_near{ a = @as(f32, design.height) * k, b = m.height } { return bad_layout{ field = "FT_FaceRec.height", got = @as(i64, design.height), want = @as(i64, m.height) } }
 
         let glyph = pick_check_glyph{ &lib, face = f, count = @as(u32, glyphs) }
         let loaded = FT_Load_Glyph{ &lib.fonts, face = f, glyph_index = glyph, load_flags = LOAD_FLAGS }
@@ -258,6 +265,12 @@ namespace ui_fonts {
                 return bad_layout{ field = "FT_GlyphSlotRec.bitmap_top", got = @as(i64, slot.top), want = @as(i64, m.ascender) }
             }
         }
+    }
+
+    // Whether two metrics in pixels are within one of each other.
+    fn is_near { a: f32, b: f32 } -> bool {
+        let d = a - b
+        return d <= 1.0 and d >= -1.0
     }
 
     // A glyph to load for the check: of the first of a few common characters the face has, or glyph
@@ -422,17 +435,45 @@ namespace ui_fonts {
         lib.live.hb_fonts = lib.live.hb_fonts + 1
         hb_ot_font_set_funcs{ &lib.fonts, font }
         hb_font_set_scale{ &lib.fonts, font, x_scale = @as(i32, pixels) * 64, y_scale = @as(i32, pixels) * 64 }
-        // The line box holds the ascent and the descent, so a clip to it never cuts a descender:
-        // FreeType rounds the ascender up and the descender down but the line height to nearest.
-        let ascent = m.ascender
-        let descent = -m.descender
+        let line = measure_design{ design = get_design_metrics{ face = f, layout = lib.layout }, units_per_em = lib.faces[face].units_per_em, pixels, rounded = m }
         lib.sizes[slot].hb = font
-        lib.sizes[slot].ascent = ascent
-        lib.sizes[slot].descent = descent
-        lib.sizes[slot].height = ui::pick_max_f32{ a = m.height, b = ascent + descent }
+        lib.sizes[slot].ascent = line.ascent
+        lib.sizes[slot].descent = line.descent
+        lib.sizes[slot].height = line.height
         lib.sizes[slot].id = lib.next_size
         lib.next_size = lib.next_size + 1
         return slot
+    }
+
+    // A sized face's line, in device pixels, unrounded: the core makes it whole (`ui::text::
+    // round_metrics`: the ascent to the nearest pixel, the height up), and the staged level puts the
+    // baseline where the core does.
+    struct Line { ascent: f32, descent: f32, height: f32 }
+
+    // The rule for a line box, so text centred in a control by its line box sits in the middle:
+    //  - The ascent is the face's design ascender scaled to the size, exactly. FreeType's size
+    //    metrics round it up to the grid (Segoe UI's 15.1 pixels at 14 is 16 there), which put the
+    //    baseline, and every glyph, a pixel below the middle of the box; the core rounds this one to
+    //    the nearest pixel (15).
+    //  - The height is the face's line spacing, and at least the ascent as the core rounds it plus
+    //    the design descender: so, rounded up, the box always holds the descent below the baseline
+    //    (nothing of a descender is cut by a clip to the line), and holds the ascent above it to
+    //    within half a pixel; the ascender of a face is above its accented capitals (Å), with room.
+    //  - Every face of a line is drawn on the first face's baseline: a fallback face's glyphs (CJK)
+    //    keep their own bearings from it, so the baseline is one across the row.
+    // A face with no design ascender (some bitmap-only faces) keeps FreeType's size metrics.
+    fn measure_design { design: DesignMetrics, units_per_em: u32, pixels: u32, rounded: SizeMetrics } -> Line {
+        let mut ascent = rounded.ascender
+        let mut descent = -rounded.descender
+        let mut spacing = rounded.height
+        if units_per_em > 0 and design.ascender > 0 {
+            let k = @as(f32, pixels) / @as(f32, units_per_em)
+            ascent = @as(f32, design.ascender) * k
+            descent = ui::pick_max_f32{ a = 0.0, b = -@as(f32, design.descender) * k }
+            spacing = @as(f32, design.height) * k
+        }
+        let baseline = ui::floor_f32{ x = ascent + 0.5 }
+        return Line{ ascent, descent, height = ui::pick_max_f32{ a = spacing, b = baseline + descent } }
     }
 
     // The face slot named by `handle` at `pixels`, sized, or null (counted) for a handle that names no

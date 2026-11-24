@@ -117,6 +117,7 @@ fn run { mut io: Io, mut fonts: ui_fonts::Fonts, mut t: ui_test::Tally, mut heap
     check_bad_input{ &io, &t, &lib, provider, face }
     check_text{ &io, &t, &heap, &lib, provider, face }
     check_ui{ &io, &t, &heap, &lib, provider, face }
+    try check_line_box{ &io, &t, &lib, provider, face, cjk }
     if let bytes = cjk { try check_fallback{ &io, &t, &lib, provider, face, cjk = bytes } }
     try check_release{ &io, &t, &heap, &lib, provider, latin }
     check_small_cache{ &io, &fonts, &t, &heap, latin }
@@ -466,6 +467,84 @@ fn check_ui { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, mut lib
     ui::end_frame{ &ui }
     let rect = ui::get_rect{ ui, id = label } ifnull ui::Rect{ .. }
     ui_test::expect{ &io, &t, ok = size == 24 and wide > w and rect.w == wide and rect.h == line.height and ui.stats.problems == 0, what = "at scale 1.5 a text of 16 units is the face's 24 pixel text, sized in whole pixels" }
+}
+
+// The line box (the rule at ui_fonts::measure_design), at the pixel sizes text of 13, 14, 16 and 24
+// units comes to at scales 1 and 1.5: the baseline is the face's design ascender to the nearest
+// pixel, not FreeType's rounded up; the height is the line spacing and at least that baseline and
+// the descent, rounded up; every glyph of a line of accented capitals and descenders, and of CJK
+// from the fallback face when there is one, is inside the box (nothing is cut by a clip to it);
+// and a capital H centred by its line box in a control twice the text's size is within a pixel of
+// the control's middle.
+fn check_line_box { mut io: Io, mut t: ui_test::Tally, mut lib: ui_fonts::Library, provider: ui::TextProvider, face: ui_fonts::Face, cjk: ?[]u8 } -> ! {
+    let slot = ui_fonts::find_face{ lib, id = face.id } ifnull { return ui_fonts::closed }
+    let ft = lib.faces[slot].ft ifnull { return ui_fonts::closed }
+    let design = ui_fonts::get_design_metrics{ face = ft, layout = lib.layout }
+    let upem = @as(f32, lib.faces[slot].units_per_em)
+    let mut other: ?ui_fonts::Face = null
+    if let bytes = cjk {
+        let added = try ui_fonts::add_face{ &lib, data = bytes, index = 0 }
+        ui_fonts::add_fallback{ &lib, face = added }
+        other = added
+    }
+    let units: [4]f32 = [13.0, 14.0, 16.0, 24.0]
+    let text = "\xC3\x85\xC3\x89Hgjy\xC3\xA7Q\xE4\xB8\x96\xE7\x95\x8C"       // ÅÉHgjyçQ世界
+    let mut baselines = true
+    let mut heights = true
+    let mut inside = true
+    let mut centred = true
+    let mut fallback_glyphs: u32 = 0
+    let mut pixels_buf: [65536]u8
+    for k in 0..2 {
+        let scale: f32 = if k == 0 { 1.0 } else { 1.5 }
+        for u in units {
+            let size = ui::scale_font_size{ size = u, scale }
+            let px = @as(u32, size)
+            let raw = provider.metrics{ state = provider.state, handle = face.id, pixels = px }
+            let box = ui::text::round_metrics{ m = raw }
+            let per = @as(f32, px) / upem
+            let ascent = ui::round_pixels{ v = @as(f32, design.ascender) * per }
+            let descent = ui::ceil_pixels{ v = -@as(f32, design.descender) * per - 0.001 }
+            let spacing = ui::ceil_pixels{ v = @as(f32, design.height) * per - 0.001 }
+            if box.ascent != ascent { baselines = false }
+            if box.height != ui::pick_max_i32{ a = spacing, b = ascent + descent } { heights = false }
+            let mut out: [32]ui::Shaped
+            let glyphs = shape{ provider, face, pixels = px, text, out = out[..] }
+            let mut h_top: i32 = 0
+            let mut h_rows: i32 = 0
+            for g in glyphs {
+                let mut bitmap = ui::GlyphBitmap{ pixels = pixels_buf[..], width = 0, height = 0, left = 0, top = 0 }
+                if not provider.rasterize{ state = provider.state, face = g.face, glyph = g.glyph, out = &bitmap } or bitmap.height == 0 { continue }
+                let rows = @as(i32, bitmap.height)
+                if bitmap.top > box.ascent or rows - bitmap.top > box.height - box.ascent { inside = false }
+                if g.cluster == 4 {
+                    h_top = bitmap.top
+                    h_rows = rows
+                }
+                if g.cluster >= 11 and g.face != glyphs[0].face { fallback_glyphs = fallback_glyphs + 1 }
+            }
+            // A control twice the text's size, its line box centred in it (the spare halved and
+            // rounded down, as the layout centres), and H's ink in that box.
+            let control = ui::scale_length{ length = u * 2.0, scale }
+            let top = (control - box.height) / 2
+            let ink_top = top + box.ascent - h_top
+            let off2 = 2 * ink_top + h_rows - control
+            if off2 > 2 or off2 < -2 { centred = false }
+            let s = ui_fonts::find_sized{ &lib, handle = face.id, pixels = px } ifnull { return ui_fonts::closed }
+            let sized = lib.sizes[s].ft ifnull { return ui_fonts::closed }
+            let rounded = ui_fonts::get_size_metrics{ size = sized, layout = lib.layout }
+            _ = @fmt(&io, "line box at {} px: height {}, baseline {} (FreeType's {}); H {} rows, its middle {} half pixels below a {} pixel control's\n",
+                px, box.height, box.ascent, write_number{ v = rounded.ascender, _ }, h_rows, off2, control)
+        }
+    }
+    ui_test::expect{ &io, &t, ok = baselines, what = "line box: the baseline is the face's design ascender to the nearest pixel" }
+    ui_test::expect{ &io, &t, ok = heights, what = "line box: the height is the line spacing, and at least the baseline plus the descent, rounded up" }
+    ui_test::expect{ &io, &t, ok = inside, what = "line box: every glyph of accented capitals, descenders and CJK is inside the box" }
+    ui_test::expect{ &io, &t, ok = centred, what = "line box: a capital centred by its line box is within a pixel of the control's middle" }
+    if let f = other {
+        ui_test::expect{ &io, &t, ok = fallback_glyphs >= 16, what = "line box: the CJK came from the fallback face, on the same baseline" }
+        ui_fonts::release_face{ &lib, face = f }
+    }
 }
 
 // With a CJK face as fallback, a line mixing Latin and CJK comes back as runs of two sized faces.
