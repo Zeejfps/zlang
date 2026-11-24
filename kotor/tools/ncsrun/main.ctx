@@ -413,7 +413,7 @@ fn run_script {
         // The actions it handed on, and theirs, oldest first.
         while true {
             let s = nwstub::next_action{ &stub } ifnull { break }
-            if opts.verbose { _ = @fmt(&io, "  action at {}:\n", nwvm::Hex{ n = s.program.at[s.resume] }) }
+            if opts.verbose { _ = @fmt(&io, "  action at {:08x}:\n", s.program.at[s.resume]) }
             let t1 = sdl::counter{ &sdl }
             let done = nwvm::resume{ &vm, situation = s, self = nwstub::SELF, engine = nwstub::call{ &stub, _ } }
             report.ticks = report.ticks + (sdl::counter{ &sdl } - t1)
@@ -547,11 +547,4 @@ namespace out {
     fn put_usize { mut io: Io, n: usize } { io::print_u64{ &io, n } }
     #write
     fn put_f64 { mut io: Io, n: f64 } { io::print_f64{ &io, n } }
-    #write
-    fn put_hex { mut io: Io, h: nwvm::Hex } {
-        let mut buf: [16]u8
-        let mut t = nwvm::Text{ buf = buf[..], len = 0 }
-        nwvm::text_hex{ &t, h }
-        io::write{ &io, to = io::Stream::out, bytes = buf[..t.len] }
-    }
 }

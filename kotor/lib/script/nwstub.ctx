@@ -313,7 +313,7 @@ namespace nwstub {
                 int{ v } => { _ = @fmt(&log, "{}", v) }
                 float{ v } => { put_float{ t = &log, f = v } }
                 string{ s } => { _ = @fmt(&log, "\"{}\"", s) }
-                object{ id } => { _ = @fmt(&log, "object {}", nwvm::Hex{ n = id }) }
+                object{ id } => { _ = @fmt(&log, "object {:08x}", id) }
                 vector{ v } => {
                     _ = @fmt(&log, "[")
                     put_float{ t = &log, f = v.x }

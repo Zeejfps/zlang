@@ -545,7 +545,8 @@ program asks for one (spec §19).
 - **Editor queries** (stage 5). Fixture files mark positions (`/*^def*/`, `/*^hover*/`) and state
   the expected answer, which covers the semantic model without a client.
 - **Float text.** `f64_digits` must copy Python's `repr` exactly: shortest round-trip digits,
-  exponent form below `1e-4` and from `1e16`, and a `.0` suffix.
+  exponent form below `1e-4` and from `1e16`, and a `.0` suffix; `f32_digits` is the same over
+  an f32's own digits (spec §13, Formatting, rule 9).
 
 ## Open decisions
 

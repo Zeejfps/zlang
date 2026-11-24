@@ -194,6 +194,18 @@ namespace io {
     #write
     fn write_f64 { mut io: Io, n: f64 } { emit_f64{ &io, to = Stream::out, n } }
 
+    // A hole with a spec, as `{:>8}`, `{:08x}` or `{:.3}` (§13, Formatting; std/fmt.ctx).
+    #write
+    fn write_fmt_int { mut io: Io, v: fmt::Int } { emit_int{ &io, to = Stream::out, v } }
+    #write
+    fn write_fmt_uint { mut io: Io, v: fmt::Uint } { emit_uint{ &io, to = Stream::out, v } }
+    #write
+    fn write_fmt_f64 { mut io: Io, v: fmt::F64 } { emit_fixed{ &io, to = Stream::out, v } }
+    #write
+    fn write_fmt_f32 { mut io: Io, v: fmt::F32 } { emit_fixed32{ &io, to = Stream::out, v } }
+    #write
+    fn write_fmt_text { mut io: Io, v: fmt::Text } { emit_text{ &io, to = Stream::out, v } }
+
     #write
     fn ewrite_text { mut e: Stderr, s: strlit } { write{ io = e.io, to = Stream::err, bytes = s.bytes } }
     #write
@@ -226,6 +238,43 @@ namespace io {
     fn ewrite_f32 { mut e: Stderr, n: f32 } { emit_f32{ io = e.io, to = Stream::err, n } }
     #write
     fn ewrite_f64 { mut e: Stderr, n: f64 } { emit_f64{ io = e.io, to = Stream::err, n } }
+
+    #write
+    fn ewrite_fmt_int { mut e: Stderr, v: fmt::Int } { emit_int{ io = e.io, to = Stream::err, v } }
+    #write
+    fn ewrite_fmt_uint { mut e: Stderr, v: fmt::Uint } { emit_uint{ io = e.io, to = Stream::err, v } }
+    #write
+    fn ewrite_fmt_f64 { mut e: Stderr, v: fmt::F64 } { emit_fixed{ io = e.io, to = Stream::err, v } }
+    #write
+    fn ewrite_fmt_f32 { mut e: Stderr, v: fmt::F32 } { emit_fixed32{ io = e.io, to = Stream::err, v } }
+    #write
+    fn ewrite_fmt_text { mut e: Stderr, v: fmt::Text } { emit_text{ io = e.io, to = Stream::err, v } }
+
+    fn emit_int { mut io: Io, to: Stream, v: fmt::Int } {
+        let mut buf: [fmt::LONGEST]u8
+        write{ &io, to, bytes = fmt::format_int{ v, into = buf[..] } }
+    }
+
+    fn emit_uint { mut io: Io, to: Stream, v: fmt::Uint } {
+        let mut buf: [fmt::LONGEST]u8
+        write{ &io, to, bytes = fmt::format_uint{ v, into = buf[..] } }
+    }
+
+    fn emit_fixed { mut io: Io, to: Stream, v: fmt::F64 } {
+        let mut buf: [fmt::LONGEST]u8
+        write{ &io, to, bytes = fmt::format_f64{ v, into = buf[..] } }
+    }
+
+    fn emit_fixed32 { mut io: Io, to: Stream, v: fmt::F32 } {
+        let mut buf: [fmt::LONGEST]u8
+        write{ &io, to, bytes = fmt::format_f32{ v, into = buf[..] } }
+    }
+
+    fn emit_text { mut io: Io, to: Stream, v: fmt::Text } {
+        write{ &io, to, bytes = fmt::spaces{ n = fmt::pad_before{ v } } }
+        write{ &io, to, bytes = v.s }
+        write{ &io, to, bytes = fmt::spaces{ n = fmt::pad_after{ v } } }
+    }
 
     fn emit_i64 { mut io: Io, to: Stream, n: i64 } {
         let mut buf: [20]u8

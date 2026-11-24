@@ -1595,6 +1595,23 @@ namespace eval {
                 slice::copy(u8){ dst = try at_w{ &m, a = ptr, n = @as(u64, k) }, src = buf[..k] }
                 return try store{ &m, a = res, n = 8, v = @as(u64, k) }
             }
+            if slice::eq_bytes{ a = s, b = "ctx_float_f64_fixed" } {
+                let n = try arg_bits{ &m, f, base, name = "n" }
+                let precision = try arg_bits{ &m, f, base, name = "precision" }
+                let into = try arg_at{ &m, f, base, name = "into" }
+                let mut buf: [352]u8
+                let k = ascii::f64_fixed{ n = f64_of{ v = n }, precision = @trunc(u32, precision), into = buf[..] }
+                let ptr = try load{ &m, a = into, n = 8 }
+                let len = try load{ &m, a = into + 8, n = 8 }
+                if @as(u64, k) > len {
+                    let mut b = builder{ heap = m.heap }
+                    try! @fmt(&b, "{} characters do not fit in a buffer of {}", k, len)
+                    panic_nopos{ &m, msg = utf8::view{ b }.bytes }
+                    return halt
+                }
+                slice::copy(u8){ dst = try at_w{ &m, a = ptr, n = @as(u64, k) }, src = buf[..k] }
+                return try store{ &m, a = res, n = 8, v = @as(u64, k) }
+            }
             let f64_parse = slice::eq_bytes{ a = s, b = "ctx_float_f64_parse" }
             if f64_parse or slice::eq_bytes{ a = s, b = "ctx_float_f32_parse" } {
                 let text = try arg_at{ &m, f, base, name = "text" }

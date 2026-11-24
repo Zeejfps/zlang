@@ -371,7 +371,7 @@ fn note_worst { mut c: Check, path: []u8, max: i32, rms: f64 } {
 
 fn report { mut io: Io, mut sdl: sdl::Sdl, c: Check, opts: Options, elapsed: f64 } {
     let freq = @as(f64, sdl::counter_frequency{ &sdl })
-    _ = @fmt(&io, "\n{} files in {} s\n", c.seen, Fixed{ v = elapsed, places = 1, width = 0 })
+    _ = @fmt(&io, "\n{} files in {:.1} s\n", c.seen, elapsed)
     _ = @fmt(&io, "class               files      hours   decode s   x real-time\n")
     let mut i: usize = 0
     let mut files: u32 = 0
@@ -381,9 +381,8 @@ fn report { mut io: Io, mut sdl: sdl::Sdl, c: Check, opts: Options, elapsed: f64
         let k = c.classes[i]
         if k.files > 0 {
             let dec = @as(f64, k.ticks) / freq
-            _ = @fmt(&io, "{}{} {} {} {} {}\n", CLASS_NAMES[i], Pad{ n = 17 - CLASS_NAMES[i].len }, Right{ v = k.files, width = 7 },
-                Fixed{ v = k.seconds / 3600.0, places = 3, width = 10 }, Fixed{ v = dec, places = 2, width = 10 },
-                Fixed{ v = if dec > 0.0 { k.seconds / dec } else { 0.0 }, places = 0, width = 13 })
+            _ = @fmt(&io, "{:<17} {:>7} {:10.3} {:10.2} {:13.0}\n", CLASS_NAMES[i], k.files, k.seconds / 3600.0, dec,
+                if dec > 0.0 { k.seconds / dec } else { 0.0 })
             files = files + k.files
             secs = secs + k.seconds
             ticks = ticks + k.ticks
@@ -391,19 +390,18 @@ fn report { mut io: Io, mut sdl: sdl::Sdl, c: Check, opts: Options, elapsed: f64
         i = i + 1
     }
     let dec = @as(f64, ticks) / freq
-    _ = @fmt(&io, "all              {} {} {} {}\n", Right{ v = files, width = 7 }, Fixed{ v = secs / 3600.0, places = 3, width = 10 },
-        Fixed{ v = dec, places = 2, width = 10 }, Fixed{ v = if dec > 0.0 { secs / dec } else { 0.0 }, places = 0, width = 13 })
+    _ = @fmt(&io, "all              {:>7} {:10.3} {:10.2} {:13.0}\n", files, secs / 3600.0, dec, if dec > 0.0 { secs / dec } else { 0.0 })
     _ = @fmt(&io, "failed {}, length mismatches {}, lost sync {}\n", c.failed, c.mismatched, c.lost_sync)
     if opts.every > 0 {
         let rms = if c.ref_samples > 0 { sqrt{ x = c.ref_sum_sq / @as(f64, c.ref_samples) } } else { 0.0 }
-        _ = @fmt(&io, "\nffmpeg (mp3float) comparison: {} files, {} samples; max difference {}, RMS {}, samples differing {} ({}%)\n",
-            c.refs, c.ref_samples, c.ref_max, Fixed{ v = rms, places = 4, width = 0 }, c.ref_differing,
-            Fixed{ v = if c.ref_samples > 0 { 100.0 * @as(f64, c.ref_differing) / @as(f64, c.ref_samples) } else { 0.0 }, places = 3, width = 0 })
+        _ = @fmt(&io, "\nffmpeg (mp3float) comparison: {} files, {} samples; max difference {}, RMS {:.4}, samples differing {} ({:.3}%)\n",
+            c.refs, c.ref_samples, c.ref_max, rms, c.ref_differing,
+            if c.ref_samples > 0 { 100.0 * @as(f64, c.ref_differing) / @as(f64, c.ref_samples) } else { 0.0 })
         _ = @fmt(&io, "failed to compare {}, length differs {}\n", c.ref_failed, c.ref_length_differs)
         let mut w: usize = 0
         while w < c.nworst {
             let r = c.worst[w]
-            _ = @fmt(&io, "  max {} rms {}  {}\n", r.max, Fixed{ v = r.rms, places = 4, width = 0 }, r.path[..r.len])
+            _ = @fmt(&io, "  max {} rms {:.4}  {}\n", r.max, r.rms, r.path[..r.len])
             w = w + 1
         }
     }
@@ -448,67 +446,4 @@ fn parse_args { mut io: Io, args: Args } -> ?Options {
 fn usage { mut io: Io } -> ?Options {
     io::eprintln{ &io, s = "usage: sndcheck [DIR ...] [--ref [N]] [--game DIR] [--ffmpeg PATH] [-v]" }
     return null
-}
-
-// ---- @fmt into standard output
-
-struct Fixed { v: f64, places: u32, width: usize }
-struct Right { v: u32, width: usize }
-struct Pad { n: usize }
-
-// Table cells; ../common's `out` has the plain writers.
-namespace cells {
-    #write
-    fn put_pad { mut io: Io, p: Pad } {
-        let mut i: usize = 0
-        while i < p.n {
-            io::write{ &io, to = io::Stream::out, bytes = " " }
-            i = i + 1
-        }
-    }
-    #write
-    fn put_right { mut io: Io, r: Right } {
-        let mut buf: [20]u8
-        let s = utf8::fmt_u64{ n = r.v, into = buf[..] }
-        put_pad{ &io, p = Pad{ n = if s.bytes.len < r.width { r.width - s.bytes.len } else { 0 } } }
-        io::print{ &io, s }
-    }
-    // A number with `places` decimals, right-aligned to `width`.
-    #write
-    fn put_fixed { mut io: Io, f: Fixed } {
-        let mut scale: f64 = 1.0
-        let mut k: u32 = 0
-        while k < f.places {
-            scale = scale * 10.0
-            k = k + 1
-        }
-        let neg = f.v < 0.0
-        let a = if neg { -f.v } else { f.v }
-        let whole = @as(u64, a * scale + 0.5)
-        let int_part = whole / @as(u64, scale)
-        let frac = whole % @as(u64, scale)
-        let mut buf: [48]u8
-        let mut n: usize = 0
-        let mut ibuf: [20]u8
-        let text = utf8::fmt_u64{ n = int_part, into = ibuf[..] }
-        if neg { buf[n] = '-'; n = n + 1 }
-        slice::copy(u8){ dst = buf[n..n + text.bytes.len], src = text.bytes }
-        n = n + text.bytes.len
-        if f.places > 0 {
-            buf[n] = '.'
-            n = n + 1
-            let mut digits: [20]u8
-            let mut p: usize = f.places
-            let mut x = frac
-            while p > 0 {
-                digits[p - 1] = @trunc(u8, '0' + x % 10)
-                x = x / 10
-                p = p - 1
-            }
-            slice::copy(u8){ dst = buf[n..n + f.places], src = digits[..f.places] }
-            n = n + f.places
-        }
-        put_pad{ &io, p = Pad{ n = if n < f.width { f.width - n } else { 0 } } }
-        io::write{ &io, to = io::Stream::out, bytes = buf[..n] }
-    }
 }

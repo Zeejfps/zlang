@@ -413,7 +413,18 @@ namespace check {
     // is finished: push is `write`, by writer, `error`, an error hole, whose name writer writes,
     // or `call`, a function hole called with the sink. ty is a hole's type then, and at is
     // where it is.
-    struct Piece { hole: bool, text: []u8, push: []u8, writer: Writer, ty: Id, at: source::Span }
+    struct Piece { hole: bool, text: []u8, push: []u8, writer: Writer, ty: Id, at: source::Span, spec: HoleSpec, wrap: Id }
+
+    // A hole's spec, `{:[<>^][0][width][.precision][x|X|b|o]}` (§13, Formatting), as std's
+    // fmt::Spec has it: align is fmt::Align's value, 0 for none written. given is whether the
+    // hole has one, and text is the hole as written, for messages. With one, the piece's push
+    // is `spec`: the hole's value goes to its writer inside wrap, one of std's fmt::Int,
+    // Uint, F64, F32 or Text.
+    struct HoleSpec { given: bool, text: []u8, width: u32, precision: i32, align: u8, zero: bool, base: u32, upper: bool }
+
+    fn no_spec {} -> HoleSpec {
+        return HoleSpec{ given = false, text = "", width = 0, precision = -1, align = 0, zero = false, base = 10, upper = false }
+    }
 
     // What narrows when a condition is true or false (§8): a local (var) or a path of struct
     // fields from one (root, with var NONE), narrowed to ty. With bind, var is a binding of an
@@ -12542,6 +12553,10 @@ namespace check {
                 let h = args[k]
                 k = k + 1
                 if h.k is builtin{ args = inner } and is_writer_fmt{ e = h } {
+                    if p.spec.given {
+                        errorf{ &c, at = expr_at{ e = h }, msg = @fmt("`{}` has a spec, which is for an integer, a float or a string, and this argument is an @fmt: write `{{}}`, and the spec in the inner format", str{ s = shown_hole{ c, hole = p.spec.text } }) }
+                        ok = false
+                    }
                     if not fmt_parts{ &c, e = h, f = inner[0], args = inner[1..], &pieces, &holes } { ok = false }
                 } else {
                     add_piece{ xs = &pieces, p }
@@ -12845,7 +12860,10 @@ namespace check {
                     error{ &c, at, msg = "the format has a `{` without a `}`; write `{{` for a brace" }
                     return null
                 }
-                if j != i + 1 {
+                let mut spec = no_spec{}
+                if j != i + 1 and s[i + 1] == ':' {
+                    spec = hole_spec{ &c, hole = s[i..j + 1], at } ifnull { return null }
+                } else if j != i + 1 {
                     let mut m = message{ c }
                     try! utf8::push{ b = &m, s = "bad hole `" }
                     let mut q = i
@@ -12854,15 +12872,15 @@ namespace check {
                         try! utf8::push_char{ b = &m, c = code }
                         q = q + 1
                     }
-                    try! utf8::push{ b = &m, s = "` in the format: a hole is `{}`, and a function writes a value another way, as `utf8::write_hex{ n, _ }`" }
+                    try! utf8::push{ b = &m, s = "` in the format: a hole is `{}`, or with a spec after a colon `{:>8}`, `{:08x}` or `{:.3}`, and a function writes a value another way, as `utf8::write_char{ c, _ }`" }
                     error{ &c, at, msg = utf8::view{ b = m } }
                     return null
                 }
                 if text.len > 0 {
-                    add_piece{ xs = &out, p = Piece{ hole = false, text = list::items{ list = text }, push = "", writer = no_writer{}, ty = types::STRLIT, at } }
+                    add_piece{ xs = &out, p = Piece{ hole = false, text = list::items{ list = text }, push = "", writer = no_writer{}, ty = types::STRLIT, at, spec = no_spec{}, wrap = types::NO_TYPE } }
                     text = list::new(u8){ realloc = arena::alloc, heap = c.heap }
                 }
-                add_piece{ xs = &out, p = Piece{ hole = true, text = "", push = "", writer = no_writer{}, ty = types::NO_TYPE, at } }
+                add_piece{ xs = &out, p = Piece{ hole = true, text = "", push = "", writer = no_writer{}, ty = types::NO_TYPE, at, spec, wrap = types::NO_TYPE } }
                 i = j + 1
             } else if ch == '}' {
                 error{ &c, at, msg = "the format has a `}` without a `{`; write `}}` for a brace" }
@@ -12873,9 +12891,82 @@ namespace check {
             }
         }
         if text.len > 0 {
-            add_piece{ xs = &out, p = Piece{ hole = false, text = list::items{ list = text }, push = "", writer = no_writer{}, ty = types::STRLIT, at } }
+            add_piece{ xs = &out, p = Piece{ hole = false, text = list::items{ list = text }, push = "", writer = no_writer{}, ty = types::STRLIT, at, spec = no_spec{}, wrap = types::NO_TYPE } }
         }
 
+        return list::items{ list = out }
+    }
+
+    // The spec of hole `{:...}`, or null after reporting at `at` what is wrong with it:
+    // `[<>^][0][width][.precision][x|X|b|o]`, in that order, each part optional but not all.
+    fn hole_spec { mut c: Checker, hole: []u8, at: source::Span } -> ?HoleSpec {
+        let s = hole[2..hole.len - 1]
+        let mut sp = no_spec{}
+        sp.given = true
+        sp.text = hole
+        let shown = str{ s = shown_hole{ c, hole } }
+        let mut i: usize = 0
+        if i < s.len and (s[i] == '<' or s[i] == '>' or s[i] == '^') {
+            sp.align = if s[i] == '<' { 1 } else if s[i] == '>' { 2 } else { 3 }
+            i = i + 1
+        }
+        if i < s.len and s[i] == '0' {
+            sp.zero = true
+            i = i + 1
+        }
+        let mut digits: usize = 0
+        while i < s.len and s[i] >= '0' and s[i] <= '9' {
+            if digits == 0 and s[i] == '0' { break }
+            if sp.width <= 255 { sp.width = sp.width * 10 + (s[i] - '0') }
+            digits = digits + 1
+            i = i + 1
+        }
+        if i < s.len and s[i] == '.' {
+            i = i + 1
+            let from = i
+            let mut n: i32 = 0
+            while i < s.len and s[i] >= '0' and s[i] <= '9' {
+                if n <= 30 { n = n * 10 + (s[i] - '0') }
+                i = i + 1
+            }
+            if i == from {
+                errorf{ &c, at, msg = @fmt("bad format spec `{}`: a precision is digits after the `.`, as `{{:.3}}`", shown) }
+                return null
+            }
+            sp.precision = n
+        }
+        if i < s.len and (s[i] == 'x' or s[i] == 'X' or s[i] == 'b' or s[i] == 'o') {
+            sp.base = if s[i] == 'b' { 2 } else if s[i] == 'o' { 8 } else { 16 }
+            sp.upper = s[i] == 'X'
+            i = i + 1
+        }
+        if i < s.len or s.len == 0 {
+            errorf{ &c, at, msg = @fmt("bad format spec `{}`: a spec is `{{:[<>^][0][width][.precision][x|X|b|o]}}`, in that order, as `{{:>8}}`, `{{:08x}}` or `{{:.3}}`; a hole without one is `{{}}`", shown) }
+            return null
+        }
+        if sp.width > 255 {
+            errorf{ &c, at, msg = @fmt("bad format spec `{}`: a width is at most 255", shown) }
+            return null
+        }
+        if sp.precision > 30 {
+            errorf{ &c, at, msg = @fmt("bad format spec `{}`: a precision is at most 30", shown) }
+            return null
+        }
+        if sp.zero and sp.width == 0 {
+            errorf{ &c, at, msg = @fmt("bad format spec `{}`: `0` pads a number with zeros up to a width, and there is none: write the width, as `{{:08}}`", shown) }
+            return null
+        }
+        if sp.zero and sp.align != 0 {
+            errorf{ &c, at, msg = @fmt("bad format spec `{}`: `0` puts zeros between a number's sign and its digits, so it takes no `<`, `>` or `^`: write `{{:{}}}`", shown, str{ s = s[1..] }) }
+            return null
+        }
+        return sp
+    }
+
+    // A hole as a message shows it: a byte that isn't ASCII as `?`.
+    fn shown_hole { c: Checker, hole: []u8 } -> []u8 {
+        let mut out = list::new(u8){ realloc = arena::alloc, heap = c.heap }
+        for b in hole { try! list::push{ list = &out, item = if b < 128 { b } else { '?' } } }
         return list::items{ list = out }
     }
 
@@ -12938,7 +13029,19 @@ namespace check {
             } else {
                 fmt_text_ok{ &c, text = p.text, at }
             }
-            if is_errs{ c, t } or t == types::STRLIT {
+            if p.hole and p.spec.given {
+                // A hole with a spec: its value goes to the sink's writer of std's fmt::Int,
+                // Uint, F64, F32 or Text, with the spec.
+                let wrap = spec_wrap{ &c, spec = p.spec, t, at } ifnull { return false }
+                let hole = str{ s = shown_hole{ c, hole = p.spec.text } }
+                let mut note = message{ c }
+                try! @fmt(&note, ", which writes `{}`", hole)
+                let w = writer_of{ &c, b = sink, t = wrap, ns = site.ns, at, why = utf8::view{ b = note } } ifnull { return false }
+                add_writer_set{ c, &flow, d = w.decl }
+                ps[i].push = "spec"
+                ps[i].writer = w
+                ps[i].wrap = wrap
+            } else if is_errs{ c, t } or t == types::STRLIT {
                 // Text, a strlit, and an error's name and braces are written by the writer of a
                 // strlit; an error's fields are looked up once its set is known (infer_sets).
                 if text.decl == NONE {
@@ -12971,6 +13074,59 @@ namespace check {
             i = i + 1
         }
         return true
+    }
+
+    // The type a hole with a spec gives its writer for a value of type t (§13, Formatting):
+    // std's fmt::Int for a signed integer, fmt::Uint for an unsigned one and for any integer's
+    // bits in another base, fmt::F64 or fmt::F32, and fmt::Text for a string literal, a
+    // `[]u8` or a `utf8::String`. Null after reporting at `at` that the spec doesn't apply.
+    fn spec_wrap { mut c: Checker, spec: HoleSpec, t: Id, at: source::Span } -> ?Id {
+        let hole = str{ s = shown_hole{ c, hole = spec.text } }
+        let bt = op_type{ c, t }
+        let p = types::prim_of{ s = c.ty, t = bt }
+        let integer = types::is_int{ s = c.ty, t = bt }
+        let float = types::is_float{ s = c.ty, t = bt }
+        let mut text = bt == types::STRLIT or bt == std_type_in{ &c, space = "utf8", name = "String" }
+        if types::get{ s = c.ty, id = bt } is slice{ elem } { text = types::prune{ s = c.ty, t = elem } == types::U8 }
+        if not integer and not float and not text {
+            let mut m = message{ c }
+            try! @fmt(&m, "`{}` has a spec, which is for an integer, a float or a string, and this argument is {}: write `{{}}`", hole, a_type{ c, t })
+            if types::get{ s = c.ty, id = bt } is func { try! utf8::push{ b = &m, s = ", and give the function what the spec says" } }
+            error{ &c, at, msg = utf8::view{ b = m } }
+            return null
+        }
+        if spec.base != 10 and not integer {
+            errorf{ &c, at, msg = @fmt("`{}` writes an integer in base {}, and this argument is {}: drop the `{}`", hole, spec.base, a_type{ c, t }, str{ s = spec.text[spec.text.len - 2..spec.text.len - 1] }) }
+            return null
+        }
+        if spec.precision >= 0 and not float {
+            let fix: utf8::String = if integer { ": drop the precision, or convert the argument with `@as(f64, ...)`" } else { ": drop the precision" }
+            errorf{ &c, at, msg = @fmt("`{}` has a precision, which is a float's digits after the point, and this argument is {}{}", hole, a_type{ c, t }, fix) }
+            return null
+        }
+        if spec.zero and text {
+            errorf{ &c, at, msg = @fmt("`{}` pads with zeros, which is for a number, and this argument is {}: drop the `0`", hole, a_type{ c, t }) }
+            return null
+        }
+        let name = if text { "Text" } else if float { if is_f32{ t = bt } { "F32" } else { "F64" } } else if spec.base != 10 or (p != null and not types::signed{ p }) { "Uint" } else { "Int" }
+        let wrap = std_type_in{ &c, space = "fmt", name }
+        if wrap == types::ERROR {
+            errorf{ &c, at, msg = @fmt("`{}` needs std's `fmt::{}`, which this program's std doesn't declare", hole, str{ s = name }) }
+            return null
+        }
+        return wrap
+    }
+
+    // "an i32", "a utf8::String": a type with its article, for a message.
+    fn a_type { c: Checker, t: Id } -> utf8::String {
+        let mut m = message{ c }
+        let name = tstr{ c, t }
+        let first: u8 = if name.bytes.len > 0 { name.bytes[0] } else { 0 }
+        // As it is said: "an f64" and "an i32", "a u8" and "a utf8::String".
+        let floating = name.bytes.len == 3 and first == 'f'
+        let vowel = first == 'a' or first == 'e' or first == 'i' or first == 'o' or floating
+        try! @fmt(&m, "{} {}", if vowel { "an" } else { "a" }, name)
+        return utf8::view{ b = m }
     }
 
     // Text must be valid UTF-8: the checker rejects a format that isn't, whatever the sink.

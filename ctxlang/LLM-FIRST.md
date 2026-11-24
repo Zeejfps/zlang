@@ -430,11 +430,44 @@ What a model writes by default should compile, or fail with the exact fix.
     std's Windows layer. KOTOR's f32 `math::min`, `max` and `clamp` (238 calls) stay: they return the
     second operand for a NaN, which `@min` doesn't.
 
-- [ ] **4.4 Format specs in `@fmt`.**
+- [x] **4.4 Format specs in `@fmt`.**
   No width, padding, hex or fixed-point (`{:<16}`, `{:08x}`, `{:.3}`), so programs write a wrapper
   type and writer for each. Also: 100.0 prints as `1e+02`.
   - Details: F#3 (5 write-ups); [spec §13, Formatting](spec.md#formatting).
   - *Done when:* the common specs work on numbers and strings, and floats print in plain form where short.
+  - *Done:* [spec §13, Formatting, rules 8 and 9](spec.md#formatting). A hole is `{}` or
+    `{:spec}`, with `spec := [<>^][0][width][.precision][x|X|b|o]`, in that order: a width
+    up to 255 with spaces at the right of a string and the left of a number unless `<`, `>`
+    or `^` says, `0` for zeros after a number's sign, a precision up to 30 for a float's
+    digits after the point (rounded to nearest, a half to even, never in exponent form), and
+    a base for an integer, a negative one as its type's bits. It is Rust's and Python's
+    spelling less what isn't here: no fill character, sign, `#` or `e`, each an error that
+    gives the grammar. A spec is checked against the argument's type while compiling, and
+    the error says which part doesn't apply and what to write: ``` `{:.2}` has a precision,
+    which is a float's digits after the point, and this argument is an i32: drop the
+    precision, or convert the argument with `@as(f64, ...)` ```; `{x}` says a spec comes
+    after a colon.
+    A spec's hole goes to the sink's `#write` fn for one of five std types that hold the
+    value and its spec (`fmt::Int`, `Uint`, `F64`, `F32`, `Text`; [std/fmt.ctx](std/fmt.ctx)),
+    found as any writer is: no new mechanism, exact error sets, and a sink of the program's
+    own gets specs with one-line writers over `fmt::format_int` and the rest. std's three
+    sinks have them. A `bool`, an error, a function and a type with its own writer take no
+    spec.
+    A float's text is now one rule for both types (rule 9): the shortest digits that read
+    back as the value of its type, plain from 1e-4 up to 1e16, exponent form outside. An
+    f64 printed this way already; an f32 used C's `%g`, which gave `1e+02` for 100.0, and
+    now gives `100.0`. This is the one change to what programs print: an f32 from 10 up to
+    1e16 whose digits are fewer than its whole part's (100.0, 1200.0, 2500000.0) was in
+    exponent form and is plain. No test expectation printed one. Of 20 KOTOR tools run
+    before and after, only mgrun's output changed: 62 numbers, `1e+02` to `100.0` and
+    `1.5e+02` to `150.0`. The text is one C function's for compiled code and the
+    interpreter, as before; `{:.3}` is C's `%.*f` there, which mingw's, glibc's and macOS's
+    printf round exactly (reasoned for the last two, not run).
+    Replaced in KOTOR: the log prefix's `Pad3` (`{:03}`), sndcheck's `Fixed`, `Right` and
+    `Pad` with their 60 lines of writers (`{:<17} {:>7} {:10.3} {:10.2} {:13.0}`; its
+    table and its ffmpeg comparison print the same bytes), and `nwvm::Hex` and walkcheck's
+    `Padded`, whose own sinks now take any integer spec through one `fmt::Uint` writer each
+    (`{:08x}`, `{:>8}`).
 
 ## 5. Tests
 

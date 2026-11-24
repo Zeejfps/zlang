@@ -17,17 +17,19 @@
 #define ctx_strtof strtof
 #endif
 
-// repr(v) for a double, with ".0" added to whole numbers: shortest digits that read back as v,
-// in exponent form when the decimal exponent is below -4 or above 15.
-static int repr_f64(double v, char *out) {
+// A float's text (spec §13, Formatting, rule 9), which is Python's repr of a double: the
+// shortest digits that read back as v, as a double or with `single` as a float, written plainly
+// with a point (`100.0`, `0.001`), a ".0" after a whole number, and in exponent form
+// (`1e+16`, `1.5e-05`) when the value is below 1e-4 or from 1e16 up.
+static int repr(double v, int single, char *out) {
     if (isnan(v)) return sprintf(out, "nan");
     if (isinf(v)) return sprintf(out, v < 0 ? "-inf" : "inf");
     if (v == 0) return sprintf(out, signbit(v) ? "-0.0" : "0.0");
     char buf[64];
-    int p;
-    for (p = 1; p < 17; p++) {
+    int p, most = single ? 9 : 17;
+    for (p = 1; p < most; p++) {
         snprintf(buf, sizeof buf, "%.*e", p - 1, v);
-        if (ctx_strtod(buf, NULL) == v) break;
+        if (single ? ctx_strtof(buf, NULL) == (float)v : ctx_strtod(buf, NULL) == v) break;
     }
     snprintf(buf, sizeof buf, "%.*e", p - 1, v);
     // buf is [-]D[.DDD]e[+-]XX
@@ -72,22 +74,13 @@ static int repr_f64(double v, char *out) {
     return (int)(o - out);
 }
 
-// The shortest '%.Ng' text that reads back as v through a double, as ctxi's _shortest_f32, plus
-// ".0" if it has neither '.' nor 'e'.
+static int repr_f64(double v, char *out) {
+    return repr(v, 0, out);
+}
+
+// An f32's digits are the shortest that read back as it, an f32: fewer than its double's.
 static int repr_f32(float v, char *out) {
-    if (isnan(v)) return sprintf(out, "nan");
-    if (isinf(v)) return sprintf(out, v < 0 ? "-inf" : "inf");
-    int p, n = 0;
-    for (p = 1; p <= 9; p++) {
-        n = snprintf(out, 64, "%.*g", p, (double)v);
-        if ((float)ctx_strtod(out, NULL) == v) break;
-    }
-    if (p > 9) n = snprintf(out, 64, "%.9g", (double)v);
-    if (!strchr(out, '.') && !strchr(out, 'e')) {
-        strcpy(out + n, ".0");
-        n += 2;
-    }
-    return n;
+    return repr((double)v, 1, out);
 }
 
 static uint64_t put_digits(const char *text, int n, ctx_slice into) {
@@ -108,6 +101,17 @@ uint64_t ctx_float_f64_digits(double v, ctx_slice into) {
 uint64_t ctx_float_f32_digits(float v, ctx_slice into) {
     char buf[64];
     return put_digits(buf, repr_f32(v, buf), into);
+}
+
+// v with `precision` digits after the point, at most 30: C's "%.*f", which rounds the exact
+// value to nearest, a halfway case to the even digit, and keeps a zero's sign.
+uint64_t ctx_float_f64_fixed(double v, uint32_t precision, ctx_slice into) {
+    char buf[352];
+    int n;
+    if (isnan(v)) n = sprintf(buf, "nan");
+    else if (isinf(v)) n = sprintf(buf, v < 0 ? "-inf" : "inf");
+    else n = snprintf(buf, sizeof buf, "%.*f", precision > 30 ? 30 : (int)precision, v);
+    return put_digits(buf, n, into);
 }
 
 // text as a C string: on the stack if it is short, as float syntax is, else from malloc.

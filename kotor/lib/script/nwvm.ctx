@@ -1665,9 +1665,6 @@ namespace nwvm {
     // A fixed buffer that @fmt writes into, dropping what doesn't fit.
     struct Text { buf: []mut u8, len: usize }
 
-    // A u32 written as 8 hex digits.
-    struct Hex { n: u32 }
-
     #write
     fn text_bytes { mut t: Text, s: []u8 } {
         let room = t.buf.len - t.len
@@ -1691,16 +1688,11 @@ namespace nwvm {
     #write
     fn text_u32 { mut t: Text, n: u32 } { text_i64{ &t, n } }
 
+    // A hole with a spec, as `{:08x}`.
     #write
-    fn text_hex { mut t: Text, h: Hex } {
-        let digits = "0123456789abcdef"
-        let mut buf: [8]u8
-        let mut k: usize = 0
-        while k < 8 {
-            buf[k] = digits[@as(usize, (h.n >> @as(u32, 28 - 4 * k)) & 15)]
-            k = k + 1
-        }
-        text_bytes{ &t, s = buf[..] }
+    fn text_spec_uint { mut t: Text, v: fmt::Uint } {
+        let mut buf: [fmt::LONGEST]u8
+        text_bytes{ &t, s = fmt::format_uint{ v, into = buf[..] } }
     }
 
     // A cell type's name.
@@ -1777,7 +1769,7 @@ namespace nwvm {
         if f.op != 0 {
             let name = ncs::op_name{ op = f.op }
             let suffix: []u8 = if f.op == ncs::STORE_STATE { "" } else { ncs::type_suffix{ ty = f.ty } ifnull { "?" } }
-            _ = @fmt(&t, " @ {} {}{}", Hex{ n = f.offset }, name, suffix)
+            _ = @fmt(&t, " @ {:08x} {}{}", f.offset, name, suffix)
         }
         if f.routine >= 0 {
             let r = @as(usize, f.routine)

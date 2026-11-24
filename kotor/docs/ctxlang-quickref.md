@@ -219,7 +219,12 @@ is an error. libm functions are in `kotor/lib/base/math.ctx`, `#pure` (std's `ma
 `io::println{ &io, s = "text" }`, `io::print_i64{ &io, n }`. `_ = @fmt(&io, "x = {} y = {}\n",
 x, y)` (§13) prints formatted text; `let mut err = io::to_stderr{ &io }`, then `@fmt(&err, ...)`,
 goes to standard error. Into a `utf8::Builder`: `try @fmt(&b, ...)`, then `utf8::view{ b }`;
-`[]u8` holes are written as text. A tool's own `#write` fns for a type replace std's. String
+`[]u8` holes are written as text. A hole takes a spec after a colon,
+`{:[<>^][0][width][.precision][x|X|b|o]}`: `{:<16}` and `{:>8}` pad a string or a number to a
+width, `{:08x}` is hex with zeros, `{:.3}` a float with three digits after the point; no wrapper
+type or writer for these. Floats print plainly where short (`100.0`, not `1e+02`). A tool's own
+`#write` fns for a type replace std's; a sink of its own takes specs with writers of
+`fmt::Int`, `fmt::Uint`, `fmt::F64`, `fmt::F32` and `fmt::Text` (std/fmt.ctx shows them). String
 literals convert to `[]u8`, `utf8::String` or `c::String` as the context expects. A multi-line
 literal (GLSL) is lines that each start with `\\`, raw, joined with `\n` (§11, Literals, rule 9):
 

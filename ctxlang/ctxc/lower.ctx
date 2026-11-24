@@ -3611,6 +3611,7 @@ namespace lower {
         let s = w.s
         let rt = w.rt
         if slice::eq_bytes{ a = p.push, b = "error" } { return error_write{ &l, w, h, text = p.writer } }
+        if slice::eq_bytes{ a = p.push, b = "spec" } { return write_call{ &l, s, w = p.writer, v = with_spec{ &l, p, v = w.vals[h], t = w.tys[h] }, rt, at = p.at } }
         if slice::eq_bytes{ a = p.push, b = "write" } {
             if not p.hole { return text_write{ &l, s, w = p.writer, bytes = p.text, rt } }
             let targs = T_all{ &l, ts = p.writer.targs }
@@ -3627,6 +3628,62 @@ namespace lower {
         add_arg{ xs = &out, a = ir::Arg{ index = 0, value = bx } }
         let call = mk{ ty, k = ir::ExprKind::dcall{ callee = box{ l, e = w.vals[h] }, args = list::items{ list = out } } }
         return lift{ &l, x = call, frm = ret, to = rt }
+    }
+
+    // The value of a hole with a spec, as its writer takes it (§13, Formatting): one of std's
+    // fmt::Int, Uint, F64, F32 or Text, a struct of the value and the spec, a fmt::Spec of
+    // constants. v is the hole's value, of type t. A signed integer is an i64; an unsigned
+    // one a u64, and so are a signed one's bits in another base, as its own width has them
+    // (`{:x}` of an i8's -1 is ff); a string is its bytes.
+    fn with_spec { mut l: Lower, p: check::Piece, v: ir::Expr, t: Id } -> ir::Expr {
+        let wrap = types::prune{ s = l.c.ty, t = T{ &l, t = p.wrap } }
+        let fields = check::get_decl{ c = l.c.*, d = check::record_decl{ c = l.c.*, t = wrap } }.fields
+        let spec_t = fields[1].ty
+        let sf = check::get_decl{ c = l.c.*, d = check::record_decl{ c = l.c.*, t = spec_t } }.fields
+        let frm = types::undistinct{ s = l.c.ty, t = T{ &l, t } }
+        let mut inner = v
+        let at = p.at
+        match get{ l, t = frm } {
+            prim{ p = q } => {
+                if not (q is f32 | f64) {
+                    let mut x = v
+                    let mut cur = frm
+                    if types::signed{ p = q } and p.spec.base != 10 {
+                        // The bits, in the unsigned type of the same width.
+                        let u = match q { i8 => { types::Prim::u8 } i16 => { types::Prim::u16 } i32 => { types::Prim::u32 } else => { types::Prim::u64 } }
+                        cur = types::prim{ p = u }
+                        x = mk{ ty = tid{ &l, t = cur }, k = ir::ExprKind::trunc{ e = box{ l, e = v } } }
+                    }
+                    inner = coerce{ &l, x, frm = cur, to = fields[0].ty, at }
+                }
+            }
+            record => { inner = mk{ ty = tid{ &l, t = fields[0].ty }, k = ir::ExprKind::field{ base = box{ l, e = v }, index = 0 } } }
+            else => {}
+        }
+        let mut xs = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
+        let s = p.spec
+        for f at i in sf {
+            let ty = tid{ &l, t = f.ty }
+            let mut k = ir::ExprKind::int{ negative = false, value = 0 }
+            if slice::eq_bytes{ a = f.name, b = "width" } {
+                k = ir::ExprKind::int{ negative = false, value = s.width }
+            } else if slice::eq_bytes{ a = f.name, b = "precision" } {
+                k = ir::ExprKind::int{ negative = s.precision < 0, value = check::magnitude{ v = s.precision } }
+            } else if slice::eq_bytes{ a = f.name, b = "align" } {
+                k = ir::ExprKind::int{ negative = false, value = s.align }
+            } else if slice::eq_bytes{ a = f.name, b = "zero" } {
+                k = ir::ExprKind::boolean{ value = s.zero }
+            } else if slice::eq_bytes{ a = f.name, b = "base" } {
+                k = ir::ExprKind::int{ negative = false, value = s.base }
+            } else if slice::eq_bytes{ a = f.name, b = "upper" } {
+                k = ir::ExprKind::boolean{ value = s.upper }
+            } else {
+                @panic("lower: a field of std's fmt::Spec that @fmt doesn't know")
+            }
+            add_arg{ xs = &xs, a = ir::Arg{ index = @as(u32, i), value = mk{ ty, k } } }
+        }
+        let spec = mk{ ty = tid{ &l, t = spec_t }, k = ir::ExprKind::record{ items = list::items{ list = xs } } }
+        return mk{ ty = tid{ &l, t = wrap }, k = ir::ExprKind::record{ items = two_args{ l, a = inner, b = spec } } }
     }
 
     // A call of writer w with the sink and v, of the type its value field has, as a result of

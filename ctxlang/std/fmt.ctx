@@ -1,0 +1,171 @@
+// std: fmt. What an `@fmt` hole with a spec is written from (§13, Formatting).
+//
+//   _ = @fmt(&io, "{:<16}{:>8}  {:08x}  {:.3}\n", name, count, flags, ratio)
+//
+// A spec is `{:[<>^][0][width][.precision][x|X|b|o]}`. The compiler checks it against the
+// argument's type and hands the sink's writer the value with its spec: an `Int` for a signed
+// integer, a `Uint` for an unsigned one or for any integer's bits in another base, an `F64`
+// or `F32`, and a `Text` for a string (a literal, a `[]u8`, a `utf8::String`). std's sinks
+// have these writers (`utf8::Builder`, `Io`, `io::Stderr`). A sink of a program's own gets
+// specs with five `#write` fns, each one call of the functions here:
+//
+//   #write
+//   fn put_int { mut s: Sink, v: fmt::Int } {
+//       let mut buf: [fmt::LONGEST]u8
+//       put{ &s, bytes = fmt::format_int{ v, into = buf[..] } }
+//   }
+//   #write
+//   fn put_text { mut s: Sink, v: fmt::Text } {
+//       put{ &s, bytes = fmt::spaces{ n = fmt::pad_before{ v } } }
+//       put{ &s, bytes = v.s }
+//       put{ &s, bytes = fmt::spaces{ n = fmt::pad_after{ v } } }
+//   }
+
+namespace fmt {
+    // Where padding goes: `natural` is a number's right and a text's left.
+    enum Align: u8 { natural, left, right, center }
+
+    // A hole's spec, as the compiler read it from the format.
+    struct Spec {
+        width: u32,         // the least number of characters, at most WIDEST; 0 without one
+        precision: i32,     // a float's digits after the point, at most FINEST; -1 without one
+        align: Align,
+        zero: bool,         // `0`: a number is padded with zeros, after its sign
+        base: u32,          // 10; 16 for `x` and `X`, 2 for `b`, 8 for `o`
+        upper: bool,        // `X`: the digits A to F
+    }
+
+    // A value with its spec: what a spec's hole gives the sink's writer.
+    struct Int { n: i64, spec: Spec }
+    struct Uint { n: u64, spec: Spec }
+    struct F64 { x: f64, spec: Spec }
+    struct F32 { x: f32, spec: Spec }
+    struct Text { s: []u8, spec: Spec }
+
+    const WIDEST: u32 = 255         // the largest width a spec may give
+    const FINEST: i32 = 30          // the largest precision
+    // The most bytes a number with a spec takes: an f64's 309 digits, a point, 30 more and a
+    // sign, which is more than the widest width.
+    const LONGEST: usize = 344
+
+    const BLANK: [255]u8 = [' '; 255]
+
+    // n spaces, at most WIDEST: static bytes, for a text's padding.
+    fn spaces { n: usize } -> []u8 {
+        return BLANK[..n]
+    }
+
+    // v as its spec says, written to the start of `into`, which holds LONGEST bytes.
+    fn format_int { v: Int, into: []mut u8 } -> []u8 {
+        let mut digits: [64]u8
+        // The magnitude: of a negative n it is 2^64 - n's bits, which wraps to it.
+        let size = if v.n < 0 { 0 -% @trunc(u64, v.n) } else { @trunc(u64, v.n) }
+        let k = digits_of{ n = size, base = v.spec.base, upper = v.spec.upper, into = digits[..] }
+        return place{ negative = v.n < 0, body = digits[64 - k..], spec = v.spec, number = true, into }
+    }
+
+    fn format_uint { v: Uint, into: []mut u8 } -> []u8 {
+        let mut digits: [64]u8
+        let k = digits_of{ n = v.n, base = v.spec.base, upper = v.spec.upper, into = digits[..] }
+        return place{ negative = false, body = digits[64 - k..], spec = v.spec, number = true, into }
+    }
+
+    // A float: its shortest text that reads back, as `{}` writes it, or with a precision that
+    // many digits after the point, rounded to nearest. An infinity or NaN is padded with spaces.
+    fn format_f64 { v: F64, into: []mut u8 } -> []u8 {
+        let mut text: [LONGEST]u8
+        let n = if v.spec.precision < 0 { ascii::f64_digits{ n = v.x, into = text[..] } } else { ascii::f64_fixed{ n = v.x, precision = @as(u32, v.spec.precision), into = text[..] } }
+        return place_float{ text = text[..n], spec = v.spec, into }
+    }
+
+    fn format_f32 { v: F32, into: []mut u8 } -> []u8 {
+        let mut text: [LONGEST]u8
+        // An f32 is the f64 of its value: with a precision the digits are that value's.
+        let n = if v.spec.precision < 0 { ascii::f32_digits{ n = v.x, into = text[..] } } else { ascii::f64_fixed{ n = v.x, precision = @as(u32, v.spec.precision), into = text[..] } }
+        return place_float{ text = text[..n], spec = v.spec, into }
+    }
+
+    // How many spaces go before a text and after it, for its width in characters.
+    fn pad_before { v: Text } -> usize {
+        let pad = room{ len = count{ s = v.s }, spec = v.spec }
+        match v.spec.align {
+            natural | left => { return 0 }
+            right => { return pad }
+            center => { return pad / 2 }
+        }
+    }
+
+    fn pad_after { v: Text } -> usize {
+        let pad = room{ len = count{ s = v.s }, spec = v.spec }
+        return pad - pad_before{ v }
+    }
+
+    // The characters of s: its bytes that don't continue a UTF-8 sequence.
+    fn count { s: []u8 } -> usize {
+        let mut n: usize = 0
+        for b in s {
+            if b & 0xC0 != 0x80 { n = n + 1 }
+        }
+        return n
+    }
+
+    // What a text of len characters lacks of its spec's width.
+    fn room { len: usize, spec: Spec } -> usize {
+        let width: usize = spec.width
+        return if len < width { width - len } else { 0 }
+    }
+
+    // n's digits in base, at the end of `into`, which holds 64 bytes: how many.
+    fn digits_of { n: u64, base: u32, upper: bool, into: []mut u8 } -> usize {
+        let b: u64 = base
+        let ten: u8 = if upper { 'A' } else { 'a' }
+        let mut v = n
+        let mut k: usize = 0
+        while true {
+            let d = @trunc(u8, v % b)
+            k = k + 1
+            into[into.len - k] = if d < 10 { '0' + d } else { ten + d - 10 }
+            v = v / b
+            if v == 0 { break }
+        }
+        return k
+    }
+
+    fn place_float { text: []u8, spec: Spec, into: []mut u8 } -> []u8 {
+        let negative = text.len > 0 and text[0] == '-'
+        let body = if negative { text[1..] } else { text }
+        // `inf` and `nan` are no digits to put zeros before.
+        let number = body.len > 0 and body[0] >= '0' and body[0] <= '9'
+        return place{ negative, body, spec, number, into }
+    }
+
+    // A sign and body in the spec's width: zeros between the two for `0`, if it is a number,
+    // or else spaces before, after or around both.
+    fn place { negative: bool, body: []u8, spec: Spec, number: bool, into: []mut u8 } -> []u8 {
+        let len = body.len + (if negative { 1 } else { 0 })
+        let pad = room{ len, spec }
+        let zeros = if spec.zero and number { pad } else { 0 }
+        let mut before: usize = 0
+        if zeros == 0 {
+            match spec.align {
+                natural | right => { before = pad }
+                left => {}
+                center => { before = pad / 2 }
+            }
+        }
+        let mut at: usize = 0
+        for i in 0..before { into[at + i] = ' ' }
+        at = at + before
+        if negative {
+            into[at] = '-'
+            at = at + 1
+        }
+        for i in 0..zeros { into[at + i] = '0' }
+        at = at + zeros
+        for b at i in body { into[at + i] = b }
+        at = at + body.len
+        let after = pad - before - zeros
+        for i in 0..after { into[at + i] = ' ' }
+        return into[..at + after]
+    }
+}

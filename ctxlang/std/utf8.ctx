@@ -564,6 +564,35 @@ namespace utf8 {
         }
     }
 
+    // A hole with a spec, as `{:>8}`, `{:08x}` or `{:.3}` (§13, Formatting): a number as
+    // std's `fmt` lays it out, and text between its padding, its bytes as push_bytes has them.
+    #write
+    fn push_fmt_int(S) { mut b: Builder(S), v: fmt::Int } -> ! {
+        let mut buf: [fmt::LONGEST]u8
+        try push{ &b, s = String{ bytes = fmt::format_int{ v, into = buf[..] } } }
+    }
+    #write
+    fn push_fmt_uint(S) { mut b: Builder(S), v: fmt::Uint } -> ! {
+        let mut buf: [fmt::LONGEST]u8
+        try push{ &b, s = String{ bytes = fmt::format_uint{ v, into = buf[..] } } }
+    }
+    #write
+    fn push_fmt_f64(S) { mut b: Builder(S), v: fmt::F64 } -> ! {
+        let mut buf: [fmt::LONGEST]u8
+        try push{ &b, s = String{ bytes = fmt::format_f64{ v, into = buf[..] } } }
+    }
+    #write
+    fn push_fmt_f32(S) { mut b: Builder(S), v: fmt::F32 } -> ! {
+        let mut buf: [fmt::LONGEST]u8
+        try push{ &b, s = String{ bytes = fmt::format_f32{ v, into = buf[..] } } }
+    }
+    #write
+    fn push_fmt_text(S) { mut b: Builder(S), v: fmt::Text } -> ! {
+        try push{ &b, s = String{ bytes = fmt::spaces{ n = fmt::pad_before{ v } } } }
+        try push_bytes{ &b, s = v.s }
+        try push{ &b, s = String{ bytes = fmt::spaces{ n = fmt::pad_after{ v } } } }
+    }
+
     // Writers to name in an @fmt hole, as `utf8::write_hex{ n, _ }`: n in lowercase hex, and
     // character c. The padded ones below take a width.
     fn write_hex(S) { mut b: Builder(S), n: u64 } -> ! {

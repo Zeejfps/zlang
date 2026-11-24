@@ -633,17 +633,7 @@ namespace world {
     // The log line prefix: `[frame seconds] `.
     fn prefix { mut w: World } {
         let ms = clock::now_ms{ c = w.clock }
-        _ = @fmt(&w.io, "[{} {}.{}] ", w.clock.frame, ms / 1000, pad3{ n = ms % 1000 })
-    }
-
-    struct Pad3 { n: u64 }
-    fn pad3 { n: u64 } -> Pad3 { return Pad3{ n } }
-
-    #write
-    fn write_pad3 { mut io: Io, v: Pad3 } {
-        if v.n < 100 { io::write{ &io, to = io::Stream::out, bytes = "0" } }
-        if v.n < 10 { io::write{ &io, to = io::Stream::out, bytes = "0" } }
-        io::print_u64{ &io, n = v.n }
+        _ = @fmt(&w.io, "[{} {}.{:03}] ", w.clock.frame, ms / 1000, ms % 1000)
     }
 
     // A dialog.tlk string ("" for none or no table).

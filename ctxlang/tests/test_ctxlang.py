@@ -2135,6 +2135,241 @@ fn main {} {
 """, 'nothing before `ifoverflow` can overflow')
 
 
+class FormatSpecs(Base):
+    """§13, Formatting, rules 8 and 9: a hole's spec, `{:[<>^][0][width][.precision][x|X|b|o]}`,
+    on integers, floats and strings, and a float's text."""
+
+    def assertSpecError(self, body, msg, line, col):
+        src = ('struct P { x: i32 }\nfn w { mut io: Io } -> ! { return }\nfn main { mut io: Io } {\n    let n: i32 = 1\n'
+               '    let x = 1.5\n    let s: utf8::String = "s"\n    let p = P{ x = 1 }\n    %s\n}\n' % body)
+        with self.assertRaises(CompileError) as cm:
+            run(src)
+        self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), body)
+
+    def test_specs(self):
+        # Width, alignment, zeros, bases and precision, onto standard output, into a Builder
+        # and onto standard error, the same compiled and interpreted.
+        self.assertOutput(r"""
+type Heap = arena::Arena
+type Id = distinct u32
+
+fn main { mut io: Io, mut mem: Mem } {
+    let name: utf8::String = "h\xc3\xa9llo"
+    let raw: []u8 = "abc"
+    let mut owned: [3]u8 = "xyz"
+    let n: i32 = -42
+    let u: u8 = 255
+    let big: u64 = 18446744073709551615
+    let low: i64 = -9223372036854775808
+    let tiny: i8 = -1
+    let x: f64 = 3.14159
+    let y: f32 = 100.0
+    let id: Id = @as(Id, 7)
+    // Width and alignment: a string is at the left unless told, counted in characters.
+    _ = @fmt(&io, "[{:<8}] [{:>8}] [{:^8}] [{:8}] [{:2}]\n", name, name, name, raw, name)
+    _ = @fmt(&io, "[{:>5}] [{:5}] [{:^6}] [{:4}]\n", "ab", "abcdefg", "ab", owned[..])
+    // A number is at the right unless told; `0` puts zeros after the sign.
+    _ = @fmt(&io, "[{:>6}] [{:<6}] [{:^6}] [{:06}] [{:6}] [{:1}]\n", n, n, n, n, n, n)
+    _ = @fmt(&io, "[{:24}] [{:021}] [{:4}] [{:<4}]\n", big, low, id, u)
+    // Bases: an integer's bits, a negative one's as its type has them.
+    _ = @fmt(&io, "[{:x}] [{:X}] [{:08x}] [{:b}] [{:o}] [{:x}] [{:x}] [{:X}] [{:4x}]\n", u, u, u, u, u, n, tiny, big, id)
+    _ = @fmt(&io, "[{:>6x}] [{:<6X}] [{:^6b}] [{:012b}] [{:x}]\n", u, u, 5, 5, low)
+    // A precision: a float's digits after the point, rounded to nearest, a half to even.
+    _ = @fmt(&io, "[{:.3}] [{:.0}] [{:8.2}] [{:08.2}] [{:<8.1}] [{:^9.1}] [{:10}] [{:.2}]\n", x, x, x, -x, x, x, x, y)
+    _ = @fmt(&io, "[{:.1}] [{:.1}] [{:.0}] [{:.0}] [{:.2}] [{:.3}] [{:.30}]\n", 0.25, 0.35, 0.5, 1.5, -0.001, 1e21, 0.1)
+    _ = @fmt(&io, "[{:.2}] [{:6.1}] [{:06.1}] [{:<6}] [{:.1}] [{:8}] [{:08}]\n", math::INF, math::NAN, -math::INF, math::INF, -0.0, y, -2.5)
+    // Into a Builder, and onto standard error.
+    let pages = mem::pages{ &mem, size = 65536 } ifnull { return }
+    let mut heap = arena::new{ buf = pages }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&b, "{:>4}|{:<4}|{:04x}|{:.1}|{:^5}|", n, raw, u, y, name)
+    io::println{ &io, s = utf8::view{ b } }
+    io::flush{ &io }
+    let mut e = io::to_stderr{ &io }
+    _ = @fmt(&e, "{:>4}|{:.1}|{:<3}|{:02X}\n", 5, 2.25, "a", u)
+}
+""",
+            '[héllo   ] [   héllo] [ héllo  ] [abc     ] [héllo]\n'
+            '[   ab] [abcdefg] [  ab  ] [xyz ]\n'
+            '[   -42] [-42   ] [ -42  ] [-00042] [   -42] [-42]\n'
+            '[    18446744073709551615] [-09223372036854775808] [   7] [255 ]\n'
+            '[ff] [FF] [000000ff] [11111111] [377] [ffffffd6] [ff] [FFFFFFFFFFFFFFFF] [   7]\n'
+            '[    ff] [FF    ] [ 101  ] [000000000101] [8000000000000000]\n'
+            '[3.142] [3] [    3.14] [-0003.14] [3.1     ] [   3.1   ] [   3.14159] [100.00]\n'
+            '[0.2] [0.3] [0] [2] [-0.00] [1000000000000000000000.000] [0.100000000000000005551115123126]\n'
+            '[inf] [   nan] [  -inf] [inf   ] [-0.0] [   100.0] [-00002.5]\n'
+            ' -42|abc |00ff|100.0|héllo|\n')
+
+    def test_float_text(self):
+        """Rule 9: an f32 or an f64 is its shortest digits that read back, plainly with a point
+        from 1e-4 up to 1e16 (100.0 was `1e+02` for an f32), in exponent form outside."""
+        self.assertOutput(r"""
+// A float's text: the shortest digits that read back as it, plainly from 1e-4 up to 1e16.
+fn main { mut io: Io } {
+    let fs: [18]f32 = [100.0, 1200.0, 0.5, 0.1, 16777216.0, 1e10, 9.999999e15, 1e16, 3.4028235e38, 0.001, 0.0001, 0.00001, 1.1754944e-38, 1e-45, 123456.79, -0.0, 0.0, -2.5e-7]
+    for f in fs[..] { _ = @fmt(&io, "{} ", f) }
+    _ = @fmt(&io, "\n")
+    let ds: [16]f64 = [100.0, 1200.0, 0.5, 0.1, 16777217.0, 1e15, 9999999999999998.0, 1e16, 1.7976931348623157e308, 0.001, 0.0001, 0.00001, 5e-324, 123456.789, -0.0, 1e22]
+    for d in ds[..] { _ = @fmt(&io, "{} ", d) }
+    _ = @fmt(&io, "\n{} {} {} {} {} {}\n", math::INF, -math::INF, math::NAN, math::INF_F32, -math::INF_F32, math::NAN_F32)
+    // The same text through io's prints and into a buffer.
+    io::print_f32{ &io, n = 100.0 }
+    io::put_char{ &io, c = ' ' }
+    io::println_f64{ &io, n = 100.0 }
+    let mut buf: [32]u8
+    io::println{ &io, s = utf8::fmt_f32{ n = 2500000.0, into = buf[..] } }
+    // What is written reads back as the same value.
+    let mut same = 0
+    for f in fs[..] {
+        let text = utf8::fmt_f32{ n = f, into = buf[..] }
+        if (utf8::parse_f32{ s = text } ifnull 99.0) == f { same = same + 1 }
+    }
+    _ = @fmt(&io, "{} of {} read back\n", same, fs.len)
+}
+""",
+            '100.0 1200.0 0.5 0.1 16777216.0 10000000000.0 9999999000000000.0 1e+16 3.4028235e+38 0.001 0.0001 1e-05 1.1754944e-38 1e-45 123456.79 -0.0 0.0 -2.5e-07 \n'
+            '100.0 1200.0 0.5 0.1 16777217.0 1000000000000000.0 9999999999999998.0 1e+16 1.7976931348623157e+308 0.001 0.0001 1e-05 5e-324 123456.789 -0.0 1e+22 \n'
+            'inf -inf nan inf -inf nan\n'
+            '100.0 100.0\n'
+            '2500000.0\n'
+            '18 of 18 read back\n')
+
+    def test_own_sink(self):
+        # A sink of the program's own writes a spec's hole with its writers of std's fmt::Int,
+        # Uint and Text, while compiling too.
+        self.assertOutput(r"""
+// A sink of the program's own: specs go to its writers of std's fmt types.
+struct Line { buf: [48]u8, len: usize }
+
+fn put { mut l: Line, bytes: []u8 } {
+    for b in bytes {
+        if l.len < l.buf.len {
+            l.buf[l.len] = b
+            l.len = l.len + 1
+        }
+    }
+}
+
+#write
+fn put_text { mut l: Line, s: strlit } { put{ &l, bytes = s.bytes } }
+#write
+fn put_int { mut l: Line, v: fmt::Int } {
+    let mut buf: [fmt::LONGEST]u8
+    put{ &l, bytes = fmt::format_int{ v, into = buf[..] } }
+}
+#write
+fn put_uint { mut l: Line, v: fmt::Uint } {
+    let mut buf: [fmt::LONGEST]u8
+    put{ &l, bytes = fmt::format_uint{ v, into = buf[..] } }
+}
+#write
+fn put_padded { mut l: Line, v: fmt::Text } {
+    put{ &l, bytes = fmt::spaces{ n = fmt::pad_before{ v } } }
+    put{ &l, bytes = v.s }
+    put{ &l, bytes = fmt::spaces{ n = fmt::pad_after{ v } } }
+}
+
+fn row { name: []u8, at: u32, n: i32 } -> Line {
+    let mut l: Line
+    _ = @fmt(&l, "{:<6}|{:08x}|{:>5}|{:^5}|", name, at, n, "ok")
+    return l
+}
+
+// Its text is computed while compiling too.
+const HEAD: Line = row{ name = "boot", at = 0xBEEF, n = -7 }
+
+fn main { mut io: Io } {
+    let now = row{ name = "boot", at = 0xBEEF, n = -7 }
+    let head = HEAD
+    _ = @fmt(&io, "{}\n{}\n{}\n", head.buf[..head.len], now.buf[..now.len], head.len == now.len)
+}
+""",
+            'boot  |0000beef|   -7| ok  |\n'
+            'boot  |0000beef|   -7| ok  |\n'
+            'true\n')
+        self.assertCompileError("""
+struct Line { n: usize }
+#write
+fn put_text { mut l: Line, s: strlit } { l.n = l.n + s.bytes.len }
+#write
+fn put_i32 { mut l: Line, v: i32 } { l.n = l.n + 1 }
+fn main {} {
+    let mut l: Line
+    let v: i32 = 5
+    _ = @fmt(&l, "{:>8}", v)
+}
+""", '@fmt has no writer of fmt::Int to Line, which writes `{:>8}`')
+
+    def test_spec_in_a_writer(self):
+        # An @fmt without a sink keeps each hole's spec, and an inner one its own.
+        self.assertOutput(r"""
+type Heap = arena::Arena
+
+fn report { mut b: utf8::Builder(Heap), msg: utf8::Fmt(Heap) } {
+    try! msg{ &b }
+}
+
+fn main { mut io: Io, mut mem: Mem } {
+    let pages = mem::pages{ &mem, size = 65536 } ifnull { return }
+    let mut heap = arena::new{ buf = pages }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let at: u32 = 4660
+    let name: []u8 = "pc"
+    // A writer holds the spec with the value, and an inner @fmt keeps its own.
+    report{ &b, msg = @fmt("{:<4}= {}{:06x} ({:.2})", name, @fmt("{}{:>3}", "0x", 7), at, 0.125) }
+    io::println{ &io, s = utf8::view{ b } }
+}
+""",
+            'pc  = 0x  7001234 (0.12)\n')
+
+    def test_spec_errors(self):
+        grammar = ('bad format spec `%s`: a spec is `{:[<>^][0][width][.precision][x|X|b|o]}`, in that order, as `{:>8}`, '
+                   '`{:08x}` or `{:.3}`; a hole without one is `{}`')
+        kind = '`{:>8}` has a spec, which is for an integer, a float or a string, and this argument is %s: write `{}`'
+        for body, msg, line, col in [
+            ('_ = @fmt(&io, "{:q}", n)', grammar % '{:q}', 8, 19),
+            ('_ = @fmt(&io, "{:}", n)', grammar % '{:}', 8, 19),
+            ('_ = @fmt(&io, "{:8x.2}", x)', grammar % '{:8x.2}', 8, 19),
+            ('_ = @fmt(&io, "{:008}", n)', grammar % '{:008}', 8, 19),
+            ('_ = @fmt(&io, "{:+8}", n)', grammar % '{:+8}', 8, 19),
+            ('_ = @fmt(&io, "{:*>8}", n)', grammar % '{:*>8}', 8, 19),
+            ('_ = @fmt(&io, "{:8.2f}", x)', grammar % '{:8.2f}', 8, 19),
+            ('_ = @fmt(&io, "{:300}", n)', 'bad format spec `{:300}`: a width is at most 255', 8, 19),
+            ('_ = @fmt(&io, "{:.31}", x)', 'bad format spec `{:.31}`: a precision is at most 30', 8, 19),
+            ('_ = @fmt(&io, "{:.}", x)', 'bad format spec `{:.}`: a precision is digits after the `.`, as `{:.3}`', 8, 19),
+            ('_ = @fmt(&io, "{:0}", n)',
+             'bad format spec `{:0}`: `0` pads a number with zeros up to a width, and there is none: write the width, as `{:08}`', 8, 19),
+            ('_ = @fmt(&io, "{:<08}", n)',
+             "bad format spec `{:<08}`: `0` puts zeros between a number's sign and its digits, so it takes no `<`, `>` or `^`: "
+             'write `{:08}`', 8, 19),
+            ('_ = @fmt(&io, "{x}", n)',
+             'bad hole `{x}` in the format: a hole is `{}`, or with a spec after a colon `{:>8}`, `{:08x}` or `{:.3}`, and a '
+             'function writes a value another way, as `utf8::write_char{ c, _ }`', 8, 19),
+            # a spec that isn't for the argument's type
+            ('_ = @fmt(&io, "{:x}", x)', '`{:x}` writes an integer in base 16, and this argument is an f64: drop the `x`', 8, 27),
+            ('_ = @fmt(&io, "{:b}", s)', '`{:b}` writes an integer in base 2, and this argument is a utf8::String: drop the `b`', 8, 27),
+            ('_ = @fmt(&io, "{:.2}", n)',
+             "`{:.2}` has a precision, which is a float's digits after the point, and this argument is an i32: drop the "
+             'precision, or convert the argument with `@as(f64, ...)`', 8, 28),
+            ('_ = @fmt(&io, "{:.2}", s)',
+             "`{:.2}` has a precision, which is a float's digits after the point, and this argument is a utf8::String: drop "
+             'the precision', 8, 28),
+            ('_ = @fmt(&io, "{:08}", s)',
+             '`{:08}` pads with zeros, which is for a number, and this argument is a utf8::String: drop the `0`', 8, 28),
+            ('_ = @fmt(&io, "{:>8}", true)', kind % 'a bool', 8, 28),
+            ('_ = @fmt(&io, "{:>8}", p)', kind % 'a P', 8, 28),
+            ('_ = @fmt(&io, "{:>8}", fs::not_found)', kind % 'a fs::not_found', 8, 28),
+            ('_ = @fmt(&io, "{:>8}", w{ _ })',
+             kind % 'a &fn{ mut io: Io } -> !' + ', and give the function what the spec says', 8, 29),
+            ('_ = @fmt(&io, "{:>8}", @fmt("{}", n))',
+             '`{:>8}` has a spec, which is for an integer, a float or a string, and this argument is an @fmt: write `{}`, and '
+             'the spec in the inner format', 8, 28),
+            ('_ = @fmt(&io, "{:>8} {}", n)', 'the format has 2 holes but 1 argument follows it', 8, 9),
+        ]:
+            with self.subTest(body=body):
+                self.assertSpecError(body, msg, line, col)
+
+
 class Lexer(Base):
     def assertLexError(self, src, msg, line, col):
         with self.assertRaises(CompileError) as cm:
@@ -3035,7 +3270,7 @@ class Bodies(Base):
             (B + '    return @fmt(&b, "a}")\n}',
              'the format has a `}` without a `{`; write `}}` for a brace', 2, 21),
             (B + '    return @fmt(&b, "{q}", 1)\n}',
-             'bad hole `{q}` in the format: a hole is `{}`, and a function writes a value another way, as `utf8::write_hex{ n, _ }`', 2, 21),
+             'bad hole `{q}` in the format: a hole is `{}`, or with a spec after a colon `{:>8}`, `{:08x}` or `{:.3}`, and a function writes a value another way, as `utf8::write_char{ c, _ }`', 2, 21),
             (B + '    return @fmt(&b, "{} {}", 1)\n}',
              'the format has 2 holes but 1 argument follows it', 2, 12),
             (B + '    return @fmt(&b, "{}")\n}',
@@ -6608,7 +6843,7 @@ fn pick { n: i32 } -> ! {
             ('    try! @fmt(&line, "{}", E::a)', '@fmt has no writer of E to out::Line: convert it with `@as`', 36, 28),
             ('    let n: ?i32 = 1\n    try! @fmt(&line, "{}", n)', '@fmt has no writer of ?i32 to out::Line: give it a value with `ifnull`', 37, 28),
             ('    let n: u8 = 1\n    try! @fmt(&line, "{}", n)', '@fmt has no writer of u8 to out::Line', 37, 28),
-            ('    try! @fmt(&line, "{x}", 1)', 'bad hole `{x}` in the format: a hole is `{}`, and a function writes a value another way, as `utf8::write_hex{ n, _ }`', 36, 22),
+            ('    try! @fmt(&line, "{x}", 1)', 'bad hole `{x}` in the format: a hole is `{}`, or with a spec after a colon `{:>8}`, `{:08x}` or `{:.3}`, and a function writes a value another way, as `utf8::write_char{ c, _ }`', 36, 22),
             ('    let l2 = line\n    try! @fmt(&l2, "x")', '`l2` is not a mutable place', 37, 16),
             ('    let p: *out::Line = &line\n    try! @fmt(p, "x")', '@fmt writes to a `*mut` sink, got *out::Line', 37, 15),
             ('    try! @fmt(&line, "{}", w{ l = &line, _ })', '`line` overlaps a place held by `w{ l = &line, _ }`', 36, 10),

@@ -47,13 +47,11 @@ as the write-ups gave them.
    engine (about 5), data (5), dialog (7), gui (3), hud, minigames (7), models (2).
 
 
-3. **`@fmt` formats only by type.** There are no width, padding, hex or fixed-point specs
-   (`{:<16}`, `{:08x}`, `%18.9f`), so a program writes a wrapper type and a writer for each
-   (`world::Pad3`, `Fixed`, `Right`, `Pad`, `Hex`) or pads by hand; std's padded writers
-   (`utf8::push_padded`, `push_hex`) are for a `Builder` only. A sink of the program's own needs
-   a writer per exact type (a `u16` hole had none). Every `@fmt` onto the console needs `_ =`
-   though its writers can't fail (35 in the spike). std's float writer prints 100.0 as `1e+02`.
-   *Hit by 5:* glspike (35), engine (2), audio (3 writers), data (1), script (about 15, and six
+3. **A sink of the program's own needs a writer per exact type** (a `u16` hole had none), and
+   every `@fmt` onto the console needs `_ =` though its writers can't fail (35 in the spike).
+   (The rest of this entry is fixed: a hole takes a spec, `{:<16}`, `{:08x}`, `{:.3}`, so the
+   wrapper types and their writers are gone, and an f32's 100.0 prints as `100.0`.) *Hit by
+   5:* glspike (35), engine (2), audio (3 writers), data (1), script (about 15, and six
    writers).
 
 5. **Sources come by directory, and a directory is one flat namespace.** `build::add_sources`
