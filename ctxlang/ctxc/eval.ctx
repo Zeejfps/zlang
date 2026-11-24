@@ -169,7 +169,7 @@ namespace eval {
             argv = list::new(Addr){ realloc = arena::alloc, heap },
             frames = list::new(Frame){ realloc = arena::alloc, heap },
             codes = list::new(Code){ realloc = arena::alloc, heap },
-            known = map::new(Key, Addr){ realloc = arena::alloc, heap, hash = hash_key, eq = eq_key },
+            known = map::make(Key, Addr){ realloc = arena::alloc, heap },
             cells = list::new(Addr){ realloc = arena::alloc, heap },
             saved = list::new(Addr){ realloc = arena::alloc, heap },
             names = list::new([]u8){ realloc = arena::alloc, heap },
@@ -192,14 +192,6 @@ namespace eval {
             i = i + 1
         }
         return m
-    }
-
-    fn hash_key { key: Key } -> u64 {
-        return (key.a *% 1099511628211 +% key.b) *% 1099511628211 +% @as(u64, key.kind)
-    }
-
-    fn eq_key { a: Key, b: Key } -> bool {
-        return a.kind == b.kind and a.a == b.a and a.b == b.b
     }
 
     // ---- running

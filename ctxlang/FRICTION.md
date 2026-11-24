@@ -154,12 +154,6 @@ as the write-ups gave them.
     condition, and an `(item, index)` result a small struct with every field named (`ItemSpell`,
     `Pick`, `Swap`). *Hit by 1:* engine (2 entries).
 
-30. **No structural equality or hashing.** Interning types in a map keyed by a union took a
-    hand-written `hash` and `eq` (`types.ctx`, about 90 lines), `eq` a match inside a match per
-    variant; `p == q` on a struct is "P has no built-in equality". Derived `==` for structs and
-    unions without pointers, a builtin `@hash`, or PLAN.md 3.2's reflection deriving them in a
-    build program would remove it. *Hit by 1:* ctxc.
-
 31. **A `mut` struct field is a pointer, and the C is built with `-fno-strict-aliasing`,** so gcc
     reloads the bit reader's fields after every store through any pointer: about 10% of the Bink
     audio decoder, worked around with a local copy (`let mut rd = r`, `defer r = rd`).

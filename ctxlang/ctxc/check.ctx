@@ -176,6 +176,9 @@ namespace check {
         ovfs:      list::List(syntax::Expr, Heap),    // `ifoverflow`s, whose coverage is settled at the end
         gvars:     list::List(GVar, Heap),            // generic arguments to infer
         fmts:      list::List(syntax::Expr, Heap),    // the body's @fmt calls, whose writers are settled at the end
+        eq_uses:   list::List(EqUse, Heap),           // the body's `==` and `@hash` on value types, checked at its end
+        needs:     list::List(Need, Heap),            // generic parameters that must have `==` or `@hash`
+        generic_uses: list::List(GenericUse, Heap),   // generic fns named with type arguments, in every body
         vars:      list::List(Var, Heap),             // the locals of every body, by index
         scope:     list::List(Binding, Heap),         // what is in scope, innermost last
         marks:     list::List(usize, Heap),           // where each open scope starts in `scope`
@@ -482,6 +485,9 @@ namespace check {
             ovfs = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             gvars = list::new(GVar){ realloc = arena::alloc, &heap },
             fmts = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
+            eq_uses = list::new(EqUse){ realloc = arena::alloc, &heap },
+            needs = list::new(Need){ realloc = arena::alloc, &heap },
+            generic_uses = list::new(GenericUse){ realloc = arena::alloc, &heap },
             vars = list::new(Var){ realloc = arena::alloc, &heap },
             scope = list::new(Binding){ realloc = arena::alloc, &heap },
             marks = list::new(usize){ realloc = arena::alloc, &heap },
@@ -610,9 +616,12 @@ namespace check {
         infer_borrows{ &c }
         c.borrow_ready = true
         c.lives.len = lives
+        list::clear{ list = &c.needs }
+        list::clear{ list = &c.generic_uses }
         each{ &c, xs = c.fns, what = Phase::bodies }
         infer_sets{ &c }
         finish_matches{ &c }
+        derived_needs{ &c }
         check_declared{ &c }
         finish_escapes{ &c }
         task_borrows{ &c }
@@ -3613,6 +3622,7 @@ namespace check {
         list::clear{ list = &c.ovfs }
         list::clear{ list = &c.gvars }
         list::clear{ list = &c.fmts }
+        list::clear{ list = &c.eq_uses }
         list::clear{ list = &c.scope }
         list::clear{ list = &c.marks }
         list::clear{ list = &c.loops }
@@ -3658,6 +3668,7 @@ namespace check {
             fmt_calls{ &c, e = fs[i] }
             i = i + 1
         }
+        derived_checks{ &c }
         // A `/` counted as signed while its type wasn't known may be unsigned now.
         let os = list::items{ list = c.ovfs }
         i = 0
@@ -3800,9 +3811,17 @@ namespace check {
             neg{ e = x } => { return const_ok{ &c, e = x.*, strict } }
             lnot{ e = x } => { return const_ok{ &c, e = x.*, strict } }
             bnot{ e = x } => { return const_ok{ &c, e = x.*, strict } }
-            binary{ a, b } => {
+            binary{ op, a, b } => {
                 let x = const_ok{ &c, e = a.*, strict }
                 let y = const_ok{ &c, e = b.*, strict }
+                // A derived `==`, of a struct, a union, an array or a slice, is run, not folded.
+                if (op == tok::Kind::eq or op == tok::Kind::ne) and not is_null{ e = a.* } and not is_null{ e = b.* } {
+                    let mut t = op_type{ c, t = type_of_expr{ c, e = a.* } }
+                    if types::get{ s = c.ty, id = t } is opt{ elem } { t = op_type{ c, t = elem } }
+                    if types::get{ s = c.ty, id = t } is record | sum | array | slice | strlit {
+                        return unfoldable{ &c, at, strict, msg = "can't compare structs, unions, arrays or slices: its value is computed before any code runs" }
+                    }
+                }
                 return x and y
             }
             array{ elems } => { return const_list{ &c, xs = elems, strict } }
@@ -4188,6 +4207,9 @@ namespace check {
             return Val::boolean{ ty = t, value = (x is nil and y is nil) == (op == tok::Kind::eq) }
         }
         if op == tok::Kind::eq or op == tok::Kind::ne or op == tok::Kind::lt or op == tok::Kind::le or op == tok::Kind::gt or op == tok::Kind::ge {
+            // A struct's, a union's, an array's or a slice's derived `==` isn't folded: the
+            // const is run instead (§14, rule 1).
+            if not (unwrap_some{ c, v = x } is int | float | boolean) { return null }
             return Val::boolean{ ty = t, value = compare{ op, x = unwrap_some{ c, v = x }, y = unwrap_some{ c, v = y } } }
         }
         if is_float_type{ c, t } {
@@ -11089,6 +11111,9 @@ namespace check {
                     generic_var{ &c, v, param = x.tparams[all.len], owner = x.name, at = seg.name.span, set = set_param{ c, d = i, index = all.len } }
                     push{ xs = &all, n = v }
                 }
+                if x.tparams.len > 0 {
+                    try! list::push{ list = &c.generic_uses, item = GenericUse{ decl = i, targs = list::items{ list = all }, at = seg.name.span } }
+                }
                 return PathRef::func{ decl = i, targs = list::items{ list = all } }
             }
             else => { return null }
@@ -11637,8 +11662,9 @@ namespace check {
             let bt = op_type{ c, t }
             let eq = is_num{ c, t = bt } or bt == types::BOOL or types::get{ s = c.ty, id = bt } is ptr | enumeration
             if not eq {
+                // A value type's `==` is derived from its parts' (§11, Expressions, rule 5).
                 let shown = if lo != null { lt } else if ro != null { rt } else { t }
-                errorf{ &c, at, msg = @fmt("{} has no built-in equality", tstr{ c, t = shown }) }
+                derived_use{ &c, t = shown, hash = false, at }
             }
             return types::BOOL
         }
@@ -11689,6 +11715,216 @@ namespace check {
             errorf{ &c, at, msg = @fmt("`{}` needs numbers, got {}", opname, tstr{ c, t }) }
         }
         return t
+    }
+
+    // ---- derived `==` and `@hash` (§11, Expressions, rule 5; §13)
+
+    // What stops a type from having `==`, or with hash, `@hash`: the part that has none, the
+    // way to it from the type (`pos.owner`, `kids[]`), and why. The generic parameters the
+    // answer depends on are collected apart (Need).
+    struct Blocker { part: Id, path: []u8, why: utf8::String }
+
+    // Generic parameter `index` of decl must have `==`, or with hash `@hash`: something in
+    // decl's body compares or hashes a value whose type has it in it. at is where.
+    struct Need { decl: u32, index: u32, hash: bool, at: source::Span }
+
+    // A generic fn named with type arguments, which may be inference variables until its body
+    // is done: its parameters' needs become the arguments' (derived_needs).
+    struct GenericUse { decl: u32, targs: []Id, at: source::Span }
+
+    // `==` or `!=` (hash: `@hash`) on a value of type t, in the body being checked.
+    struct EqUse { t: Id, hash: bool, at: source::Span }
+
+    // A generic fn's needs reach its callers: where a fn named with type arguments has a
+    // parameter that needs `==` or `@hash`, the argument must have it, and an argument that is
+    // itself made of generic parameters passes the need on to their fn. Run once every body is
+    // checked; the error is where the fn is named, and says whose need it is.
+    fn derived_needs { mut c: Checker } {
+        let uses = list::items{ list = c.generic_uses }
+        let mut changed = true
+        let mut rounds = 0
+        while changed and rounds < 64 {
+            changed = false
+            rounds = rounds + 1
+            for u in uses {
+                for hash in [false, true] {
+                    for t at i in u.targs {
+                        if not needed{ c, decl = u.decl, index = @as(u32, i), hash } { continue }
+                        let mut params = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+                        if blocker_of{ &c, t = types::zonk{ s = &c.ty, t }, hash, &params } != null { continue }
+                        for q in list::items{ list = params } {
+                            if types::get{ s = c.ty, id = q } is param{ decl, index } {
+                                if not needed{ c, decl, index, hash } {
+                                    try! list::push{ list = &c.needs, item = Need{ decl, index, hash, at = u.at } }
+                                    changed = true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for u in uses {
+            let mut reported = false
+            for hash in [false, true] {
+                for t at i in u.targs {
+                    if reported or not needed{ c, decl = u.decl, index = @as(u32, i), hash } { continue }
+                    let arg = types::zonk{ s = &c.ty, t }
+                    let mut params = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+                    let found = blocker_of{ &c, t = arg, hash, &params } ifnull { continue }
+                    let x = get_decl{ c, d = u.decl }
+                    let mut m = message{ c }
+                    try! @fmt(&m, "`{}` uses `{}` on its `{}`, and ", str{ s = x.qual }, if hash { "@hash" } else { "==" }, str{ s = x.tparams[i].text })
+                    try! utf8::push{ b = &m, s = blocked_text{ &c, t = arg, hash, b = found } }
+                    error{ &c, at = u.at, msg = utf8::view{ b = m } }
+                    // One error for a use: without `==` there is no `@hash` either.
+                    reported = true
+                }
+            }
+        }
+    }
+
+    fn needed { c: Checker, decl: u32, index: u32, hash: bool } -> bool {
+        for n in list::items{ list = c.needs } {
+            if n.decl == decl and n.index == index and n.hash == hash { return true }
+        }
+        return false
+    }
+
+    // A use of `==` or `!=`, or with hash of `@hash`, on a value of type t, at `at`: an error if
+    // t has none, saying which part stops it; and where t has a generic parameter in it, a
+    // need of the parameter's fn, which its callers' type arguments must meet.
+    fn derived_use { mut c: Checker, t: Id, hash: bool, at: source::Span } {
+        try! list::push{ list = &c.eq_uses, item = EqUse{ t, hash, at } }
+    }
+
+    // The body's uses, once its types are settled.
+    fn derived_checks { mut c: Checker } {
+        let us = list::items{ list = c.eq_uses }
+        for u in us { derived_check{ &c, t = types::zonk{ s = &c.ty, t = u.t }, hash = u.hash, at = u.at } }
+    }
+
+    fn derived_check { mut c: Checker, t: Id, hash: bool, at: source::Span } {
+        let mut params = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+        let found = blocker_of{ &c, t, hash, &params }
+        if found != null {
+            let text = blocked_text{ &c, t, hash, b = found }
+            error{ &c, at, msg = text }
+            return
+        }
+        for q in list::items{ list = params } {
+            if types::get{ s = c.ty, id = q } is param{ decl, index } {
+                try! list::push{ list = &c.needs, item = Need{ decl, index, hash, at } }
+            }
+        }
+    }
+
+    // The first part of t without `==` (hash: without `@hash`), or null if t has it. The
+    // generic parameters met on the way go in params: t has it if they do.
+    fn blocker_of { mut c: Checker, t: Id, hash: bool, mut params: list::List(Id, Heap) } -> ?Blocker {
+        let mut seen = list::new(Id){ realloc = arena::alloc, heap = c.heap }
+        let mut path = message{ c }
+        return blocker_in{ &c, t, hash, top = true, &seen, &params, &path }
+    }
+
+    fn blocker_in { mut c: Checker, t: Id, hash: bool, top: bool, mut seen: list::List(Id, Heap), mut params: list::List(Id, Heap), mut path: utf8::Builder(Heap) } -> ?Blocker {
+        let x = op_type{ c, t }
+        if x == types::ERROR { return null }
+        let here = utf8::view{ b = path }.bytes
+        match types::get{ s = c.ty, id = x } {
+            prim{ p } => {
+                if hash and p is f32 | f64 {
+                    return Blocker{ part = x, path = here, why = "a float, and a NaN equals nothing, itself included, so a key that holds one could never be found again: hash its bits, as `math::f64_to_bits` gives them" }
+                }
+                return null
+            }
+            var{ n } => {
+                if hash and types::var_of{ s = c.ty, n }.kind == types::VarKind::float {
+                    return Blocker{ part = x, path = here, why = "a float, and a NaN equals nothing, itself included, so a key that holds one could never be found again: hash its bits, as `math::f64_to_bits` gives them" }
+                }
+                return null
+            }
+            enumeration | strlit => { return null }
+            param => {
+                try! list::push{ list = &params, item = x }
+                return null
+            }
+            ptr => {
+                if top { return null }
+                return Blocker{ part = x, path = here, why = "a pointer, which a value's `==` neither follows nor compares: compare the fields by hand, the pointer by its address or by what it points to" }
+            }
+            opt{ elem } => {
+                if types::get{ s = c.ty, id = op_type{ c, t = elem } } is opt {
+                    return Blocker{ part = x, path = here, why = "an optional of an optional, which compares only with `null`" }
+                }
+                return blocker_in{ &c, t = elem, hash, top, &seen, &params, &path }
+            }
+            slice{ elem } => {
+                try! utf8::push{ b = &path, s = "[]" }
+                return blocker_in{ &c, t = elem, hash, top = false, &seen, &params, &path }
+            }
+            array{ elem } => {
+                try! utf8::push{ b = &path, s = "[]" }
+                return blocker_in{ &c, t = elem, hash, top = false, &seen, &params, &path }
+            }
+            record{ decl, args } => {
+                if is_untagged{ c, d = decl } {
+                    return Blocker{ part = x, path = here, why = "an extern union, and which of its fields holds its value isn't known" }
+                }
+                // A type met again on the way down, through a slice of itself, adds nothing.
+                for s in list::items{ list = seen } {
+                    if s == x { return null }
+                }
+                try! list::push{ list = &seen, item = x }
+                let fields = subst_fields{ &c, fields = get_decl{ c, d = decl }.fields, decl, args }
+                for f in fields {
+                    let mut sub = message{ c }
+                    try! utf8::push{ b = &sub, s = utf8::String{ bytes = here } }
+                    if here.len > 0 { try! utf8::push{ b = &sub, s = "." } }
+                    try! utf8::push_bytes{ b = &sub, s = f.name }
+                    let found = blocker_in{ &c, t = f.ty, hash, top = false, &seen, &params, path = &sub }
+                    if found != null { return found }
+                }
+                return null
+            }
+            sum => {
+                for s in list::items{ list = seen } {
+                    if s == x { return null }
+                }
+                try! list::push{ list = &seen, item = x }
+                let vs = variants_of{ &c, t = x }
+                for v in vs {
+                    let fields = v.fields ifnull { slice::empty(types::Field){} }
+                    for f in fields {
+                        let mut sub = message{ c }
+                        try! utf8::push{ b = &sub, s = utf8::String{ bytes = here } }
+                        if here.len > 0 { try! utf8::push{ b = &sub, s = "." } }
+                        try! utf8::push_bytes{ b = &sub, s = v.name }
+                        try! utf8::push{ b = &sub, s = "." }
+                        try! utf8::push_bytes{ b = &sub, s = f.name }
+                        let found = blocker_in{ &c, t = f.ty, hash, top = false, &seen, &params, path = &sub }
+                        if found != null { return found }
+                    }
+                }
+                return null
+            }
+            func => { return Blocker{ part = x, path = here, why = "a function, which has no `==`" } }
+            cap => { return Blocker{ part = x, path = here, why = "a capability, which has no `==`" } }
+            errs | eset | res => { return Blocker{ part = x, path = here, why = "an error or a result, which `is` and `match` test: it has no `==`" } }
+            else => { return Blocker{ part = x, path = here, why = "a type without values to compare" } }
+        }
+    }
+
+    // "Line has no `==`: its `next` is a *Line, a pointer, which ..."
+    fn blocked_text { mut c: Checker, t: Id, hash: bool, b: Blocker } -> utf8::String {
+        let mut m = message{ c }
+        let op: utf8::String = if hash { "@hash" } else { "==" }
+        if b.path.len == 0 {
+            try! @fmt(&m, "{} has no `{}`: it is {}", tstr{ c, t }, op, b.why)
+        } else {
+            try! @fmt(&m, "{} has no `{}`: its `{}` is {}, {}", tstr{ c, t }, op, b.path, a_type{ c, t = b.part }, b.why)
+        }
+        return utf8::view{ b = m }
     }
 
     // `+%`, `-%` or `*%`: arithmetic that wraps (§11, Expressions, rule 2).
@@ -12074,7 +12310,7 @@ namespace check {
             return types::USIZE
         }
         // After a syntax error, a builtin may lack arguments the parser has reported missing.
-        let need: usize = if typed_arg or slice::eq_bytes{ a = n, b = "addr" } { 1 } else if slice::eq_bytes{ a = n, b = "panic" } or slice::eq_bytes{ a = n, b = "fmt" } { 0 } else if slice::eq_bytes{ a = n, b = "clamp" } { 3 } else { 2 }
+        let need: usize = if typed_arg or slice::eq_bytes{ a = n, b = "addr" } or slice::eq_bytes{ a = n, b = "hash" } { 1 } else if slice::eq_bytes{ a = n, b = "panic" } or slice::eq_bytes{ a = n, b = "fmt" } { 0 } else if slice::eq_bytes{ a = n, b = "clamp" } { 3 } else { 2 }
         if args.len < need or (typed_arg and targ == null) { return types::ERROR }
         if slice::eq_bytes{ a = n, b = "panic" } {
             if args.len > 0 {
@@ -12143,6 +12379,12 @@ namespace check {
                 errorf{ &c, at = expr_at{ e = args[0] }, msg = @fmt("@{} rounds a float, got {}", label, tstr{ c, t = src }) }
             }
             return tt
+        }
+        if slice::eq_bytes{ a = n, b = "hash" } {
+            // A u64 that equal values share (§13): of any type with `==` that holds no float.
+            let t = value_type{ &c, e = args[0] }
+            if t != types::ERROR { derived_use{ &c, t, hash = true, at = expr_at{ e = args[0] } } }
+            return types::prim{ p = types::Prim::u64 }
         }
         if slice::eq_bytes{ a = n, b = "min" } or slice::eq_bytes{ a = n, b = "max" } {
             // Two numbers of one type after widening, as a comparison's operands (§13).

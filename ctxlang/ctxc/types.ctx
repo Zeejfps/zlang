@@ -96,7 +96,7 @@ namespace types {
         let mut s = Store{
             heap = &heap,
             items = list::new(Type){ realloc = arena::alloc, &heap },
-            index = map::new(Type, Id){ realloc = arena::alloc, &heap, hash, eq },
+            index = map::make(Type, Id){ realloc = arena::alloc, &heap },
             vars = list::new(Var){ realloc = arena::alloc, &heap },
             erased = false,
         }
@@ -263,89 +263,6 @@ namespace types {
         }
         if negative { return magnitude == 0 }
         return b == 64 or magnitude < @as(u64, 1) << b
-    }
-
-    // ---- interning
-
-    fn hash { key: Type } -> u64 {
-        match key {
-            error => { return 1 }
-            void => { return 2 }
-            nil => { return 3 }
-            prim{ p } => { return mix{ h = 4, n = @as(u64, p) } }
-            cap{ decl } => { return mix{ h = 5, n = decl } }
-            ptr{ elem, mutable } => { return mix{ h = mix{ h = 6, n = elem }, n = flag{ b = mutable } } }
-            slice{ elem, mutable } => { return mix{ h = mix{ h = 7, n = elem }, n = flag{ b = mutable } } }
-            array{ n, elem } => { return mix{ h = mix{ h = 8, n }, n = elem } }
-            opt{ elem } => { return mix{ h = 9, n = elem } }
-            record{ decl, args } => { return mix_ids{ h = mix{ h = 10, n = decl }, ids = args } }
-            sum{ decl, args } => { return mix_ids{ h = mix{ h = 11, n = decl }, ids = args } }
-            enumeration{ decl } => { return mix{ h = 12, n = decl } }
-            func{ fields, ret, bound, external } => {
-                let mut h = mix{ h = mix{ h = mix{ h = 13, n = ret }, n = flag{ b = bound } }, n = flag{ b = external } }
-                for i in 0..fields.len {
-                    let f = fields[i]
-                    h = mix{ h = mix{ h = mix{ h, n = map::hash_bytes{ key = f.name } }, n = flag{ b = f.mutable } }, n = f.ty }
-                }
-                return h
-            }
-            param{ decl, index } => { return mix{ h = mix{ h = 14, n = decl }, n = index } }
-            var{ n } => { return mix{ h = 15, n } }
-            errs{ owner, one } => { return mix{ h = mix{ h = 16, n = owner }, n = one } }
-            eset{ errs, open } => { return mix{ h = mix_ids{ h = 17, ids = errs }, n = flag{ b = open } } }
-            res{ ok, errs } => { return mix{ h = mix{ h = 18, n = ok }, n = errs } }
-            strlit => { return 19 }
-            distinct{ decl, args, base } => { return mix{ h = mix_ids{ h = mix{ h = 20, n = decl }, ids = args }, n = base } }
-        }
-    }
-
-    fn mix { h: u64, n: u64 } -> u64 {
-        return (h ^ n) *% 1099511628211 ^ (h >> 29)
-    }
-
-    fn flag { b: bool } -> u64 { return if b { 1 } else { 0 } }
-
-    fn mix_ids { h: u64, ids: []Id } -> u64 {
-        let mut x = mix{ h, n = ids.len }
-        for i in 0..ids.len {
-            x = mix{ h = x, n = ids[i] }
-        }
-        return x
-    }
-
-    fn eq { a: Type, b: Type } -> bool {
-        match a {
-            error => { return b is error }
-            void => { return b is void }
-            nil => { return b is nil }
-            prim{ p } => { return b is prim{ p = q } and p == q }
-            cap{ decl } => { return b is cap{ decl = d } and decl == d }
-            ptr{ elem, mutable } => { return b is ptr{ elem = e, mutable = m } and elem == e and mutable == m }
-            slice{ elem, mutable } => { return b is slice{ elem = e, mutable = m } and elem == e and mutable == m }
-            array{ n, elem } => { return b is array{ n = k, elem = e } and n == k and elem == e }
-            opt{ elem } => { return b is opt{ elem = e } and elem == e }
-            record{ decl, args } => { return b is record{ decl = d, args = xs } and decl == d and same_ids{ a = args, b = xs } }
-            sum{ decl, args } => { return b is sum{ decl = d, args = xs } and decl == d and same_ids{ a = args, b = xs } }
-            enumeration{ decl } => { return b is enumeration{ decl = d } and decl == d }
-            func{ fields, ret, bound, external } => {
-                if not (b is func{ fields = fs, ret = r, bound = bd, external = ex }) or ret != r or bound != bd or external != ex or fields.len != fs.len { return false }
-                for i in 0..fields.len {
-                    let f = fields[i]
-                    let g = fs[i]
-                    if f.ty != g.ty or f.mutable != g.mutable or not slice::eq_bytes{ a = f.name, b = g.name } {
-                        return false
-                    }
-                }
-                return true
-            }
-            param{ decl, index } => { return b is param{ decl = d, index = k } and decl == d and index == k }
-            var{ n } => { return b is var{ n = k } and n == k }
-            errs{ owner, one } => { return b is errs{ owner = o, one = e } and owner == o and one == e }
-            eset{ errs, open } => { return b is eset{ errs = xs, open = o } and same_ids{ a = errs, b = xs } and open == o }
-            res{ ok, errs } => { return b is res{ ok = o, errs = e } and ok == o and errs == e }
-            strlit => { return b is strlit }
-            distinct{ decl, args, base } => { return b is distinct{ decl = d, args = xs, base = y } and decl == d and base == y and same_ids{ a = args, b = xs } }
-        }
     }
 
     // ---- inference (ctxi's TVar, prune, unify and widens)

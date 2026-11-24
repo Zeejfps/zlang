@@ -1,14 +1,23 @@
 // std: map. A hash map from keys K to values V, generic over the allocator state S.
 //
-// Keys have no built-in hashing or equality, so a map holds a function for each. std provides
-// them for the common key types below; `utf8::eq` serves as the equality for utf8::String, and
-// `slice::eq_bytes` for []u8.
+// A map holds a hash function and an equality for its keys. `make` gives it the key type's
+// own, `@hash` and `==` (§13; §11, Expressions, rule 5), which every type of numbers, bools,
+// enums, strings, and structs, unions, arrays and slices of those has, so a key is any such
+// type and nothing is written for it:
 //
-//   let mut ages = map::new(utf8::String, i64){
-//       realloc = arena::alloc, &heap, hash = map::hash_string, eq = utf8::eq,
-//   }
+//   struct Cell { x: i32, y: i32 }
+//   let mut seen = map::make(Cell, bool){ realloc = arena::alloc, &heap }
+//   let mut ages = map::make(utf8::String, i64){ realloc = arena::alloc, &heap }
 //   try map::put{ m = &ages, key = name, value = 42 }    // fails with alloc::out_of_memory
 //   let age = map::get{ m = ages, key = name }       // ?i64
+//
+// A key type without them is an error where `make` is named, which says which part of the
+// type stops it: a float (a NaN equals nothing), a pointer, a function. `new` takes a hash
+// and an equality of the caller's instead, for such a key, or for another notion of equal;
+// std's for the common key types are below, with `utf8::eq` for utf8::String and
+// `slice::eq_bytes` for []u8:
+//
+//   let mut by_name = map::new([]u8, u32){ realloc = arena::alloc, &heap, hash = hash_folded, eq = eq_folded }
 //
 // A map copies its keys but not memory they point to: the bytes of an utf8::String key must
 // outlive its entry. A map keeps a pointer to its allocator's state, as a list does.
@@ -40,6 +49,20 @@ namespace map {
 
     fn new(K, V, S) { realloc: alloc::Fn(S), heap: *mut S, hash: Hash(K), eq: Eq(K) } -> Map(K, V, S) {
         return Map{ slots = slice::empty(Slot(K, V)){}, len = 0, used = 0, realloc, heap, hash, eq }
+    }
+
+    // A map keyed by K's own `==` and `@hash`. K must have them: the error is at the call.
+    fn make(K, V, S) { realloc: alloc::Fn(S), heap: *mut S } -> Map(K, V, S) {
+        return new{ realloc, heap, hash = hash_key(K), eq = eq_keys(K) }
+    }
+
+    // `@hash` and `==` as functions of a key type, which `make` gives a map.
+    fn hash_key(K) { key: K } -> u64 {
+        return @hash(key)
+    }
+
+    fn eq_keys(K) { a: K, b: K } -> bool {
+        return a == b
     }
 
     fn len(K, V, S) { m: Map(K, V, S) } -> usize {

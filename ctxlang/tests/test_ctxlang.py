@@ -2370,6 +2370,249 @@ fn main { mut io: Io, mut mem: Mem } {
                 self.assertSpecError(body, msg, line, col)
 
 
+class DerivedEquality(Base):
+    """§11, Expressions, rule 5, and §13, `@hash`: `==` on a struct, a union, an array, a slice or an
+    optional of parts that have it, and a hash that equal values share; both in generic code
+    and consts, and std's `map::make`, whose keys need no hash written for them."""
+
+    POINTER = "a pointer, which a value's `==` neither follows nor compares: compare the fields by hand, the pointer by its address or by what it points to"
+    FLOAT = 'a float, and a NaN equals nothing, itself included, so a key that holds one could never be found again: hash its bits, as `math::f64_to_bits` gives them'
+
+    def test_values(self):
+        # Field by field, variant by variant, element by element; a slice and a string by
+        # their contents; a NaN inside is unequal to itself. Equal values hash alike, and a
+        # const's `==` and `@hash` are the run time's.
+        self.assertOutput(r"""struct P { x: i32, y: i32 }
+struct Name { text: []u8, tag: u8, at: ?P }
+union Shape { dot, line{ a: P, b: P }, poly{ pts: []P, name: Name } }
+enum Color: u8 { red, green }
+struct Mixed { c: Color, ok: bool, w: [3]u16, f: f32 }
+struct Tree { v: i32, kids: []Tree }
+type Id = distinct u32
+struct Key { id: Id, name: utf8::String }
+
+const SAME: bool = P{ x = 1, y = 2 } == P{ x = 1, y = 2 }
+const H: u64 = @hash(P{ x = 1, y = 2 })
+
+fn p { x: i32, y: i32 } -> P { return P{ x, y } }
+
+fn main { mut io: Io } {
+    let a = p{ x = 1, y = 2 }
+    let b = p{ x = 1, y = 3 }
+    _ = @fmt(&io, "{} {} {} {} {}\n", a == a, a == b, a != b, SAME, p{ x = 1, y = 2 } == a)
+    let mut buf: [3]u8 = "abc"
+    let n1 = Name{ text = "abc", tag = 1, at = a }
+    let n2 = Name{ text = buf[..], tag = 1, at = a }
+    let n3 = Name{ text = "abd", tag = 1, at = a }
+    let n4 = Name{ text = "abc", tag = 1, at = null }
+    _ = @fmt(&io, "{} {} {} {}\n", n1 == n2, n1 == n3, n1 == n4, n4 == n4)
+    let pts: [2]P = [a, b]
+    let s1 = Shape::poly{ pts = pts[..], name = n1 }
+    let s2 = Shape::poly{ pts = pts[..1], name = n1 }
+    let l1 = Shape::line{ a, b }
+    let l2 = Shape::line{ a, b }
+    let d: Shape = Shape::dot
+    _ = @fmt(&io, "{} {} {} {} {} {}\n", s1 == s1, s1 == s2, l1 == l2, l1 == d, d == Shape::dot, l1 != s1)
+    let m1 = Mixed{ c = Color::red, ok = true, w = [1, 2, 3], f = 1.5 }
+    let mut m2 = m1
+    _ = @fmt(&io, "{} ", m1 == m2)
+    m2.w[2] = 9
+    _ = @fmt(&io, "{} ", m1 == m2)
+    m2 = m1
+    m2.f = math::NAN_F32
+    _ = @fmt(&io, "{} {}\n", m1 == m2, m2 == m2)
+    let leaf = Tree{ v = 1, kids = [] }
+    let leaves: [2]Tree = [leaf, leaf]
+    let t1 = Tree{ v = 0, kids = leaves[..] }
+    let t2 = Tree{ v = 0, kids = leaves[..1] }
+    _ = @fmt(&io, "{} {} {}\n", t1 == t1, t1 == t2, leaf == leaf)
+    let o1: ?P = a
+    let o2: ?P = null
+    let arr: [2]P = [a, b]
+    let text: []u8 = "abc"
+    _ = @fmt(&io, "{} {} {} {} {} {}\n", o1 == a, o2 == a, o1 == o2, arr == pts, text == buf[..], "abc" == text)
+    // hashes: equal values hash alike
+    let k1 = Key{ id = @as(Id, 7), name = "seven" }
+    let k2 = Key{ id = @as(Id, 7), name = utf8::of{ chars = "seven" } }
+    _ = @fmt(&io, "{} {} {} {}\n", @hash(k1) == @hash(k2), @hash(a) == H, @hash(a) == @hash(b), @hash(n1) == @hash(n2))
+    _ = @fmt(&io, "{} {} {} {}\n", @hash(s1) == @hash(s1), @hash(s1) == @hash(s2), @hash(t1) == @hash(t1), @hash(o2) == @hash(o1))
+    _ = @fmt(&io, "{} {} {}\n", @hash(7) == @hash(7), @hash(text) == @hash(buf[..]), @hash(Color::red) == @hash(Color::green))
+    _ = @fmt(&io, "{} {}\n", @hash(a), @hash(text))
+}
+""",
+            'true false true true true\n'
+            'true false false true\n'
+            'true false true false true true\n'
+            'true false false false\n'
+            'true false true\n'
+            'true false false true true true\n'
+            'true true false true\n'
+            'true false true false\n'
+            'true true false\n'
+            '1034369639443799573 3027652281463773162\n')
+
+    def test_generics_and_maps(self):
+        # A generic fn may compare and hash its parameter's values, and `map::make` keys a
+        # map by a struct, a string, a union, bytes or a pointer's address.
+        self.assertOutput(r"""type Heap = arena::Arena
+struct Cell { x: i32, y: i32 }
+struct Tag { name: []u8, kind: u8 }
+union Key { none, id{ n: u32 }, named{ t: Tag } }
+
+fn index_of(T) { xs: []T, x: T } -> ?usize {
+    for v at i in xs {
+        if v == x { return i }
+    }
+    return null
+}
+
+fn both(T) { xs: []T, x: T } -> u64 {
+    return if index_of{ xs, x } != null { @hash(x) } else { 0 }
+}
+
+fn main { mut io: Io, mut mem: Mem } {
+    let pages = mem::pages{ &mem, size = 1048576 } ifnull { return }
+    let mut heap = arena::new{ buf = pages }
+    let mut seen = map::make(Cell, i32){ realloc = arena::alloc, &heap }
+    for i in 0..100 {
+        try! map::put{ m = &seen, key = Cell{ x = i % 10, y = i / 10 }, value = i }
+    }
+    _ = @fmt(&io, "{} {} {} {}\n", map::len{ m = seen }, map::get{ m = seen, key = Cell{ x = 3, y = 4 } } ifnull -1, map::has{ m = seen, key = Cell{ x = 10, y = 0 } }, map::remove{ m = &seen, key = Cell{ x = 0, y = 0 } } ifnull -1)
+    let mut ages = map::make(utf8::String, i64){ realloc = arena::alloc, &heap }
+    try! map::put{ m = &ages, key = "ann", value = 42 }
+    try! map::put{ m = &ages, key = "bob", value = 7 }
+    try! map::put{ m = &ages, key = "ann", value = 43 }
+    let mut name: [3]u8 = "bob"
+    _ = @fmt(&io, "{} {} {} {}\n", map::len{ m = ages }, map::get{ m = ages, key = "ann" } ifnull -1, map::get{ m = ages, key = utf8::of{ chars = name[..] } } ifnull -1, map::has{ m = ages, key = "cy" })
+    let mut by_key = map::make(Key, u8){ realloc = arena::alloc, &heap }
+    try! map::put{ m = &by_key, key = Key::none, value = 1 }
+    try! map::put{ m = &by_key, key = Key::id{ n = 5 }, value = 2 }
+    try! map::put{ m = &by_key, key = Key::named{ t = Tag{ name = "bob", kind = 1 } }, value = 3 }
+    _ = @fmt(&io, "{} {} {} {}\n", map::get{ m = by_key, key = Key::none } ifnull 0, map::get{ m = by_key, key = Key::id{ n = 5 } } ifnull 0, map::get{ m = by_key, key = Key::named{ t = Tag{ name = name[..], kind = 1 } } } ifnull 0, map::get{ m = by_key, key = Key::id{ n = 6 } } ifnull 0)
+    let mut bytes = map::make([]u8, u32){ realloc = arena::alloc, &heap }
+    try! map::put{ m = &bytes, key = "fn", value = 1 }
+    let mut ptrs = map::make(*Cell, u32){ realloc = arena::alloc, &heap }
+    let c1 = Cell{ x = 1, y = 1 }
+    let c2 = Cell{ x = 1, y = 1 }
+    try! map::put{ m = &ptrs, key = &c1, value = 1 }
+    _ = @fmt(&io, "{} {} {}\n", map::get{ m = bytes, key = name[..2] } ifnull 0, map::has{ m = ptrs, key = &c1 }, map::has{ m = ptrs, key = &c2 })
+    let cells: [2]Cell = [c1, Cell{ x = 2, y = 2 }]
+    _ = @fmt(&io, "{} {} {}\n", index_of{ xs = cells[..], x = Cell{ x = 2, y = 2 } } ifnull 99, index_of{ xs = "abc", x = 'c' } ifnull 99, both{ xs = cells[..], x = c2 } == @hash(c1))
+}
+""",
+            '100 43 false 0\n'
+            '2 43 7 false\n'
+            '1 2 3 0\n'
+            '0 true false\n'
+            '1 2 true\n')
+
+    def test_instances(self):
+        # Instances of generic structs and unions, a distinct struct, nested arrays and a
+        # const; each operand is evaluated once, and `x == v` narrows an optional struct.
+        self.assertOutput(r"""struct P { x: i32, y: i32 }
+type Pos = distinct P
+struct Pair(A, B) { a: A, b: B }
+union Slot(K, V) { empty, full{ k: K, v: V } }
+struct Wide { n: i64, p: Pair(u8, []u8), s: Slot(P, ?u16), z: [0]u8 }
+
+fn same(T) { a: T, b: T } -> bool { return a == b }
+fn pair_eq(A, B) { x: Pair(A, B), y: Pair(A, B) } -> bool { return x == y and @hash(x) == @hash(y) }
+fn noisy { mut io: Io, n: i32 } -> P {
+    _ = @fmt(&io, "<{}>", n)
+    return P{ x = n, y = n }
+}
+
+const WIDE: Wide = Wide{ n = -1, p = Pair{ a = 7, b = "seven" }, s = Slot::full{ k = P{ x = 1, y = 2 }, v = null }, z = [] }
+const SAME: bool = same{ a = WIDE, b = WIDE }
+
+fn main { mut io: Io } {
+    let a = @as(Pos, P{ x = 1, y = 2 })
+    let b = @as(Pos, P{ x = 1, y = 2 })
+    let mut w = WIDE
+    let mut seven: [5]u8 = "seven"
+    w.p.b = seven[..]
+    _ = @fmt(&io, "{} {} {} {}\n", a == b, same{ a, b }, w == WIDE, SAME)
+    w.s = Slot::full{ k = P{ x = 1, y = 2 }, v = 3 }
+    _ = @fmt(&io, "{} {} {}\n", w == WIDE, w.s == Slot::empty, pair_eq{ x = w.p, y = WIDE.p })
+    // Each operand once, the left first.
+    _ = @fmt(&io, " {}\n", noisy{ &io, n = 1 } == noisy{ &io, n = 2 })
+    // An optional narrows as it does for a number.
+    let o: ?P = P{ x = 5, y = 6 }
+    if o == P{ x = 5, y = 6 } { _ = @fmt(&io, "{}\n", o.x + o.y) }
+    let grid: [2][2]P = [[P{ x = 0, y = 0 }, P{ x = 0, y = 1 }], [P{ x = 1, y = 0 }, P{ x = 1, y = 1 }]]
+    let mut other = grid
+    _ = @fmt(&io, "{} ", grid == other)
+    other[1][1].y = 9
+    _ = @fmt(&io, "{} {}\n", grid == other, @hash(grid) == @hash(other))
+}
+""",
+            'true true true true\n'
+            'false false true\n'
+            '<1><2> false\n'
+            '11\n'
+            'true false false\n')
+
+    def test_was_an_error(self):
+        # What had no equality and now compares: a distinct slice, a strlit, a ?T of a struct
+        # with a T, and a ?[]u8 with a []u8.
+        self.assertOutput("""
+type Name = distinct []u8
+struct S { a: i32 }
+fn lit { s: strlit, t: strlit } -> bool { return s == t }
+fn main { mut io: Io } {
+    let n = @as(Name, "bob")
+    let m = @as(Name, "bo")
+    let x: ?S = S{ a = 1 }
+    let none: ?S = null
+    let bytes: ?[]u8 = "ab"
+    _ = @fmt(&io, "{} {} {} {}\\n", n == n, n != m, lit{ s = "a", t = "a" }, lit{ s = "a", t = "b" })
+    _ = @fmt(&io, "{} {} {} {} {}\\n", x == S{ a = 1 }, x == S{ a = 2 }, none == S{ a = 1 }, bytes == "ab", bytes != "abc")
+}
+""", 'true true true false\ntrue false false true true\n')
+
+    def test_errors(self):
+        decls = ('struct Node { v: i32, next: ?*Node }\nstruct F { f: fn{} -> i32 }\nstruct V { x: f32, y: f32 }\n'
+                 'extern union U { a: u32, b: f32 }\nstruct W { u: U }\nstruct P { x: i32 }\nstruct Q { ps: []*P }\n'
+                 'union Sh { a, b{ p: *u8 } }\nfn one {} -> i32 { return 1 }\nfn fails {} -> ! { return }\n'
+                 'fn index_of(T) { xs: []T, x: T } -> ?usize {\n    for v at i in xs {\n        if v == x { return i }\n    }\n'
+                 '    return null\n}\nfn has(T) { xs: []T, x: T } -> bool { return index_of{ xs, x } != null }\n'
+                 'fn main { mut io: Io, mut mem: Mem } {\n    let pages = mem::pages{ &mem, size = 65536 } ifnull { return }\n'
+                 '    let mut heap = arena::new{ buf = pages }\n    let n = Node{ v = 1, next = null }\n    let ns: [1]Node = [n]\n'
+                 '    %s\n}\n')
+        for body, msg, line, col in [
+            ('let b = n == n', 'Node has no `==`: its `next` is a *Node, ' + self.POINTER, 23, 15),
+            ('let f = F{ f = one }\n    let b = f != f', 'F has no `==`: its `f` is a fn{} -> i32, a function, which has no `==`', 24, 15),
+            ('let w = W{ u = U{ a = 1 } }\n    let b = w == w',
+             "W has no `==`: its `u` is a U, an extern union, and which of its fields holds its value isn't known", 24, 15),
+            ('let b = io == io', 'Io has no `==`: it is a capability, which has no `==`', 23, 16),
+            ('let s: Sh = Sh::a\n    let b = s == s', 'Sh has no `==`: its `b.p` is a *u8, ' + self.POINTER, 24, 15),
+            ('let b = fails{} == fails{}', '! has no `==`: it is an error or a result, which `is` and `match` test: it has no `==`', 23, 21),
+            ('let a: ??P = null\n    let b = a == a',
+             '??P has no `==`: it is an optional of an optional, which compares only with `null`', 24, 15),
+            ('let s = c::String{ ptr = "a".ptr }\n    let b = s == s', 'c::String has no `==`: its `ptr` is a *u8, ' + self.POINTER, 24, 15),
+            ('let p = P{ x = 1 }\n    let b = p < p', '`<` needs numbers, got P', 24, 15),
+            # @hash: the same types, less those that hold a float
+            ('let v = V{ x = 1.0, y = 2.0 }\n    let b = v == v\n    let h = @hash(v)',
+             'V has no `@hash`: its `x` is an f32, ' + self.FLOAT, 25, 19),
+            ('let h = @hash(1.5)', 'f64 has no `@hash`: it is ' + self.FLOAT, 23, 19),
+            ('let q = Q{ ps = [] }\n    let h = @hash(q)', 'Q has no `@hash`: its `ps[]` is a *P, ' + self.POINTER, 24, 19),
+            ('let h = @hash()', 'wrong number of arguments: @hash(x)', 23, 19),
+            # a generic fn's needs reach the call that names it, through the fns between
+            ('let b = index_of{ xs = ns[..], x = n }',
+             '`index_of` uses `==` on its `T`, and Node has no `==`: its `next` is a *Node, ' + self.POINTER, 23, 13),
+            ('let b = has{ xs = ns[..], x = n }',
+             '`has` uses `==` on its `T`, and Node has no `==`: its `next` is a *Node, ' + self.POINTER, 23, 13),
+            ('let m = map::make(Node, i32){ realloc = arena::alloc, &heap }',
+             '`map::make` uses `==` on its `K`, and Node has no `==`: its `next` is a *Node, ' + self.POINTER, 23, 18),
+            ('let m = map::make(V, i32){ realloc = arena::alloc, &heap }',
+             '`map::make` uses `@hash` on its `K`, and V has no `@hash`: its `x` is an f32, ' + self.FLOAT, 23, 18),
+        ]:
+            with self.subTest(body=body):
+                with self.assertRaises(CompileError) as cm:
+                    run(decls % body)
+                self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), body)
+
+
 class Lexer(Base):
     def assertLexError(self, src, msg, line, col):
         with self.assertRaises(CompileError) as cm:
@@ -2785,7 +3028,7 @@ class ConstInitializers(Base):
             ('const A: bool = not 1', 'expected bool, got {integer}', 1, 21),
             ('const A: i32 = -true', 'unary `-` needs a number, got bool', 1, 16),
             ('const A: bool = true < false', '`<` needs numbers, got bool', 1, 22),
-            ('union U(T) { a, b{ x: T } }\nconst A: bool = U::a == U::a', 'U(_) has no built-in equality', 2, 22),
+            ('union U(T) { a, b{ x: T } }\nconst A: bool = U::a == U::a', 'cannot infer type parameter `T` of `U`', 2, 17),
             ('const A: i32 = 1.5', 'expected i32, got {float}', 1, 16),
             ('const A: [3]u8 = [7; 4]', 'expected [3]u8, got [4]u8', 1, 18),
             ('struct S { a: i32 }\nconst A: S = S{ .. }', '`..` takes fields from their defaults, and struct `S` has none', 2, 15),
@@ -4106,7 +4349,6 @@ fn main { mut io: Io } {
             ('fn f {} { let n = @as(Name, "bob")\n let k = n.len }',
              'Name has no field `len`: a distinct type has none of its own; convert it with @as([]u8, x)'),
             ('fn f {} { let p = @as(Pos, P{ x = 1, y = 2 })\n let x = p.x }', 'Pos has no field `x`'),
-            ('fn f {} { let n = @as(Name, "bob")\n let b = n == n }', 'Name has no built-in equality'),
             ('fn f {} { let g = @as(Flag, true)\n let h = not g }', 'expected bool, got Flag'),
             ('fn f {} { let g = @as(Flag, true)\n let h = g + g }', '`+` needs numbers, got Flag'),
             ('fn f {} { let s: Small = 300 }', 'literal 300 does not fit in Small'),
@@ -6131,7 +6373,6 @@ fn main { mut io: Io } {
             ('fn f { s: strlit } -> []u8 { return s }', 'expected []u8, got strlit', 1, 37),
             ('fn f {} -> strlit {\n    let s = "abc"\n    return s\n}', 'expected strlit, got []u8', 3, 12),
             ('fn f {} { let s = strlit{ bytes = "x" } }', '`strlit` is not a struct', 1, 19),
-            ('fn f { s: strlit } -> bool { return s == s }', 'strlit has no built-in equality', 1, 39),
             ('fn f { s: strlit } { _ = s.ptr }', 'strlit has no field `ptr`', 1, 27),
             ('fn f {} { let mut s: strlit\n    _ = s.bytes\n}', '`s` may be read before it is assigned', 2, 9),
             ('extern fn f { s: strlit }',
@@ -8590,9 +8831,8 @@ fn main { mut io: Io } {
             ('fn f { x: ?u32, v: i32 } -> bool { return x == v }', 'cannot compare ?u32 with i32'),
             ('fn f { x: ??u32, v: ?u32 } -> bool { return x == v }', 'cannot compare ??u32 with ?u32'),
             ('fn f { x: ??u32, v: u32 } -> bool { return x == v }', 'cannot compare ??u32 with u32'),
-            ('fn f { x: ??u32 } -> bool { return x == x }', '??u32 has no built-in equality'),
-            ('struct S { a: i32 }\nfn f { x: ?S, v: S } -> bool { return x == v }', '?S has no built-in equality'),
-            ('fn f { x: ?[]u8, v: []u8 } -> bool { return x == v }', '?[]u8 has no built-in equality'),
+            ('fn f { x: ??u32 } -> bool { return x == x }',
+             '??u32 has no `==`: it is an optional of an optional, which compares only with `null`'),
             ('fn f { x: ?i32 } -> bool { return x < 3 }', 'cannot compare ?i32 with {integer}'),
         ]
         for src, msg in cases:

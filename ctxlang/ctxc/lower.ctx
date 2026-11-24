@@ -122,6 +122,8 @@ namespace lower {
             let kind = check::get_decl{ c = l.c.*, d = inst.decl }.kind
             let f = if inst.widen != null {
                 widening{ &l, id = @as(u32, i), inst }
+            } else if inst.site == DERIVED_EQ or inst.site == DERIVED_HASH {
+                deriving{ &l, id = @as(u32, i), inst }
             } else if inst.entry != NONE {
                 entering{ &l, id = @as(u32, i), inst }
             } else if inst.site != NONE {
@@ -2785,6 +2787,11 @@ namespace lower {
             let ty = tid{ &l, t }
             let x = conv{ &l, e = a, to = common }
             let y = conv{ &l, e = b, to = common }
+            if (op == tok::Kind::eq or op == tok::Kind::ne) and not compared_whole{ &l, t = common } {
+                let r = same{ &l, t = common, a = x, b = y }
+                if op == tok::Kind::ne { return mk{ ty, k = ir::ExprKind::lnot{ e = box{ l, e = r } } } }
+                return r
+            }
             return mk{ ty, k = ir::ExprKind::cmp{ op = cmp, a = box{ l, e = x }, b = box{ l, e = y } } }
         }
         if get{ l, t = check::type_of_expr{ c = l.c.*, e = a } } is ptr {
@@ -2836,7 +2843,7 @@ namespace lower {
         let rb = if sb == NONE { xb } else { mk{ ty = xb.ty, k = ir::ExprKind::local{ slot = sb } } }
         let va = coerce{ &l, x = if ao { payload_of{ &l, x = ra, t = pa } } else { ra }, frm = pa, to = common, at = check::expr_at{ e = a } }
         let vb = coerce{ &l, x = if bo { payload_of{ &l, x = rb, t = pb } } else { rb }, frm = pb, to = common, at = check::expr_at{ e = b } }
-        let mut r = mk{ ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::eq, a = box{ l, e = va }, b = box{ l, e = vb } } }
+        let mut r = same{ &l, t = common, a = va, b = vb }
         if tagged {
             if ao and bo {
                 let none_a = test_null{ &l, x = ra, holds = false }
@@ -3141,6 +3148,22 @@ namespace lower {
             return mk{ ty, k = ir::ExprKind::trunc{ e = box{ l, e = ex{ &l, e = args[0] } } } }
         }
         if check::atomic_name{ n = name } { return atomic{ &l, name, args, t } }
+        if slice::eq_bytes{ a = name, b = "hash" } {
+            // Folded into the starting value, then stirred so that every bit of the result
+            // depends on every bit of the fold: s ^= s >> 32; s *= K; s ^= s >> 29.
+            let u64_ty = tid{ &l, t }
+            let vt = after{ &l, e = args[0] }
+            let folded = hashed{ &l, t = vt, h = mk{ ty = u64_ty, k = ir::ExprKind::int{ negative = false, value = 14695981039346656037 } }, v = ex{ &l, e = args[0] } }
+            let s0 = temp{ &l, ty = u64_ty }
+            let s1 = temp{ &l, ty = u64_ty }
+            let pos = epos{ &l, e }
+            let a0 = slot_ex{ ty = u64_ty, slot = s0 }
+            let a1 = slot_ex{ ty = u64_ty, slot = s1 }
+            let k = mk{ ty = u64_ty, k = ir::ExprKind::int{ negative = false, value = 11400714819323198485 } }
+            let x0 = xor_shift{ &l, v = a0, n = 32, pos }
+            let stirred = mk{ ty = u64_ty, k = ir::ExprKind::wrap{ op = ir::ArithOp::mul, a = box{ l, e = x0 }, b = box{ l, e = k } } }
+            return held{ l, slot = s0, init = folded, body = held{ l, slot = s1, init = stirred, body = xor_shift{ &l, v = a1, n = 29, pos } } }
+        }
         if slice::eq_bytes{ a = name, b = "min" } { return min_max{ &l, least = true, a = args[0], b = args[1], t } }
         if slice::eq_bytes{ a = name, b = "max" } { return min_max{ &l, least = false, a = args[0], b = args[1], t } }
         if slice::eq_bytes{ a = name, b = "clamp" } { return clamp{ &l, e, args, t } }
@@ -3152,6 +3175,288 @@ namespace lower {
             return mk{ ty, k = ir::ExprKind::shift{ op = ir::ShiftOp::wrap_shl, a = box{ l, e = x }, b = box{ l, e = y }, pos = epos{ &l, e } } }
         }
         @panic("lower: a builtin the parser doesn't know")
+    }
+
+    // ---- derived `==` and `@hash` (spec §11, Expressions, rule 5; §13)
+
+    // The site of an instance that is a type's derived `==` or `@hash` fn: its type is entry.
+    const DERIVED_EQ: u32 = 0xFFFFFFFC
+    const DERIVED_HASH: u32 = 0xFFFFFFFB
+
+    // Whether the IR's `cmp` compares values of t: numbers, bool, enums and pointers. Any other
+    // type with `==` is compared by its derived fn.
+    fn compared_whole { mut l: Lower, t: Id } -> bool {
+        let x = types::undistinct{ s = l.c.ty, t = T{ &l, t } }
+        match get{ l, t = x } {
+            prim | ptr | enumeration => { return true }
+            opt{ elem } => { return get{ l, t = types::undistinct{ s = l.c.ty, t = elem } } is ptr }
+            else => { return false }
+        }
+    }
+
+    // `a == b` for two values of type t.
+    fn same { mut l: Lower, t: Id, a: ir::Expr, b: ir::Expr } -> ir::Expr {
+        let ty = tid{ &l, t = types::BOOL }
+        if compared_whole{ &l, t } { return mk{ ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::eq, a = box{ l, e = a }, b = box{ l, e = b } } } }
+        let fid = derived_id{ &l, t, site = DERIVED_EQ }
+        return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = two_args{ l, a, b } } }
+    }
+
+    // h with v, a value of type t, folded in: a number, a bool, an enum or a pointer's address
+    // as a u64 (`(h ^ n) * prime`, FNV-1a's step over words), and any other type by its
+    // derived fn.
+    fn hashed { mut l: Lower, t: Id, h: ir::Expr, v: ir::Expr } -> ir::Expr {
+        let u64_id = types::prim{ p = types::Prim::u64 }
+        let ty = tid{ &l, t = u64_id }
+        if not compared_whole{ &l, t } {
+            let fid = derived_id{ &l, t, site = DERIVED_HASH }
+            return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = two_args{ l, a = h, b = v } } }
+        }
+        let x = types::undistinct{ s = l.c.ty, t = T{ &l, t } }
+        let mut n = v
+        match get{ l, t = x } {
+            prim{ p } => {
+                if p is bool {
+                    let one = mk{ ty, k = ir::ExprKind::int{ negative = false, value = 1 } }
+                    n = either{ l, ty, c = v, then = one, els = mk{ ty, k = ir::ExprKind::int{ negative = false, value = 0 } } }
+                } else if not (p is u64) {
+                    n = mk{ ty, k = ir::ExprKind::trunc{ e = box{ l, e = v } } }
+                }
+            }
+            enumeration => { n = mk{ ty, k = ir::ExprKind::trunc{ e = box{ l, e = v } } } }
+            else => {
+                let addr = mk{ ty = tid{ &l, t = types::USIZE }, k = ir::ExprKind::ptraddr{ e = box{ l, e = v } } }
+                n = mk{ ty, k = ir::ExprKind::trunc{ e = box{ l, e = addr } } }
+            }
+        }
+        return mixed{ &l, h, n }
+    }
+
+    // `(h ^ n) *% 1099511628211`, of two u64s.
+    fn mixed { mut l: Lower, h: ir::Expr, n: ir::Expr } -> ir::Expr {
+        let ty = h.ty
+        let x = mk{ ty, k = ir::ExprKind::bits{ op = ir::BitOp::bit_xor, a = box{ l, e = h }, b = box{ l, e = n } } }
+        let prime = mk{ ty, k = ir::ExprKind::int{ negative = false, value = 1099511628211 } }
+        return mk{ ty, k = ir::ExprKind::wrap{ op = ir::ArithOp::mul, a = box{ l, e = x }, b = box{ l, e = prime } } }
+    }
+
+    // `v ^ (v >> n)`, of a u64 that is read twice.
+    fn xor_shift { mut l: Lower, v: ir::Expr, n: u64, pos: ir::Pos } -> ir::Expr {
+        let ty = v.ty
+        let count = mk{ ty, k = ir::ExprKind::int{ negative = false, value = n } }
+        let shifted = mk{ ty, k = ir::ExprKind::shift{ op = ir::ShiftOp::shr, a = box{ l, e = v }, b = box{ l, e = count }, pos } }
+        return mk{ ty, k = ir::ExprKind::bits{ op = ir::BitOp::bit_xor, a = box{ l, e = v }, b = box{ l, e = shifted } } }
+    }
+
+    // The derived fn of type t, queued the first time it is needed: `==` or `@hash` by site.
+    fn derived_id { mut l: Lower, t: Id, site: u32 } -> u32 {
+        let x = T{ &l, t }
+        let mut b = list::new(u8){ realloc = arena::alloc, heap = l.heap }
+        put_u32{ xs = &b, n = NONE }         // no declaration's id
+        put_u32{ xs = &b, n = site }
+        put_u32{ xs = &b, n = norm{ &l, t = x } }
+        let key = list::items{ list = b }
+        let known = map::get{ m = l.fn_ids, key }
+        if known != null { return known }
+        let id = @as(u32, l.queue.len)
+        try! map::put{ m = &l.fn_ids, key, value = id }
+        try! list::push{ list = &l.queue, item = Inst{ decl = l.decl, targs = no_ids{}, site, widen = null, entry = x } }
+        return id
+    }
+
+    // What a derived fn is being written with: its statements, and where it is, for the IR's
+    // positions, which no check in it can fail at.
+    struct Deriving { stmts: list::List(ir::Stmt, Heap), pos: ir::Pos, hash: bool }
+
+    // Derived fn inst as a function. `==`: `fn{ a: T, b: T } -> bool`, which returns false at
+    // the first part that differs. `@hash`: `fn{ h: u64, x: T } -> u64`, h with every part of x
+    // folded in, in order. A struct goes field by field, an array and a slice element by
+    // element (a slice's length first), an optional by whether it is null, and a union by its
+    // variant, then that variant's fields; padding is never read.
+    fn deriving { mut l: Lower, id: u32, inst: Inst } -> ir::Func {
+        let d = check::get_decl{ c = l.c.*, d = inst.decl }
+        l.decl = inst.decl
+        l.targs = no_ids{}
+        map::clear{ m = &l.slots }
+        l.locals = list::new(ir::Local){ realloc = arena::alloc, heap = l.heap }
+        let hash = inst.site == DERIVED_HASH
+        let t = inst.entry
+        let ty = tid{ &l, t }
+        let bool_ty = tid{ &l, t = types::BOOL }
+        let u64_ty = tid{ &l, t = types::prim{ p = types::Prim::u64 } }
+        let ret = if hash { u64_ty } else { bool_ty }
+        l.ret = if hash { types::prim{ p = types::Prim::u64 } } else { types::BOOL }
+        let mut params = list::new(ir::Param){ realloc = arena::alloc, heap = l.heap }
+        try! list::push{ list = &params, item = ir::Param{ name = if hash { "h" } else { "a" }, mutable = false, ty = if hash { u64_ty } else { ty } } }
+        try! list::push{ list = &params, item = ir::Param{ name = if hash { "x" } else { "b" }, mutable = false, ty } }
+        try! list::push{ list = &l.locals, item = ir::Local{ name = if hash { "h" } else { "a" }, ty = if hash { u64_ty } else { ty } } }
+        try! list::push{ list = &l.locals, item = ir::Local{ name = if hash { "x" } else { "b" }, ty } }
+        let p0 = slot_ex{ ty = if hash { u64_ty } else { ty }, slot = 0 }
+        let p1 = slot_ex{ ty, slot = 1 }
+        let mut g = Deriving{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, pos = ir::Pos{ line = 0, col = 0, file = 0 }, hash }
+        // The hash so far is in a local of its own, which each part's fold replaces.
+        let acc = if hash { temp{ &l, ty = u64_ty } } else { NONE }
+        if hash { try! list::push{ list = &g.stmts, item = ir::Stmt::define{ slot = acc, init = p0 } } }
+        derive_parts{ &l, &g, t, a = if hash { p1 } else { p0 }, b = p1, acc }
+        let last = if hash { slot_ex{ ty = u64_ty, slot = acc } } else { mk{ ty = bool_ty, k = ir::ExprKind::boolean{ value = true } } }
+        try! list::push{ list = &g.stmts, item = ir::Stmt::ret{ value = last } }
+        let mut name = message{ l }
+        try! @fmt(&name, "{} of {}", if hash { "@hash" } else { "==" }, str{ s = type_name{ l, t } })
+        return ir::Func{
+            id, name = utf8::view{ b = name }.bytes, symbol = "", params = list::items{ list = params }, ret,
+            locals = list::items{ list = l.locals }, body = ir::Block{ stmts = list::items{ list = g.stmts }, result = null },
+            unit = unit_of{ l, x = d }, at = d.syn.span.start,
+        }
+    }
+
+    // One part: for `==`, leave with false unless a's and b's are the same; for `@hash`, fold
+    // a's into acc.
+    fn derive_part { mut l: Lower, mut g: Deriving, t: Id, a: ir::Expr, b: ir::Expr, acc: u32 } {
+        let u64_ty = tid{ &l, t = types::prim{ p = types::Prim::u64 } }
+        if g.hash {
+            let h = slot_ex{ ty = u64_ty, slot = acc }
+            try! list::push{ list = &g.stmts, item = ir::Stmt::assign{ place = h, value = hashed{ &l, t, h, v = a } } }
+            return
+        }
+        let bool_ty = tid{ &l, t = types::BOOL }
+        let differ = mk{ ty = bool_ty, k = ir::ExprKind::lnot{ e = box{ l, e = same{ &l, t, a, b } } } }
+        leave_if{ &l, &g, c = differ }
+    }
+
+    // `if c { return false }`, in a derived `==`.
+    fn leave_if { mut l: Lower, mut g: Deriving, c: ir::Expr } {
+        let bool_ty = tid{ &l, t = types::BOOL }
+        let mut out = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+        try! list::push{ list = &out, item = ir::Stmt::ret{ value = mk{ ty = bool_ty, k = ir::ExprKind::boolean{ value = false } } } }
+        try! list::push{ list = &g.stmts, item = ir::Stmt::cond{ c, then = ir::Block{ stmts = list::items{ list = out }, result = null }, els = null } }
+    }
+
+    // A number folded into acc, in a derived `@hash`: a length, a variant's index.
+    fn fold_number { mut l: Lower, mut g: Deriving, n: ir::Expr, acc: u32 } {
+        let h = slot_ex{ ty = n.ty, slot = acc }
+        try! list::push{ list = &g.stmts, item = ir::Stmt::assign{ place = h, value = mixed{ &l, h, n } } }
+    }
+
+    // The parts of a and b, values of type t that the derived fn of t was given: g's statements
+    // for all of them.
+    fn derive_parts { mut l: Lower, mut g: Deriving, t: Id, a: ir::Expr, b: ir::Expr, acc: u32 } {
+        let x = types::undistinct{ s = l.c.ty, t = T{ &l, t } }
+        let bool_ty = tid{ &l, t = types::BOOL }
+        let usize_ty = tid{ &l, t = types::USIZE }
+        let u64_ty = tid{ &l, t = types::prim{ p = types::Prim::u64 } }
+        match get{ l, t = x } {
+            record{ decl, args } => {
+                let fields = check::subst_fields{ c = l.c, fields = check::get_decl{ c = l.c.*, d = decl }.fields, decl, args }
+                for f at i in fields {
+                    let ft = tid{ &l, t = f.ty }
+                    let fa = mk{ ty = ft, k = ir::ExprKind::field{ base = box{ l, e = a }, index = @as(u32, i) } }
+                    let fb = mk{ ty = ft, k = ir::ExprKind::field{ base = box{ l, e = b }, index = @as(u32, i) } }
+                    derive_part{ &l, &g, t = f.ty, a = fa, b = fb, acc }
+                }
+            }
+            array{ n, elem } => {
+                let count = mk{ ty = usize_ty, k = ir::ExprKind::int{ negative = false, value = n } }
+                derive_elems{ &l, &g, elem, a, b, count, sliced = false, acc }
+            }
+            slice{ elem } => { derive_slices{ &l, &g, elem, a, b, acc } }
+            strlit => { derive_slices{ &l, &g, elem = types::U8, a, b, acc } }
+            opt{ elem } => {
+                let et = tid{ &l, t = elem }
+                let none_a = mk{ ty = bool_ty, k = ir::ExprKind::isnull{ e = box{ l, e = a } } }
+                let pa = mk{ ty = et, k = ir::ExprKind::payload{ base = box{ l, e = a }, variant = 1, field = 0 } }
+                let pb = mk{ ty = et, k = ir::ExprKind::payload{ base = box{ l, e = b }, variant = 1, field = 0 } }
+                let mut inner = Deriving{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, pos = g.pos, hash = g.hash }
+                let mut null_case = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+                if g.hash {
+                    // 0 for null; 1, then the value.
+                    let mut zero = Deriving{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, pos = g.pos, hash = true }
+                    fold_number{ &l, g = &zero, n = mk{ ty = u64_ty, k = ir::ExprKind::int{ negative = false, value = 0 } }, acc }
+                    null_case = zero.stmts
+                    fold_number{ &l, g = &inner, n = mk{ ty = u64_ty, k = ir::ExprKind::int{ negative = false, value = 1 } }, acc }
+                } else {
+                    // Both null are the same; one null differs.
+                    let none_b = mk{ ty = bool_ty, k = ir::ExprKind::isnull{ e = box{ l, e = b } } }
+                    try! list::push{ list = &null_case, item = ir::Stmt::ret{ value = none_b } }
+                    leave_if{ &l, g = &inner, c = none_b }
+                }
+                derive_part{ &l, g = &inner, t = elem, a = pa, b = pb, acc }
+                let then = ir::Block{ stmts = list::items{ list = null_case }, result = null }
+                let els = ir::Block{ stmts = list::items{ list = inner.stmts }, result = null }
+                try! list::push{ list = &g.stmts, item = ir::Stmt::cond{ c = none_a, then, els } }
+            }
+            sum => {
+                let vs = check::variants_of{ c = l.c, t = x }
+                let mut arms = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+                for v at i in vs {
+                    let fields = v.fields ifnull { slice::empty(types::Field){} }
+                    let mut binds_a = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+                    let mut binds_b = list::new(ir::Bind){ realloc = arena::alloc, heap = l.heap }
+                    let mut inner = Deriving{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, pos = g.pos, hash = g.hash }
+                    if g.hash { fold_number{ &l, g = &inner, n = mk{ ty = u64_ty, k = ir::ExprKind::int{ negative = false, value = i } }, acc } }
+                    for f at k in fields {
+                        let ft = tid{ &l, t = f.ty }
+                        let sa = temp{ &l, ty = ft }
+                        add_bind{ xs = &binds_a, b = ir::Bind{ slot = sa, field = @as(u32, k), by_ref = false } }
+                        let mut sb = sa
+                        if not g.hash {
+                            sb = temp{ &l, ty = ft }
+                            add_bind{ xs = &binds_b, b = ir::Bind{ slot = sb, field = @as(u32, k), by_ref = false } }
+                        }
+                        derive_part{ &l, g = &inner, t = f.ty, a = slot_ex{ ty = ft, slot = sa }, b = slot_ex{ ty = ft, slot = sb }, acc }
+                    }
+                    let mut body = inner.stmts
+                    if not g.hash {
+                        // b must hold the same variant: its fields are bound beside a's, and any
+                        // other variant differs.
+                        let mut same_variant = list::new(ir::Arm){ realloc = arena::alloc, heap = l.heap }
+                        add_arm{ l, xs = &same_variant, pats = one_pat{ l, p = ir::Pat{ variant = @as(u32, i), binds = list::items{ list = binds_b } } }, body = ir::Block{ stmts = list::items{ list = inner.stmts }, result = null } }
+                        let mut other = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+                        try! list::push{ list = &other, item = ir::Stmt::ret{ value = mk{ ty = bool_ty, k = ir::ExprKind::boolean{ value = false } } } }
+                        add_arm{ l, xs = &same_variant, pats = slice::empty(ir::Pat){}, body = ir::Block{ stmts = list::items{ list = other }, result = null } }
+                        body = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }
+                        try! list::push{ list = &body, item = ir::Stmt::choose{ scrut = b, through = false, arms = list::items{ list = same_variant } } }
+                    }
+                    add_arm{ l, xs = &arms, pats = one_pat{ l, p = ir::Pat{ variant = @as(u32, i), binds = list::items{ list = binds_a } } }, body = ir::Block{ stmts = list::items{ list = body }, result = null } }
+                }
+                try! list::push{ list = &g.stmts, item = ir::Stmt::choose{ scrut = a, through = false, arms = list::items{ list = arms } } }
+            }
+            else => { @panic("lower: a derived fn of a type the checker should have refused") }
+        }
+    }
+
+    // Two slices of elem: their lengths, then their elements.
+    fn derive_slices { mut l: Lower, mut g: Deriving, elem: Id, a: ir::Expr, b: ir::Expr, acc: u32 } {
+        let bool_ty = tid{ &l, t = types::BOOL }
+        let usize_ty = tid{ &l, t = types::USIZE }
+        let u64_ty = tid{ &l, t = types::prim{ p = types::Prim::u64 } }
+        let len_a = mk{ ty = usize_ty, k = ir::ExprKind::field{ base = box{ l, e = a }, index = 1 } }
+        let len_b = mk{ ty = usize_ty, k = ir::ExprKind::field{ base = box{ l, e = b }, index = 1 } }
+        if g.hash {
+            fold_number{ &l, &g, n = mk{ ty = u64_ty, k = ir::ExprKind::trunc{ e = box{ l, e = len_a } } }, acc }
+        } else {
+            leave_if{ &l, &g, c = mk{ ty = bool_ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::ne, a = box{ l, e = len_a }, b = box{ l, e = len_b } } } }
+        }
+        derive_elems{ &l, &g, elem, a, b, count = len_a, sliced = true, acc }
+    }
+
+    // `let i = 0; while i < count { part of a[i] and b[i]; i = i + 1 }`, over two arrays or two
+    // slices (sliced) of elem.
+    fn derive_elems { mut l: Lower, mut g: Deriving, elem: Id, a: ir::Expr, b: ir::Expr, count: ir::Expr, sliced: bool, acc: u32 } {
+        let bool_ty = tid{ &l, t = types::BOOL }
+        let usize_ty = tid{ &l, t = types::USIZE }
+        let et = tid{ &l, t = elem }
+        let si = temp{ &l, ty = usize_ty }
+        let i = slot_ex{ ty = usize_ty, slot = si }
+        try! list::push{ list = &g.stmts, item = ir::Stmt::define{ slot = si, init = mk{ ty = usize_ty, k = ir::ExprKind::int{ negative = false, value = 0 } } } }
+        let ea = if sliced { mk{ ty = et, k = ir::ExprKind::sindex{ base = box{ l, e = a }, i = box{ l, e = i }, pos = g.pos } } } else { mk{ ty = et, k = ir::ExprKind::index{ base = box{ l, e = a }, i = box{ l, e = i }, pos = g.pos } } }
+        let eb = if sliced { mk{ ty = et, k = ir::ExprKind::sindex{ base = box{ l, e = b }, i = box{ l, e = i }, pos = g.pos } } } else { mk{ ty = et, k = ir::ExprKind::index{ base = box{ l, e = b }, i = box{ l, e = i }, pos = g.pos } } }
+        let mut inner = Deriving{ stmts = list::new(ir::Stmt){ realloc = arena::alloc, heap = l.heap }, pos = g.pos, hash = g.hash }
+        derive_part{ &l, g = &inner, t = elem, a = ea, b = eb, acc }
+        let one = mk{ ty = usize_ty, k = ir::ExprKind::int{ negative = false, value = 1 } }
+        let next = mk{ ty = usize_ty, k = ir::ExprKind::arith{ op = ir::ArithOp::add, a = box{ l, e = i }, b = box{ l, e = one }, pos = g.pos, trap = ir::NO_TRAP } }
+        try! list::push{ list = &inner.stmts, item = ir::Stmt::assign{ place = i, value = next } }
+        let more = mk{ ty = bool_ty, k = ir::ExprKind::cmp{ op = ir::CmpOp::lt, a = box{ l, e = i }, b = box{ l, e = count } } }
+        try! list::push{ list = &g.stmts, item = ir::Stmt::loop{ c = more, body = ir::Block{ stmts = list::items{ list = inner.stmts }, result = null }, label = null } }
     }
 
     // ---- @min, @max, @clamp, @round, @saturate and @round_saturate (spec §13): each is written

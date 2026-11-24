@@ -100,6 +100,11 @@ function: can't be stored in a struct or returned), `extern fn{C} -> R` (C funct
   Calling an extern fn or using a slice that such a directory made is allowed everywhere. Add a
   directory to `except` only with its reason on its line. The tools (kotor/tools/*) don't deny
   them.
+- `==` and `!=` compare structs, unions, arrays, slices (by contents: two `[]u8` with the same
+  bytes are equal) and optionals of these, part by part, with nothing written; `@hash(x)` is a
+  `u64` that equal values share. Not for a type with a pointer, a function or an extern union
+  inside (the error names the field), and no `@hash` of a float. `map::make(Key, V){ realloc =
+  arena::alloc, &heap }` keys a map by any type that has both; `map::new` takes `hash` and `eq`.
 - `@min(a, b)`, `@max(a, b)` and `@clamp(x, lo, hi)` for integers and floats of one type after
   widening (a literal takes the other's type): never `if a < b { a } else { b }` by hand. A NaN
   operand gives NaN; `@clamp` panics if `lo > hi`. (`math::min`, `max` and `clamp` in lib/base
