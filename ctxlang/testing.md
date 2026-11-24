@@ -3,8 +3,10 @@
 Status: the first layer, unit tests in the language, is **built** (spec §20: `#test` fns, `@expect`,
 `ctxc test`), on `proc`'s first part alone: one process for each test, whose output goes to a file,
 so the runner needs neither `capture` nor tasks, which stay the design for a program that reads a
-child's streams while it runs. The second layer, expected-output tests for the compiler,
-is still research. Child processes in std's `proc` are designed below ("Child processes"), and their
+child's streams while it runs. The second layer, expected-output tests for the compiler, is
+**built** too: [tests/README.md](tests/README.md) is its format and [tools/suite](tools/suite) its
+runner, on the same part of `proc`, with a process for each case; "Today" below describes the
+Python suite it replaced. Child processes in std's `proc` are designed below ("Child processes"), and their
 first part is built. This collects what the current
 tests are, what is missing for ctxlang to run them itself, and what makes a good test framework in
 other languages (Rust, Zig, Odin, Go, C#, Swift). The open questions at the end come before a design.

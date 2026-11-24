@@ -1,40 +1,20 @@
-"""Builds and runs ctxlang programs with the native ctxc: the harness for the tests and tools.
+"""Builds ctxc for the current source: what tools/recover.py needs of a harness.
 
     ctxc = native_ctxc()                          ctxc for the current source, built if needed
-    exe = build_sources([(src, 'user.ctx')])      an executable, or CompileError
-    run_source(src, out=..., args=[...])          builds and runs; raises Panic or CompileError
+    std_files()                                   std's files, with this platform's layer
 
 native_ctxc() compiles the bootstrap, the C of a recent ctxc for this platform's std layer
 (bootstrap/ctxc.PLATFORM.c), and has that ctxc compile ctxc's current source. Both are cached
-under build/ctxc, by a hash of their inputs. A program's C goes to build/progs and its
-executable to build/cbackend, cached by a hash of the C. Everything runs through the C compiler:
-gcc, or zig cc with CTX_CC=zig.
+under build/ctxc, by a hash of their inputs. Everything runs through the C compiler: gcc, or
+zig cc with CTX_CC=zig.
 
-A program's files are written to build/progs/HASH/, each under the name its positions use when
-that is a relative path, and positions are mapped back to the names given: a file with no name is
-written as mainN.ctx, and its positions have no file (None).
-
-    exes = build_project(DIR)                     a directory with a build.ctx (spec §19)
-
-build_project has the native ctxc's `ctxc graph DIR GEN LIST` compile and run DIR's build
-program, as `ctxc run` does, and list each executable it describes with its files (generated ones
-included, in build/cbackend/gen) and link flags; then it builds each one as any program, with its
-libraries.
-
-run_sources also runs each program in ctxc's interpreter (`ctxc interp`), and raises DiffMismatch
-unless its stdout, stderr, exit code and panic are the compiled program's: a second
-implementation to check the C backend against. A program the interpreter can't run (an extern fn
-it doesn't emulate, as files, processes and input need; too deep; out of fuel) is skipped.
-CTX_DIFF=0 turns this off. With CTX_DIFF_LOG=FILE, each comparison appends a JSON line to FILE:
-tools/interp_diff.py runs the suite that way and counts them.
+The tests' harness, which was the rest of this file, is tools/suite, in ctxlang
+(tests/README.md): it builds ctxc the same way, under build/suite.
 """
 
 import glob
 import hashlib
-import io
-import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -49,7 +29,6 @@ PLATFORMS = ('linux', 'macos', 'windows')
 HOST = 'windows' if os.name == 'nt' else 'macos' if sys.platform == 'darwin' else 'linux'
 BOOT = os.path.join(ROOT, 'bootstrap', f'ctxc.{HOST}.c')
 CACHE = os.path.join(ROOT, 'build', 'cbackend')
-PROGS = os.path.join(ROOT, 'build', 'progs')
 NATIVE = os.path.join(ROOT, 'build', 'ctxc')
 STACK = 256 << 20         # reserved; std's rt checks against CTX_STACK, at most 200 MiB
 CTXC_STACK = str(200 << 20)
@@ -64,37 +43,11 @@ _lock = threading.Lock()
 _native = None            # path of the native ctxc, once built or found
 
 
-class CompileError(Exception):
-    """ctxc's first error. pos is (line, column, file), file None for a file with no name. text
-    is everything ctxc printed: every error."""
-
-    def __init__(self, msg, pos=None, text=''):
-        super().__init__(msg)
-        self.msg, self.pos, self.text = msg, pos, text
-
-
-class DiffMismatch(AssertionError):
-    """The interpreter's run of a program differs from the compiled one's."""
-
-
-class Panic(Exception):
-    """A panic in a program, at (line, column, file), or at no position."""
-
-    def __init__(self, msg, pos=None, thread=None):
-        super().__init__(msg)
-        self.msg, self.pos, self.thread = msg, pos, thread
-
-
-# ---- ctxc itself
-
 def std_files(platform=HOST):
     """std's files, then its layer's for platform, relative to ROOT, as the names positions in
-    them use. Platform 'interp' is the interpreter's layer, with this platform's target.ctx, as
-    `ctxc interp` builds a program (ctxc/drive.ctx, std_files)."""
+    them use."""
     def ctx(*d):
         return sorted(os.path.relpath(p, ROOT).replace(os.sep, '/') for p in glob.glob(os.path.join(ROOT, *d, '*.ctx')))
-    if platform == 'interp':
-        return ctx('std') + ctx('std', 'os', 'interp') + [f'std/os/{HOST}/target.ctx']
     shared = [] if platform == 'windows' else ctx('std', 'os', 'posix')
     return ctx('std') + shared + ctx('std', 'os', platform)
 
@@ -142,24 +95,11 @@ def stack_flags():
     return []
 
 
-def program_args(files, cwd, platform=HOST, denied=()):
-    """`STD... -- FILE...`, with std's files for platform relative to cwd. Each of files that
-    is in denied follows a `--deny-unchecked`, and each that isn't, after one that is, an
-    `--allow-unchecked`: the files whose unchecked operations are errors (spec §13)."""
+def ctxc_build(ctxc, out_c, files, cwd=ROOT, platform=HOST):
+    """Runs `ctxc build OUT.c STD... -- FILE...` in cwd, with std's files for platform. Returns
+    (exit code, stderr text)."""
     std = [os.path.relpath(os.path.join(ROOT, p), cwd).replace(os.sep, '/') for p in std_files(platform)]
-    args, deny = [*std, '--'], False
-    for f in files:
-        if (f in denied) != deny:
-            deny = not deny
-            args.append('--deny-unchecked' if deny else '--allow-unchecked')
-        args.append(f)
-    return args
-
-
-def ctxc_build(ctxc, out_c, files, cwd=ROOT, platform=HOST, denied=()):
-    """Runs `ctxc build OUT.c STD... -- FILE...` in cwd, with std's files for platform, and the
-    files of denied denied the unchecked operations. Returns (exit code, stderr text)."""
-    r = subprocess.run([ctxc, 'build', out_c, *program_args(files, cwd, platform, denied)], cwd=cwd,
+    r = subprocess.run([ctxc, 'build', out_c, *std, '--', *files], cwd=cwd,
                        capture_output=True, env=dict(os.environ, CTX_STACK=CTXC_STACK))
     return r.returncode, r.stderr.decode('utf-8', 'replace')
 
@@ -201,17 +141,14 @@ def native_ctxc():
     return _native
 
 
-# ---- building programs
-
-def link(tmp_c, c, exe, name, flags=(), cflags=CFLAGS):
-    """Compiles tmp_c with cflags, with the runtime, into exe, with linker flags, and moves tmp_c
-    to c. The runtime is compiled with CFLAGS."""
+def link(tmp_c, c, exe, name):
+    """Compiles tmp_c with the runtime into exe, and moves tmp_c to c."""
     tmp_exe = exe + f'.{os.getpid()}.tmp'
     cc, env = compiler()
-    rt_objs = runtime_objects(cc, env, tmp_c)
+    rt_objs = [runtime_object(cc, env, n) for n in ('ctxrt', 'ctxfloat', 'ctxthread')]
     name_def = '-DCTX_PROGRAM_NAME="' + name.replace('\\', '\\\\').replace('"', '\\"') + '"'
-    cmd = cc + list(cflags) + ['-I', RT, name_def, tmp_c, *rt_objs, '-o', tmp_exe, *flags, '-lm']
-    if sys.platform.startswith('linux') and uses_threads(tmp_c):
+    cmd = cc + CFLAGS + ['-I', RT, name_def, tmp_c, *rt_objs, '-o', tmp_exe, '-lm']
+    if sys.platform.startswith('linux'):
         cmd.append('-lpthread')     # glibc before 2.34 keeps threads in a library of their own
     cmd += stack_flags()
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
@@ -219,32 +156,6 @@ def link(tmp_c, c, exe, name, flags=(), cflags=CFLAGS):
     if r.returncode != 0:
         raise RuntimeError(f'C compiler failed on {c}:\n{r.stderr}')
     replace(tmp_exe, exe)
-
-
-def runtime_objects(cc, env, c=None):
-    """The runtime's objects to link the C at path c with: ctxrt.c's, and ctxfloat.c's if the C
-    uses it, as ctxc's driver links them (ctxc/drive.ctx, uses_float); both without c."""
-    names = ['ctxrt']
-    if c is None or uses_float(c):
-        names.append('ctxfloat')
-    if c is None or uses_threads(c):
-        names.append('ctxthread')
-    return [runtime_object(cc, env, name) for name in names]
-
-
-def uses_threads(c):
-    """Whether the C at path c is a threaded program's, which calls ctxthread.c, whose functions'
-    names start with ctx_thread_ (ctxc/drive.ctx, uses_threads)."""
-    with open(c, 'rb') as f:
-        return b'ctx_thread_' in f.read()
-
-
-def uses_float(c):
-    """Whether the C at path c calls ctxfloat.c, whose functions' names start with ctx_float_ or
-    ctx_f2i_."""
-    with open(c, 'rb') as f:
-        text = f.read()
-    return b'ctx_float_' in text or b'ctx_f2i_' in text
 
 
 def runtime_object(cc, env, name='ctxrt'):
@@ -267,346 +178,3 @@ def replace(src, dst):
     except OSError:
         if os.path.exists(src):
             os.remove(src)
-
-
-def names(sources):
-    """{name written: name given} for a program's (source, file) pairs, in order. A relative name
-    stays as it is; a missing or absolute one, or one that leaves the directory, becomes mainN.ctx
-    or fileN/BASENAME."""
-    out = {}
-    for i, (_, f) in enumerate(sources):
-        if not f:
-            out[f'main{i}.ctx'] = None
-        elif os.path.isabs(f) or '..' in re.split(r'[\\/]', f):
-            out[f'file{i}/{os.path.basename(f)}'] = f
-        else:
-            out[f.replace(os.sep, '/')] = f
-    return out
-
-
-def write_program(sources):
-    """Writes a program's files under build/progs. Returns the directory and names(sources)."""
-    files = names(sources)
-    h = hashlib.sha256(repr(sorted(zip(files, (s for s, _ in sources)))).encode()).hexdigest()[:24]
-    d = os.path.join(PROGS, h)
-    for (src, _), f in zip(sources, files):
-        path = os.path.join(d, f)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8', newline='') as out:
-            out.write(src)
-    return d, files
-
-
-def build_sources(sources, name='program'):
-    """The path of an executable for a program of (source, file) pairs, and {name written: name
-    given} for its files. Raises CompileError."""
-    d, files = write_program(sources)
-    return build_files(list(files), cwd=d, name=name, given=files), files
-
-
-def ir_sources(sources):
-    """The typed IR of a program of (source, file) pairs, from `ctxc ir`. Raises CompileError."""
-    d, files = write_program(sources)
-    r = subprocess.run([native_ctxc(), 'ir', *program_args(list(files), d)], cwd=d,
-                       capture_output=True, env=dict(os.environ, CTX_STACK=CTXC_STACK))
-    text = r.stdout.decode('utf-8')
-    if r.returncode != 0:
-        raise CompileError(text.strip())
-    return text
-
-
-def build_files(files, cwd=ROOT, name='program', given=None, flags=(), cflags=CFLAGS, denied=()):
-    """The path of an executable for the program of files, relative to cwd, compiled with cflags
-    and linked with flags, the files of denied denied the unchecked operations. Raises
-    CompileError, with its file renamed by given."""
-    ctxc = native_ctxc()
-    os.makedirs(CACHE, exist_ok=True)
-    tmp_c = os.path.join(CACHE, f'tmp-{os.getpid()}-{threading.get_ident()}.c')
-    code, err = ctxc_build(ctxc, tmp_c, files, cwd, denied=denied)
-    if code == 1 and not os.path.exists(tmp_c):
-        raise first_error(err, given)
-    if code != 0:
-        raise RuntimeError(f'ctxc build exited with {code}:\n{err[:4000]}')
-    with open(tmp_c, 'rb') as f:
-        key = hashlib.sha256((runtime_hash() + '\0' + name + '\0' + '\0'.join(flags) + '\0' + '\0'.join(cflags) + '\0').encode() + f.read()).hexdigest()[:24]
-    exe = os.path.join(CACHE, key + EXE)
-    if os.path.exists(exe):
-        os.remove(tmp_c)
-    else:
-        link(tmp_c, os.path.join(CACHE, key + '.c'), exe, name, flags, cflags)
-    return exe
-
-
-ERROR = re.compile(r'^(.*):(\d+):(\d+): error: (.*)$')
-
-
-def first_error(stderr, given=None):
-    """The first error of `ctxc build`'s output. A message may run over several lines."""
-    lines = stderr.replace('\r\n', '\n').rstrip('\n').split('\n')
-    m = ERROR.match(lines[0])
-    if not m:
-        return CompileError(stderr.strip(), text=stderr)
-    file, line, col, msg = m.groups()
-    rest = []
-    for more in lines[1:]:
-        if ERROR.match(more):
-            break
-        rest.append(more)
-    msg = '\n'.join([msg, *rest])
-    return CompileError(msg, (int(line), int(col), rename(file, given)), stderr)
-
-
-def rename(file, given):
-    """The name a position's file was given: by given, and std's as std/NAME.ctx or
-    std/os/PLATFORM/NAME.ctx."""
-    if given and file in given:
-        return given[file]
-    m = STD_FILE.fullmatch(file)
-    return m.group(1) if m else file
-
-
-STD_FILE = re.compile(r'(?:\.\./)*(std/(?:os/[^/]+/)?[^/]+\.ctx)')
-
-
-# ---- running programs
-
-# std's report (std/rt.ctx) says "panic in task NAME:" in a task, NAME its task fn's, and "panic in
-# thread NAME:" on another thread but the main one; the thread is "task NAME", or NAME.
-PANIC = re.compile(r'^(.*?)(?::(\d+):(\d+))?: panic(?: in (?:thread )?([^:]*))?: (.*)$')
-
-
-def run_source(src, file=None, **kw):
-    """Builds and runs a program. Returns its exit code: what main returns, or 0."""
-    return run_sources([(src, file)], **kw)
-
-
-def run_sources(sources, out=None, err=None, inp=None, stack_size=16 << 20, args=(), timeout=None):
-    """Like run_source, for a program of several (source, file) pairs."""
-    exe, given = build_sources(sources)
-    if os.environ.get('CTX_DIFF') == '0':
-        return run_exe(exe, out=out, err=err, inp=inp, stack_size=stack_size, args=args, given=given,
-                       timeout=timeout)
-    stdin = read_input(inp)
-    r = execute(exe, stdin, stack_size, args, timeout)
-    diff(sources, r, stdin, args, timeout, program_env(stack_size))
-    return report(r, out, err, 'program', given)
-
-
-def run_exe(exe, out=None, err=None, inp=None, stack_size=None, args=(), name='program',
-            given=None, timeout=None, env=None, cwd=None):
-    """Runs an executable with the given streams, and env added to the environment. Returns its
-    exit code, or raises Panic. Raises subprocess.TimeoutExpired if it runs longer than timeout
-    seconds."""
-    r = execute(exe, read_input(inp), stack_size, args, timeout, env, cwd)
-    return report(r, out, err, name, given)
-
-
-def read_input(inp):
-    if inp is None:
-        return b''
-    data = inp.read()
-    return data.encode() if isinstance(data, str) else data
-
-
-def program_env(stack_size=None, env=None):
-    """The environment a compiled program runs in (execute)."""
-    return dict(os.environ, CTX_STACK=str(stack_size or (16 << 20)), **(env or {}))
-
-
-def execute(exe, stdin, stack_size=None, args=(), timeout=None, env=None, cwd=None):
-    full = program_env(stack_size, env)
-    return subprocess.run([exe, *args], input=stdin, capture_output=True, env=full, timeout=timeout, cwd=cwd)
-
-
-def report(r, out, err, name, given):
-    """Writes a run's output to out and err, and returns its exit code or raises Panic."""
-    code = r.returncode
-    if code >= 1 << 31:
-        code -= 1 << 32
-    stderr = r.stderr
-    panic = None
-    if code == 134:
-        lines = stderr.decode('utf-8', 'replace').rstrip('\n').split('\n')
-        m = PANIC.match(lines[-1])
-        if m:
-            panic = m
-            stderr = '\n'.join(lines[:-1]).encode()
-            if stderr:
-                stderr += b'\n'
-    write(out if out is not None else sys.stdout, r.stdout)
-    write(err if err is not None else sys.stderr, stderr)
-    if panic is not None:
-        file, line, col, thread, msg = panic.groups()
-        pos = (int(line), int(col), None if file == name else rename(file, given)) if line else None
-        raise Panic(msg, pos, thread)
-    return code
-
-
-def write(stream, data):
-    if not data:
-        return
-    buf = getattr(stream, 'buffer', None)
-    if buf is not None:
-        stream.flush()
-        buf.write(data)
-        buf.flush()
-    elif isinstance(stream, io.TextIOBase):
-        stream.write(data.decode('utf-8', 'replace'))
-    else:
-        stream.write(data)
-
-
-def read_program(path):
-    """The (source, file) pairs of a program: one file, or every .ctx file in a directory. Each
-    file is named by its path relative to ROOT."""
-    if os.path.isdir(path):
-        paths = sorted(glob.glob(os.path.join(path, '*.ctx')))
-        if not paths:
-            raise CompileError('no .ctx files in directory', (0, 0, path))
-    else:
-        paths = [path]
-    sources = []
-    for p in paths:
-        with open(p, encoding='utf-8', newline='') as f:
-            sources.append((f.read(), os.path.relpath(p, ROOT).replace(os.sep, '/')))
-    return sources
-
-
-# ---- the interpreter, against the compiled program (unless CTX_DIFF=0)
-
-INTERP_ERROR = 'ctxc interp: '
-
-
-def diff(sources, r, stdin, args, timeout, guest):
-    """Runs the program of sources, already written by build_sources, with `ctxc interp`, and
-    compares it with r, the compiled program's run, which had environment guest: raises
-    DiffMismatch if they differ."""
-    d, files = write_program(sources)
-    names = list(files)
-    if len(names) == 1:
-        path = names[0]
-    else:
-        # A program of several files is their directory, if it holds just them.
-        top = os.path.dirname(names[0])
-        inside = sorted(os.path.relpath(p, d).replace(os.sep, '/') for p in glob.glob(os.path.join(d, top or '.', '*.ctx')))
-        if not top or any(os.path.dirname(n) != top for n in names) or inside != sorted(names):
-            return log('skip', 'several files outside one directory')
-        path = top
-    home = os.path.relpath(ROOT, d).replace(os.sep, '/')
-    env = dict(os.environ, CTX_HOME=home, CTX_STACK=CTXC_STACK)
-    # ctxc's own CTX_HOME and CTX_STACK aren't the program's: it gets the compiled run's.
-    edits = []
-    for k in ('CTX_HOME', 'CTX_STACK'):
-        edits += ['--env', f'{k}={guest[k]}' if k in guest else k]
-    try:
-        i = subprocess.run([native_ctxc(), 'interp', *edits, path, '--', *args], input=stdin, capture_output=True,
-                           env=env, cwd=d, timeout=timeout or 600)
-    except subprocess.TimeoutExpired:
-        return log('skip', 'timeout')
-    err = i.stderr.decode('utf-8', 'replace')
-    last = err.rstrip('\n').split('\n')[-1]
-    if i.returncode == 1 and last.startswith(INTERP_ERROR):
-        return log('skip', skip_reason(last[len(INTERP_ERROR):]), last)
-    # A panic without a position names the program: `program` when compiled, the file's stem
-    # when interpreted, as with `ctxc run`.
-    stem = os.path.splitext(os.path.basename(path))[0]
-    want_err = r.stderr.decode('utf-8', 'replace').replace('\nprogram: panic: ', f'\n{stem}: panic: ')
-    if want_err.startswith('program: panic: '):
-        want_err = stem + want_err[len('program'):]
-    code, got_code = (c - (1 << 32) if c >= 1 << 31 else c for c in (r.returncode, i.returncode))
-    # A trap (ctxrt.c, report): Windows' illegal instruction exception, or SIGILL, which
-    # `ctxc interp` reports as a shell does, 132.
-    if code == (-1073741795 if HOST == 'windows' else -4):
-        code = 132
-    got = (i.stdout, err, got_code)
-    want = (r.stdout, want_err, code)
-    if got != want:
-        detail = (f'interp differs from the compiled program, in {os.path.join(d, path)}:\n'
-                  f'compiled: exit {code}\n--- stdout\n{want[0].decode("utf-8", "replace")}--- stderr\n{want_err}'
-                  f'interp: exit {got_code}\n--- stdout\n{got[0].decode("utf-8", "replace")}--- stderr\n{err}')
-        log('mismatch', 'mismatch', detail)
-        raise DiffMismatch(detail)
-    log('match', '')
-
-
-def skip_reason(msg):
-    """What a message of `ctxc interp`'s says it couldn't do, to count skips by."""
-    m = re.match(r"extern fn (\S+) \(C's `([^`]*)`\) is not supported by interp", msg)
-    if m:
-        return f'extern fn {m.group(1)}'
-    m = re.match(r'C variable (\S+) ', msg)
-    if m:
-        return f'C variable {m.group(1)}'
-    if msg.startswith('too deep'):
-        return 'too deep'
-    if msg.startswith('out of fuel'):
-        return 'out of fuel'
-    return msg
-
-
-def log(status, reason, detail=''):
-    path = os.environ.get('CTX_DIFF_LOG')
-    if path:
-        with _lock, open(path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps({'status': status, 'reason': reason, 'detail': detail}) + '\n')
-
-
-# ---- build programs (spec §19)
-
-def build_project(directory, out=None, err=None):
-    """Builds the program in directory from its build program (spec §19). `ctxc graph` does
-    what `ctxc run` does first: it compiles and runs the build program, checks what it describes
-    and writes the files it generates, here under build/cbackend/gen, in a directory of the
-    project's, named by their text's hash, so that the same text keeps its path, and what it
-    compiles to stays cached, and runs with other text never share a file. Then each executable
-    it lists is built as build_files builds any program. Returns [(name, executable)], in the
-    order the build program named them. Raises CompileError for an error ctxc reports in the
-    build program or an executable's files, Panic if the build program panics, and RuntimeError
-    if it exits with another code than 0 or anything else fails, as the C compiler. The build
-    program's output and ctxc's go to out and err."""
-    import tempfile
-    d = os.path.abspath(directory)
-    gen = os.path.join(CACHE, 'gen', hashlib.sha256(d.encode()).hexdigest()[:16])
-    os.makedirs(os.path.dirname(gen), exist_ok=True)         # ctxc makes gen if it writes there
-    fd, listed = tempfile.mkstemp(prefix='graph-', suffix='.txt', dir=CACHE)
-    os.close(fd)
-    try:
-        cc, _ = compiler()
-        # A CTX_CC that names a file is the compiler, spaces and all (drive.ctx, `compiler`).
-        env = dict(os.environ, CTX_HOME=ROOT, CTX_STACK=CTXC_STACK, CTX_CC=' '.join(cc) if len(cc) > 1 else cc[0])
-        r = subprocess.run([native_ctxc(), 'graph', '.', gen, listed], cwd=d, capture_output=True, env=env)
-        with open(listed, encoding='utf-8') as f:
-            records = [line.split('\t') for line in f.read().splitlines()]
-    finally:
-        os.remove(listed)
-    status = records[0][1:] if records and records[0][0] == 'status' else ['failed']
-    if status == ['exited', '134']:
-        # The build program's panic, as report reads one from the program itself: raises Panic.
-        report(subprocess.CompletedProcess(r.args, 134, r.stdout, r.stderr), out, err, 'build', None)
-    write(out if out is not None else sys.stdout, r.stdout)
-    write(err if err is not None else sys.stderr, r.stderr)
-    text = r.stderr.decode('utf-8', 'replace')
-    if status == ['errors']:
-        raise first_error(text)
-    if status[0] == 'exited':
-        raise RuntimeError(f'build.ctx exited with {status[1]}')
-    if status != ['ok']:
-        raise RuntimeError(f'ctxc graph failed ({r.returncode}): {text.strip()}')
-    exes = []                           # [name, level, files, flags, denied]
-    for kind, value in records[1:]:
-        if kind == 'exe':
-            exes.append([value, 1, [], [], set()])
-        elif kind == 'level':
-            exes[-1][1] = int(value)
-        elif kind == 'file':
-            exes[-1][2].append(value)
-        elif kind == 'denied':          # a file too, whose unchecked operations are errors
-            exes[-1][2].append(value)
-            exes[-1][4].add(value)
-        elif kind == 'flag':
-            exes[-1][3].append(value)
-    built = []
-    for name, level, files, flags, denied in exes:
-        cflags = [f'-O{level}' if f == '-O1' else f for f in CFLAGS]
-        built.append((name, build_files(files, cwd=d, name=name, flags=flags, cflags=cflags, denied=denied)))
-    return built

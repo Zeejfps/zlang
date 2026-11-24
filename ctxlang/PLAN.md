@@ -182,9 +182,9 @@ for a person to open, but compiles its own copy of the text under that path, so 
 building one program can't change what the other compiles. Each executable's directory there
 loses its other `.ctx` files. A `Build` still writes no file, and the driver checks names again
 where they leave the graph. The build program's own files never include them. `ctxc graph DIR
-GEN LIST` does all of this for `tools/toolchain.py`'s `build_project`, which reads the executables'
-files and flags, and how the build went, from LIST and compiles them itself, so Python parses no
-ctxlang. Its generated files are GEN/EXE/NAME-HASH.ctx, HASH being of the text, so the same text
+GEN LIST` does all of this for the suite's runner (tools/suite, a case's `project` step), which
+reads the executables' files and flags, and how the build went, from LIST and compiles them
+itself. Its generated files are GEN/EXE/NAME-HASH.ctx, HASH being of the text, so the same text
 keeps its path and its cached C, and runs with other text never share a file.
 
 *Done: denying the unchecked operations* (spec §13, Unchecked operations, and §19, rule 17;
@@ -193,8 +193,8 @@ std/build.ctx, ctxc/drive.ctx, ctxc/check.ctx). `build::deny_unchecked{ &b, exe,
 of the executable's files denied unless its key (`key_of`) is under an excepted directory's, and
 the checker reports each unchecked operation written in a denied file (`check::File.denied`,
 `unchecked`). `ctxc graph` lists such a file as `denied PATH` instead of `file PATH`, and
-`tools/toolchain.py` passes that on as `ctxc build ... -- --deny-unchecked FILE...
---allow-unchecked FILE...`, so Python still parses no ctxlang.
+the suite's runner passes that on as `ctxc build ... -- --deny-unchecked FILE...
+--allow-unchecked FILE...`.
 
 *Done: declarations* (spec §19, rules 14 to 16; std/build/declarations.ctx, `examples/gen`).
 `build::declarations{ &b, &fs, &mem, &heap, realloc, exe }` parses exe's files as they are at
@@ -367,21 +367,41 @@ definition, hover and completion work on `ctxc/` itself. The editor-query fixtur
 
 ### 6. Tools in ctxlang
 
-Python is left in development only: about 8,100 lines in `tests/` and `tools/`. ctxc and std have
-none, and `ctxc run` and `exe` drive a build themselves. Steps 1–2 replace the Python and stand
-alone; step 3, which is done, gives programs a test framework of their own. None blocks the
-other stages.
+Python is left in one tool, `tools/recover.py`, and the part of `tools/toolchain.py` that builds
+ctxc for it. ctxc and std have none, `ctxc run` and `exe` drive a build themselves, and the
+tests are files that a ctxlang program runs. Step 2 replaces what is left and stands alone;
+steps 1 and 3 are done. None blocks the other stages.
 
-1. **Tests as files.** The 454 tests are programs in Python strings (`tests/test_ctxlang.py`).
-   Each becomes a `.ctx` file, or a directory for a multi-file program, that states its
-   expected output, exit code, panic or first error in a header comment, and a ctxlang runner
-   builds, runs and checks them. Then ctxc, the recovery corpus and stage 5's editor-query
-   fixtures all read the same files, and `tools/toolchain.py`'s harness (building ctxc from the
-   bootstrap, caching by hash, mapping positions back) moves into the runner. Do this before
-   stage 5.
-2. **`corpus.py` and `recover.py` in ctxlang.** Both run many processes at once, with
-   `proc::spawn` and `wait`, which the driver's parallel compiles use too. With tests as files,
-   the corpus is mostly the test directory itself.
+1. **Tests as files.** *Done* ([tests/README.md](tests/README.md), the format;
+   [tests/cases](tests/cases), 2,446 cases; [tools/suite](tools/suite), the runner, in ctxlang).
+   The 872 Python tests' programs were strings in `tests/test_ctxlang.py`. Each is now a `.ctx`
+   file that states its expected output, exit code, panic or errors, in `//#` comment lines
+   after the program and `//~ error at COL: MESSAGE` markers on the lines of its errors; a
+   directory with a `CASE` for what one program can't state (several files, a build.ctx
+   project, `ctxc` commands, files written). The runner does what `tools/toolchain.py`'s
+   harness did: ctxc from the bootstrap and then from the current source, the same C compiler
+   and flags, executables cached by their C's hash, and each program also run by `ctxc interp`.
+   - **Everything is compared whole:** all of ctxc's errors with their positions, not a part of
+     the first one's message; every byte of standard output and standard error; the exit code.
+   - **No silent pass:** a case that states nothing, a filter that selects nothing, a file that
+     is no case, and the runner's own crash fail the run; a skipped case is printed and
+     counted; a program the interpreter refuses must say so (`//# interp: cannot run`).
+     [cases/Suite](tests/cases/Suite) runs the runner on cases that are each wrong in one way,
+     and expects every failure's line.
+   - **A process for each case,** several at once, and a pass isn't run again until ctxc, std,
+     the runtime, the C compiler, the runner or the case changes, by hash: 80 s for every
+     case, 5 s when nothing changed, where the Python suite took six and a half minutes.
+   - **Converted from a recording,** not by hand: the Python suite ran with hooks that recorded
+     each program, its input and what became of it, and a case was written from each record,
+     to pass only if the runner sees what Python saw. The 157 tests that did more than run a
+     program were then checked one by one against their assertions.
+   - **No mode that rewrites expectations:** a failure prints the actual text in the case's own
+     form, to be read before it is pasted.
+   - *Left for stage 5:* the editor-query fixtures, which are to read the same files.
+2. **`recover.py` in ctxlang.** It runs many processes at once, with `proc::spawn` and `wait`,
+   which the driver's parallel compiles and the suite's runner use too. Its corpus is the
+   suite's cases: `ctxc run tools/suite -- --corpus OUT` writes each case's program once, with
+   examples/, which `tools/corpus.py` did by running the Python tests.
 3. **`#test` functions.** *Done* (spec §20 and §13, Checks; std/test.ctx; ctxc/check.ctx,
    `test_attr` and `expect_builtin`; ctxc/lower.ctx, `expect` and `test_given`; ctxc/drive.ctx,
    `test`). Tests are fns next to the code they test, run by `ctxc test PATH`. The compiler's
@@ -446,11 +466,12 @@ cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctx
   unchanged small program takes about 40 ms, the front end included (drive.ctx). `ctxc build`
   writes one file, as the bootstraps are.
 - ctxc0 is the bootstrap's. `./ctxc0 exe ctxc -o ctxc1` builds the current source's with it
-  (about 3 s), for `./ctxc1 run`. `tools/toolchain.py` builds its own for the tests, into
-  `build/ctxc` (about 7 s the first time, cached after).
-- `python -m unittest discover tests` runs all tests through the native ctxc. They pass on
-  Windows (gcc), Linux (gcc) and macOS arm64 (Apple clang).
-- Python is left in development only: `tests/` and `tools/`. Stage 6 moves them to ctxlang.
+  (about 3 s), for `./ctxc1 run`. The suite's runner builds its own for the cases, into
+  `build/suite/ctxc` (cached after the first time).
+- `ctxc0 run tools/suite` runs every case through ctxc for the current source
+  ([tests/README.md](tests/README.md)).
+- Python is left in `tools/recover.py` alone, with the part of `tools/toolchain.py` that builds
+  ctxc for it. Stage 6 moves it to ctxlang.
 - Friction found while writing ctxc, and the KOTOR port, is logged in [FRICTION.md](FRICTION.md).
 
 ### Changing the language
@@ -476,8 +497,6 @@ in one step; the fixpoint says when one is out of date.
 - On Linux and macOS, `mem::pages` clears its memory with memset (std/os/posix), touching every
   page up front; calloc, as `mem::reserve` uses (std/os/posix), would leave that to the OS. ctxc's
   own arenas use `reserve`. Untested there, so left for a machine that can run it.
-- 20 corpus programs read temporary files that the test suite deletes once it's done.
-  `tools/corpus.py` should copy those files into the case directory.
 - The interpreter is the only second implementation. It runs a program as the C does, from the
   IR's entry fns, over std's interpreter layer (std/os/interp), but that layer has no standard
   input, files or processes, and it calls no C library but for the math functions: the suite's
@@ -530,22 +549,22 @@ program asks for one (spec §19).
 
 ## Testing
 
-- **The suite.** `python -m unittest discover tests` runs every program through the native ctxc
-  and cc (`tools/toolchain.py`), and checks its output, exit code, panic or first error.
+- **The suite.** `ctxc run tools/suite` runs every case under `tests/cases` through ctxc for the
+  current source and cc, and checks all it states: output, exit code, panic, every error
+  ([tests/README.md](tests/README.md)).
 - **`#test` fns** (spec §20). `ctxc test std/tests` runs std's own, which are a program beside
-  std, and `ctxc test DIR` any program's; the suite's `TestFns` checks the runner's lines.
-- **The interpreter.** `run_sources` also runs each program with `ctxc interp` and requires the
-  same stdout, stderr, exit code and panic (a trap is 132 for both); one that calls an extern fn
-  the interpreter doesn't emulate, does what std/os/interp can't, or recurses too deep, is
-  skipped. `CTX_DIFF=0` turns it off (it adds about a quarter
-  to the suite's time); `tools/interp_diff.py` counts matches and skips by reason.
-- **Errors.** The compile-error tests match on a message fragment, or the message and position
-  exactly, so message text is part of the interface. The tests see the first diagnostic; ctxc
-  may report more.
+  std, and `ctxc test DIR` any program's; the suite's `TestFns` cases check the runner's lines.
+- **The interpreter.** The suite also runs each program with `ctxc interp` and requires the same
+  stdout, stderr and exit code (a trap is 132 for both). One that calls an extern fn the
+  interpreter doesn't emulate, does what std/os/interp can't, or recurses too deep, says
+  `//# interp: cannot run`, and the interpreter must then refuse it; the summary counts the
+  programs that were the same, refused and left out, and `-v` the refusals by reason.
+- **Errors.** A case states every error ctxc reports, with its position and whole message, so
+  message text is part of the interface, and so is how many errors a mistake gives.
 - **Fixpoint** (`tools/fixpoint.ctx`, `ctxc run tools/fixpoint.ctx`). ctxc built by itself must
   write the same C twice, and the bootstraps must be current.
-- **Corpus.** `tools/corpus.py` records every program the tests run, with its output, exit code,
-  panic or error, plus `std/` and `examples/`, into `build/corpus`, for the recovery test.
+- **Corpus.** `ctxc run tools/suite -- --corpus build/corpus` writes every program of the cases,
+  and `examples/`, each once, for the recovery test, which adds `std/` and `ctxc/` itself.
 - **C's undefined behaviour.** `invalid memory access` is undefined behaviour in C, not a panic.
 - **Recovery** (`tools/recover.py`). Damage every file in the corpus: cut it at each token
   boundary, and delete or duplicate single tokens. Run the front end on every result, inside

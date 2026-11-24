@@ -16,7 +16,7 @@
 //   ctxc graph DIR GEN LIST                     runs DIR's build program as `run` does, and
 //                                               writes what it describes to LIST and its
 //                                               generated files to GEN, for
-//                                               tools/toolchain.py (drive.ctx)
+//                                               tools/suite (drive.ctx)
 //   ctxc interp [--env N=V | --env N]... PATH [-- ARGS...]
 //                                               checks the program at PATH as `run` does, and
 //                                               runs it in the interpreter (eval.ctx), in ctxc's
@@ -185,7 +185,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     let mut heap = arena::new{ buf = buf[..] }
     let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
     // Which of paths are denied the unchecked operations: those after a `--deny-unchecked`, up
-    // to the next `--allow-unchecked`, as tools/toolchain.py passes what `ctxc graph` listed.
+    // to the next `--allow-unchecked`, as the suite's runner passes what `ctxc graph` listed.
     let mut denied = list::new(bool){ realloc = arena::alloc, &heap }
     let mut deny = false
     let mut split: usize = 0

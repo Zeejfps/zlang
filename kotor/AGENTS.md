@@ -26,8 +26,9 @@ saves, minigames, music and movies.
    (what you wrote, what you had to write instead, how often). Changing the language (ctxc, std,
    runtime) is allowed when it is a must or greatly helps; follow `ctxlang/PLAN.md`, "Changing the
    language" (new feature first, used only after `./ctxc0 run tools/fixpoint.ctx -- --update` refreshes the
-   bootstraps), keep `python -m unittest discover tests` passing (run from `ctxlang/`), and add a
-   test for every language change. Language work happens on its own branch or worktree, never
+   bootstraps), keep the suite passing (`kotor/tools/ctxc run ctxlang/tools/suite`), and add a
+   case for every language change (a `.ctx` file under `ctxlang/tests/cases` that states what it
+   prints or which error it has: [ctxlang/tests/README.md](../ctxlang/tests/README.md)). Language work happens on its own branch or worktree, never
    mixed into game commits.
 2. **Native libraries:** SDL2 (window, input, GL context, audio queue, timing) and OpenGL **4.1
    core profile** (the newest macOS supports) plus the C library and libm, which every program

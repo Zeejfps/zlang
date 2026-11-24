@@ -586,10 +586,61 @@ What a model writes by default should compile, or fail with the exact fix.
       (std's one allocator is the arena), a temporary directory, tests with arguments. JSON
       output is 6.2's.
 
-- [ ] **5.2 Tests as files.**
+- [x] **5.2 Tests as files.**
   The suite's 750+ programs are Python strings; as `.ctx` files with an expected-output header
   they are also examples a model can read. [PLAN 6.1](PLAN.md#6-tools-in-ctxlang).
   - *Done when:* the suite runs from files, and Python only drives the runner (or nothing).
+  - *Done:* [tests/README.md](tests/README.md) is the format, [tests/cases](tests/cases) the
+    2,446 cases, and [tools/suite](tools/suite) the runner, a ctxlang program
+    (`ctxc run tools/suite`). Nothing drives it: the Python tests are deleted.
+    - **A case is a program that says what it does.** What it prints goes after it, as
+      `//# stdout:` and a block of `//| ` lines; an error or a panic is said on its own line,
+      `let x: u8 = 300  //~ error at 17: MESSAGE`, so no line number is written down and the
+      marker moves with the code. A program whose bytes matter (one that ends in the middle of
+      a comment) keeps them, with its expectations in `NAME.expect` beside it. A directory with
+      a `CASE` is a list of steps for what one program can't state: several files, a build.ctx
+      project, `ctxc` commands with their output, files written and expected.
+    - **Everything is compared whole** (rule 1): every error ctxc reports, with its position
+      and its whole message, where 1,460 of the Python suite's 2,246 programs were checked for
+      a part of the first error's message; every byte of standard output and standard error;
+      the exit code. `has:`, `lacks:`, `any` and the wildcards `{n}`, `{hex}` and `{any}` are
+      for what differs from machine to machine, and are written out where they are used.
+    - **No silent pass.** A case that states nothing, a filter that selects nothing, a file
+      under `cases/` that is no case, and the runner's own crash fail the run; a skipped case
+      is printed and counted. A program the interpreter refuses must say `//# interp: cannot
+      run` (99 do), where the Python harness skipped it without a word, and one that says so
+      and runs fails too. [cases/Suite](tests/cases/Suite) runs the runner on fifteen cases
+      that are each wrong in one way and expects each failure's line, so the suite tests that
+      it tests.
+    - **The runner does what tools/toolchain.py did:** ctxc from the bootstrap and then from
+      the current source, the same C compiler and flags, executables cached by their C's hash,
+      build.ctx projects through `ctxc graph`, and each program also run by `ctxc interp`,
+      which must give the same (685 programs; 2 say why they are left out). Each case has a
+      process of its own, as many at once as there are processors, and a pass isn't run again
+      until ctxc, std, the runtime, the C compiler, the runner or the case changes, by hash:
+      80 s for every case and 5 s when nothing changed, where the Python suite took
+      six and a half minutes. A failure is `FILE:LINE: fail: NAME: WHAT`, as `ctxc test`
+      prints one, at the statement that didn't hold, with what was expected and what came.
+    - **Converted from a recording, not transcribed.** The Python suite ran with hooks in
+      toolchain.py's entry points, in `subprocess` and in unittest's assertions, which
+      recorded each program, its input and what became of it: 2,246 programs and 385 other
+      actions of 872 tests. A case was written from each record and kept only once the runner
+      passed it, so each passes because the runner saw what Python saw. The 157 tests that did
+      more than run one program (ctxc commands, projects, child processes, files) were then
+      checked one by one against their assertions; a child process is a ctxlang helper
+      (tests/helpers) where it was the running Python.
+    - **Shown to check.** 66 cases across 22 kinds of expectation were each broken in one
+      way, and the runner failed every one with the right line; and with two deliberate
+      breakages of ctxc (a message changed, a check disabled) the tests the Python suite
+      failed and the tests whose cases failed were the same.
+    - **Deleted:** tests/test_ctxlang.py, tests/test_borrow_lifetimes.py, tools/corpus.py (the
+      runner's `--corpus` writes the recovery test's corpus from the cases), tools/interp_diff.py
+      (the runner's summary counts what the interpreter ran, refused and was spared, and `-v`
+      the refusals by reason), and all of tools/toolchain.py but what builds ctxc for
+      tools/recover.py, the one Python tool left (PLAN 6.2).
+    - *Not built:* a mode that rewrites expectations (`--bless`). A failure prints the actual
+      text in the case's own block form, to be read before it is pasted: an expectation that
+      a tool wrote is one nobody stated.
 
 ## 6. Feedback built for agents
 

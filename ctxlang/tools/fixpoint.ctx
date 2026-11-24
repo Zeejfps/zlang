@@ -26,7 +26,7 @@ type Strs = list::List([]u8, Heap)
 const OUT: []u8 = "build/fixpoint/"
 const PLATFORMS: [_][]u8 = ["linux", "macos", "windows"]
 
-// ctxc's stack, as tools/toolchain.py runs it: 200 MiB.
+// ctxc's stack, as the suite's runner (tools/suite) runs it: 200 MiB.
 const STACK: []u8 = "CTX_STACK=209715200"
 
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {

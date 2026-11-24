@@ -832,9 +832,9 @@ false, and every function of `tls` checks it first, as `task::start_concurrent` 
 
 ## Testing
 
-Tests are corpus programs and Python, as threads.md's step 7: tests/test_ctxlang.py builds each
-program with native ctxc and runs it; a peer, when one is needed, is `sys.executable` running a script
-(the `Proc` class's pattern). Every test listens on `127.0.0.1` or `::1`, port 0, so tests run at once
+Tests are cases of the suite (tests/README.md): the runner builds each program with native
+ctxc and runs it; a peer, when one is needed, is a helper program the case builds
+(tests/helpers/child.ctx, the `Proc` cases' pattern). Every test listens on `127.0.0.1` or `::1`, port 0, so tests run at once
 without colliding, and passes the port to its peer on the command line or through standard output.
 
 1. **Loopback in one program**: a listener, an accept task and a client task (`start_concurrent`),

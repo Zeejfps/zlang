@@ -2,7 +2,8 @@
 
     python tools/recover.py [CORPUS] [-k SUBSTRING] [-j JOBS] [--sample N]
 
-For each distinct file of the corpus (tools/corpus.py), plus std/ (its layers too) and ctxc/,
+For each distinct file of the corpus (`ctxc run tools/suite -- --corpus build/corpus` writes it:
+the programs of the suite's cases and of examples/), plus std/ (its layers too) and ctxc/,
 `ctxc recover` parses three damaged copies per token: cut short where the token starts, with it
 deleted, and with it duplicated. Then it checks each copy in the file's program: the corpus
 case's files, std (which ctxc finds itself), or ctxc's. ctxc/recover.ctx lists what each copy

@@ -20,8 +20,8 @@
 // ctxc finds std/ and ctxc/rt/ in its home: CTX_HOME if set, else the first directory holding
 // both above its executable, else above the working directory. The C compiler is `cc`, or CTX_CC:
 // the file it names, spaces and all, or else its words split at spaces, so `zig cc` works. It
-// runs with the flags tools/toolchain.py uses, and its own directory first on PATH, as
-// toolchain.py runs it.
+// runs with the flags the suite's runner (tools/suite) uses, and its own directory first on
+// PATH, as the runner runs it.
 //
 // An executable's C is in units (emit::units, ctxc/emit_c.ctx): one for a small program, and for a
 // big one units of about 256 KiB of C each (or CTX_UNIT_SIZE bytes), grouped by the files that
@@ -199,7 +199,7 @@ namespace drive {
     }
 
     // `ctxc graph DIR GEN LIST`: runs the build program of directory DIR as `run` does, generated
-    // files and all, and writes what it describes for tools/toolchain.py, which builds the
+    // files and all, and writes what it describes for the suite's runner, which builds the
     // executables itself. Each executable's generated files go to GEN/EXE/NAME-HASH.ctx, HASH
     // being of the text: two runs with different text never share a file, the same text keeps
     // its path, and so what the caller compiles, and its C, from run to run, and no file is

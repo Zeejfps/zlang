@@ -22,7 +22,7 @@ code to call: `examples/json` is a sample program, not a library.
 - [ ] **4. Fields have no position.** `build::Field` has no line or column, so an error about a
   field can only point at its declaration. *Build:* `line` and `col` on `build::Field`.
 - [ ] **5. A generator can't report errors.** It prints `FILE:LINE:COL: error: ...` to stderr
-  and fails the build by returning 1, which ctxc and tools/toolchain.py treat as a crash.
+  and fails the build by returning 1, which ctxc and the suite's runner treat as a crash.
   *Build:* `build::error{ &b, file, line, col, msg }`, which ctxc reports as its own errors, and
   then fails the build.
 - [ ] **6. A generator can't live inside its library.** `add_sources` takes every
