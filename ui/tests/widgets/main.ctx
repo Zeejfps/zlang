@@ -6,6 +6,7 @@
 //   field.ctx     stage 10: the text field and number entry
 //   windows.ctx   stage 11: windows, popups, menus, the combo, tooltips, drag and drop
 //   data.ctx      stage 12: lists, trees, tabs, tables, the plot, the colour editor
+//   keys.ctx      shortcuts on menu items and buttons, and the keyboard into the menu bar
 //
 //   kotor/tools/ctxc run ui/tests/widgets                  (from the repository root)
 //   kotor/tools/ctxc run ui/tests/widgets -- --update      rewrite the goldens after an intended change
@@ -27,6 +28,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     check_field{ &io, &fs, &t, &heap, update }
     check_windows{ &io, &fs, &t, &heap, update }
     check_data{ &io, &fs, &t, &heap, update }
+    check_keys{ &io, &fs, &t, &heap, update }
 
     _ = @fmt(&io, "ui/tests/widgets: {} checks, {} failed\n", t.run, t.failed)
     io::flush{ &io }

@@ -27,13 +27,25 @@
 //  - A disabled item is drawn in the disabled text colour, is not lit and cannot be picked.
 //  - `begin_context_menu` opens a menu at the pointer on a right press over its target, or below
 //    the target on the Menu key while the target has the focus.
+//  - Shortcuts. An item's `opts.shortcut` (a key and its modifiers) is shown in a shortcut column,
+//    right-aligned, as wide as the menu's widest, and picks the item when its key comes and no
+//    widget took it (`ui::take_shortcut`: matched in the frame after the key, against what the
+//    frame of the key left), whether its menu is open or not. A menu that is not open records
+//    nothing, so on a frame with strokes to match `begin_menu` gives an open scope anyway, one that
+//    shows nothing (`begin_silent_menu`): record a menu's items under `if menu.open` as ever, and
+//    they match their shortcuts on those frames and record nothing. One declaration an item is all
+//    a program writes; a text field that takes the same key (Ctrl+C) has it first. Why here and not
+//    the program's own key checks (Dear ImGui draws the text only): the shortcut and the item are
+//    one declaration that cannot drift apart, a disabled item's shortcut does nothing, and a key a
+//    widget used is never also a shortcut.
 //
 // Each menu keeps two state entries under its popup's id. The menu's own (`Values`): f[0] the lit
 // item + 1 (0: none), f[1] how many items it had last frame, f[2] its submenu (0 shut, 1 asked
 // for, 2 shown), f[3] and f[4] where the pointer was, f[5] 1 while its first item is to be lit;
 // i[0] which of its first 64 items were enabled last frame, i[1] which were submenus. The frame's
 // count (`make_part_id{ popup, "items" }`): f[0] items so far, f[1] 1 when the pointer moved this
-// frame, f[2] the item the keys picked + 1, f[3] 1 when the keys open the lit submenu; i[0] and
+// frame, f[2] the item the keys picked + 1, f[3] 1 when the keys open the lit submenu, f[4] the
+// widest shortcut so far in pixels, f[5] last frame's widest; i[0] and
 // i[1] the masks so far. Keys act on last frame's items, as everything in an immediate-mode
 // interface acts on what was last drawn; an item past the 64th is taken as enabled by the keys.
 // A menu bar keeps (under its id): f[0] its titles last frame, f[1] its titles so far, f[2] the
@@ -92,6 +104,7 @@ namespace ui {
     // it is a submenu: an item with an arrow, its menu beside it. The scope is open while the menu
     // is: record its items, then `ui::end` it either way.
     fn begin_menu { mut ui: Ui, label: []u8, opts: Opts } -> Scope {
+        if is_menu_silent{ &ui } { return begin_silent_menu{ &ui, name = get_widget_name{ opts, label } } }
         if get_open_popup{ ui } != NO_ID { return begin_submenu{ &ui, label, opts } }
         let t = derive_theme{ theme = ui.theme }
         let name = get_widget_name{ opts, label }
@@ -151,7 +164,10 @@ namespace ui {
         if want { flags = flags | NODE_OPEN }
         describe{ &ui, id, role = Role::menu, label = name, value = 0.0, flags }
         if opts.tip.len > 0 { add_tooltip{ &ui, anchor = id, text = opts.tip } }
-        if not want { return Scope{ .. } }
+        if not want {
+            if opts.enabled and has_shortcuts{ ui } { return begin_silent_menu{ &ui, name } }
+            return Scope{ .. }
+        }
 
         let begun = begin_menu_popup{ &ui, pname, label = name, parent = NO_ID, first, fresh = not open, opts }
         if begun.step != 0 and bar != NO_ID {
@@ -188,12 +204,15 @@ namespace ui {
         if show and not open { open_popup_on{ &ui, id = pname, anchor = id, side = PopupSide::beside } }
         if show { parent.f[2] = 2.0 }
         store_state{ &ui, id = slot.menu, values = parent }
-        add_menu_row{ &ui, id, label, check = false, arrow = true, lit = opts.enabled and (mine or it.held), enabled = opts.enabled }
+        add_menu_row{ &ui, id, label, check = false, arrow = true, lit = opts.enabled and (mine or it.held), enabled = opts.enabled, menu = slot.menu, shortcut = Shortcut{ .. } }
         let mut flags = get_widget_flags{ opts, it }
         if show { flags = flags | NODE_OPEN }
         if mine { flags = flags | NODE_SELECTED }
         describe{ &ui, id, role = Role::menu, label = name, value = 0.0, flags }
-        if not show { return Scope{ .. } }
+        if not show {
+            if opts.enabled and has_shortcuts{ ui } { return begin_silent_menu{ &ui, name } }
+            return Scope{ .. }
+        }
         let begun = begin_menu_popup{ &ui, pname, label = name, parent = slot.menu, first = slot.keyed, fresh = not open, opts }
         return begun.scope
     }
@@ -218,7 +237,10 @@ namespace ui {
                 first = true
             }
         }
-        if not is_popup_open{ ui, id } { return Scope{ .. } }
+        if not is_popup_open{ ui, id } {
+            if opts.enabled and has_shortcuts{ ui } { return begin_silent_menu{ &ui, name = id } }
+            return Scope{ .. }
+        }
         let begun = begin_menu_popup{ &ui, pname = id, label = id, parent = NO_ID, first, fresh = opened, opts }
         return begun.scope
     }
@@ -242,6 +264,7 @@ namespace ui {
 
     // A rule between groups of items, half a padding above and below.
     fn add_menu_separator { mut ui: Ui } {
+        if is_menu_silent{ &ui } { return }
         let t = ui.theme
         let half = t.padding * 0.5
         let el = begin_element{ &ui, id = NO_ID, axis = Axis::column, box = Box{ width = GROW, padding = Insets{ left = half, right = half, top = half * 0.5, bottom = half * 0.5 }, .. } }
@@ -251,6 +274,12 @@ namespace ui {
     }
 
     fn add_menu_entry { mut ui: Ui, label: []u8, check: bool, checkable: bool, opts: Opts } -> bool {
+        // In a menu that is not shown only the shortcut is matched, and nothing is recorded.
+        if is_menu_silent{ &ui } {
+            let fired = opts.enabled and take_shortcut{ &ui, shortcut = opts.shortcut }
+            if fired { close_popups{ &ui } }
+            return fired
+        }
         let slot = note_menu_item{ &ui, enabled = opts.enabled, sub = false }
         let name = get_widget_name{ opts, label }
         let id = make_id{ ui, name }
@@ -264,8 +293,9 @@ namespace ui {
             lit = true
         }
         if slot.menu == NO_ID { lit = it.hovered }
-        let picked = opts.enabled and (it.clicked or slot.picked)
-        add_menu_row{ &ui, id, label, check, arrow = false, lit = opts.enabled and (lit or it.held), enabled = opts.enabled }
+        let keyed = opts.enabled and take_shortcut{ &ui, shortcut = opts.shortcut }
+        let picked = opts.enabled and (it.clicked or slot.picked or keyed)
+        add_menu_row{ &ui, id, label, check, arrow = false, lit = opts.enabled and (lit or it.held), enabled = opts.enabled, menu = slot.menu, shortcut = opts.shortcut }
         let mut flags = get_widget_flags{ opts, it }
         if checkable and check { flags = flags | NODE_CHECKED }
         if lit and opts.enabled { flags = flags | NODE_SELECTED }
@@ -275,11 +305,35 @@ namespace ui {
         return picked
     }
 
-    // An item's row: a column for a check mark, the label, and an arrow for a submenu; the
-    // selection colour while it is lit.
-    fn add_menu_row { mut ui: Ui, id: Id, label: []u8, check: bool, arrow: bool, lit: bool, enabled: bool } {
+    // An item's row: a column for a check mark, the label, the shortcut column, and an arrow for a
+    // submenu; the selection colour while it is lit.
+    //
+    // The shortcut column is as wide as the widest shortcut of the menu's items, its text against
+    // its right edge, a padding from the labels. The widest is known once every item is recorded,
+    // so a row takes last frame's widest of its menu (`menu`'s count state: f[5]) or its own,
+    // whichever is wider, and adds its own to this frame's (f[4]); a menu with no shortcut has no
+    // column.
+    fn add_menu_row { mut ui: Ui, id: Id, label: []u8, check: bool, arrow: bool, lit: bool, enabled: bool, menu: Id, shortcut: Shortcut } {
         let t = derive_theme{ theme = ui.theme }
         let color = if enabled { t.text } else { t.text_disabled }
+        let mut keys: []u8 = ""
+        let mut own: i32 = 0
+        if shortcut.key != Key::none {
+            _ = take_text{ &ui }
+            _ = @fmt(&ui, "{}", write_shortcut{ shortcut, _ })
+            keys = take_text{ &ui }
+            own = measure_text{ &ui, font = t.font, size = to_font_size{ ui, size = t.font_size }, text = keys }
+        }
+        let mut widest = own
+        if menu != NO_ID {
+            let count_id = make_part_id{ id = menu, part = "items" }
+            let mut b = load_state{ &ui, id = count_id }
+            widest = pick_max_i32{ a = own, b = @as(i32, b.f[5]) }
+            if @as(f32, own) > b.f[4] {
+                b.f[4] = @as(f32, own)
+                store_state{ &ui, id = count_id, values = b }
+            }
+        }
         let el = begin_element{ &ui, id, axis = Axis::row, box = Box{
             width = GROW, height = fix{ size = t.row_height },
             padding = Insets{ left = t.padding * 0.5, right = t.padding * 0.5, .. }, gap = t.gap * 0.5, align_y = Align::center,
@@ -287,6 +341,12 @@ namespace ui {
         } }
         add_menu_mark{ &ui, check, color }
         add_text{ &ui, text = label, style = TextStyle{ color, overflow = Overflow::ellipsis, .. }, box = Box{ width = GROW, .. } }
+        if widest > 0 {
+            let room = add_pixels{ a = widest, b = to_pixels{ ui, length = t.padding * 2.0 } }
+            let column = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = fix_pixels{ size = room }, align_x = Align::end, .. } }
+            if keys.len > 0 { add_text{ &ui, text = keys, style = TextStyle{ color = if enabled { t.text_muted } else { t.text_disabled }, .. }, box = Box{ .. } } }
+            end{ &ui, scope = column }
+        }
         // Every item keeps the arrow's column, so the labels end short of the edge alike.
         let size = get_mark_size{ theme = t }
         let box = begin_element{ &ui, id = NO_ID, axis = Axis::row, box = Box{ width = fix{ size }, height = fix{ size }, .. } }
@@ -309,6 +369,31 @@ namespace ui {
         end{ &ui, scope = box }
     }
 
+    // ---- menus that are not shown, recorded for their shortcuts
+
+    // The id of the mark a menu that is not shown leaves in its id scope while its items are
+    // recorded to match their shortcuts.
+    fn get_silent_id { ui: Ui } -> Id {
+        return make_id{ ui, name = "\x00silent menu" }
+    }
+
+    // Whether what is recorded now is in a menu that is not shown (`begin_silent_menu` this frame).
+    fn is_menu_silent { mut ui: Ui } -> bool {
+        let v = load_state{ &ui, id = get_silent_id{ ui } }
+        return v.i[0] == @as(i64, ui.frame) + 1
+    }
+
+    // The scope of a menu that is not shown, on a frame with strokes for shortcuts: open, so the
+    // program records its items, which match their shortcuts and record nothing else (no row, no
+    // node, no tab stop). It is the id scope `name`, as an open menu's items have; anything else
+    // the program records in it goes into a box of no size that clips it away.
+    fn begin_silent_menu { mut ui: Ui, name: []u8 } -> Scope {
+        let scope = push_id{ &ui, name }
+        store_state{ &ui, id = get_silent_id{ ui }, values = Values{ f = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], i = [@as(i64, ui.frame) + 1, 0] } }
+        _ = begin_element{ &ui, id = NO_ID, axis = Axis::column, box = Box{ width = fix_pixels{ size = 0 }, height = fix_pixels{ size = 0 }, clip = true, place = Place{ .. }, .. } }
+        return scope
+    }
+
     // ---- a menu's state
 
     // Begins the open menu `pname`: last frame's items become what its keys act on, the pointer's
@@ -324,7 +409,9 @@ namespace ui {
         a.f[1] = b.f[0]
         a.i[0] = b.i[0]
         a.i[1] = b.i[1]
-        b = Values{ f = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], i = [0, 0] }
+        // Last frame's widest shortcut, which this frame's rows take their column's width from.
+        let widest = b.f[4]
+        b = Values{ f = [0.0, 0.0, 0.0, 0.0, 0.0, widest], i = [0, 0] }
         if fresh {
             a.f[0] = 0.0
             a.f[2] = 0.0

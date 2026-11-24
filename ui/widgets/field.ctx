@@ -755,7 +755,19 @@ namespace ui {
                     }
                     return true
                 }
-                else => { return false }
+                // A key that types a character is the field's (its text comes as typed text), so
+                // it is no shortcut while the field has the focus; with Ctrl it is left.
+                else => { return not ctrl and is_typing_key{ key = k.key } }
+            }
+        }
+
+        // Whether a key types a character on its own or with Shift: a letter, a digit, punctuation.
+        fn is_typing_key { key: Key } -> bool {
+            return match key {
+                a | b | c | d | e | f | g | h | i | j | k | l | m | n | o | p | q | r | s | t | u | v | w | x | y | z => true,
+                digit_0 | digit_1 | digit_2 | digit_3 | digit_4 | digit_5 | digit_6 | digit_7 | digit_8 | digit_9 => true,
+                minus | equals | plus | comma | period | slash | backslash | semicolon | apostrophe | grave | left_bracket | right_bracket => true,
+                else => false,
             }
         }
 

@@ -1,0 +1,236 @@
+// Shortcuts and the keyboard's way into the menu bar (menu.ctx, opts.ctx and basic.ctx of
+// ui/widgets): a menu item's shortcut works with its menu closed, in a submenu, while it is open,
+// not when it is disabled, and not when a focused text field took the key; its text is in a
+// shortcut column whose right edges line up; a button's shortcut works it.
+//
+// A shortcut is matched against what the frame of its key left, so it works in the frame after
+// the key: every check names that frame.
+
+fn check_keys { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
+    check_shortcut_closed{ &io, &t, &heap }
+    check_shortcut_open{ &io, &t, &heap }
+    check_shortcut_field{ &io, &t, &heap }
+    check_shortcut_column{ &io, &t, &heap, scale = 1.0 }
+    check_shortcut_column{ &io, &t, &heap, scale = 1.5 }
+}
+
+// What the scene's widgets did.
+struct Board {
+    news: u32, opens: u32, saves: u32, reopens: u32, renames: u32, copies: u32, zooms: u32, bolds: u32,
+    bold: bool, field: bool, text: [32]u8, len: usize,
+    open_menu: bool,                // File was open (shown) this frame
+}
+
+fn make_board {} -> Board {
+    let mut b: Board
+    b.news = 0
+    b.opens = 0
+    b.saves = 0
+    b.reopens = 0
+    b.renames = 0
+    b.copies = 0
+    b.zooms = 0
+    b.bolds = 0
+    b.bold = false
+    b.field = false
+    b.len = 0
+    b.open_menu = false
+    return b
+}
+
+fn ctrl { key: ui::Key } -> ui::Shortcut { return ui::Shortcut{ key, mods = ui::MOD_CTRL } }
+
+// A menu bar: File (New Ctrl+N, Open... Ctrl+O, Save Ctrl+S disabled, Recent > Reopen
+// Ctrl+Shift+T, Rename F2, Bold Ctrl+B a check), Edit (Copy Ctrl+C, Zoom in Ctrl+=); then, when
+// `field` is set, a text field; and a button with the shortcut Ctrl+D.
+fn show_board { mut ui: ui::Ui, mut b: Board } {
+    let col = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, gap = 8.0, .. } }
+    let bar = ui::begin_menu_bar{ &ui, opts = ui::Opts{ .. } }
+    b.open_menu = false
+    {
+        let file = ui::begin_menu{ &ui, label = "File", opts = ui::Opts{ .. } }
+        if file.open {
+            if ui::add_menu_item{ &ui, label = "New", opts = ui::Opts{ shortcut = ctrl{ key = ui::Key::n }, .. } } { b.news = b.news + 1 }
+            if ui::add_menu_item{ &ui, label = "Open...", opts = ui::Opts{ shortcut = ctrl{ key = ui::Key::o }, .. } } { b.opens = b.opens + 1 }
+            if ui::add_menu_item{ &ui, label = "Save", opts = ui::Opts{ enabled = false, shortcut = ctrl{ key = ui::Key::s }, .. } } { b.saves = b.saves + 1 }
+            let recent = ui::begin_menu{ &ui, label = "Recent", opts = ui::Opts{ .. } }
+            if recent.open {
+                if ui::add_menu_item{ &ui, label = "Reopen", opts = ui::Opts{ shortcut = ui::Shortcut{ key = ui::Key::t, mods = ui::MOD_CTRL | ui::MOD_SHIFT }, .. } } { b.reopens = b.reopens + 1 }
+            }
+            ui::end{ &ui, scope = recent }
+            ui::add_menu_separator{ &ui }
+            if ui::add_menu_item{ &ui, label = "Rename", opts = ui::Opts{ shortcut = ui::Shortcut{ key = ui::Key::f2, .. }, .. } } { b.renames = b.renames + 1 }
+            if ui::add_menu_check{ &ui, label = "Bold", value = &b.bold, opts = ui::Opts{ shortcut = ctrl{ key = ui::Key::b }, .. } } { b.bolds = b.bolds + 1 }
+        }
+        ui::end{ &ui, scope = file }
+    }
+    {
+        let edit = ui::begin_menu{ &ui, label = "Edit", opts = ui::Opts{ .. } }
+        if edit.open {
+            if ui::add_menu_item{ &ui, label = "Copy", opts = ui::Opts{ shortcut = ctrl{ key = ui::Key::c }, .. } } { b.copies = b.copies + 1 }
+            if ui::add_menu_item{ &ui, label = "Zoom in", opts = ui::Opts{ shortcut = ctrl{ key = ui::Key::equals }, .. } } { b.zooms = b.zooms + 1 }
+        }
+        ui::end{ &ui, scope = edit }
+    }
+    ui::end{ &ui, scope = bar }
+    if b.field {
+        let mut buf = ui::TextBuf{ bytes = b.text[..], len = b.len }
+        _ = ui::add_text_field{ &ui, label = "field", text = &buf, rules = ui::TextRules{ .. }, opts = ui::Opts{ .. } }
+        b.len = buf.len
+    }
+    if ui::add_button{ &ui, label = "Duplicate", opts = ui::Opts{ shortcut = ctrl{ key = ui::Key::d }, .. } } { b.news = b.news + 10 }
+    ui::end{ &ui, scope = col }
+}
+
+struct Desk2 { ui: ui::Ui, d: ui_test::Driver }
+
+fn make_desk2 { mut heap: arena::Arena, scale: f32 } -> !Desk2 {
+    let ui = try make_ui{ &heap, dark = true }
+    let d = try make_driver{ &heap, width = ui::round_pixels{ v = 400.0 * scale }, height = ui::round_pixels{ v = 300.0 * scale }, scale }
+    return Desk2{ ui, d }
+}
+
+fn step_board { mut k: Desk2, mut b: Board } {
+    ui_test::step_frame{ d = &k.d, ui = &k.ui, show = show_board{ &b, _ } }
+}
+
+// Taps `key` with `mods`, runs the key's frame and returns what `count` said after it; then runs
+// the next frame. The caller compares the two counts.
+fn tap_board { mut k: Desk2, mut b: Board, key: ui::Key, mods: u8 } {
+    _ = ui_test::tap_key{ ui = &k.ui, key, mods }
+    step_board{ &k, &b }
+}
+
+// With every menu closed: each shortcut works the frame after its key and not in it; the
+// disabled item's does nothing; a submenu's item and a check work; a button's works. A frame that
+// matches shortcuts records nothing of the closed menus.
+fn check_shortcut_closed { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut k = make_desk2{ &heap, scale = 1.0 } iferr { return }
+    let mut b = make_board{}
+    step_board{ &k, &b }
+    step_board{ &k, &b }
+    let shapes = k.ui.draw.count
+    let nodes = ui::get_node_count{ ui = k.ui }
+    tap_board{ &k, &b, key = ui::Key::n, mods = ui::MOD_CTRL }
+    let in_key_frame = b.news == 0
+    let asked = k.d.requests.wake != null
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = in_key_frame and asked and b.news == 1,
+        what = "shortcuts: Ctrl+N with File closed picks New in the frame after the key, which the key's frame asks for" }
+    ui_test::expect{ &io, &t, ok = k.ui.draw.count == shapes and ui::get_node_count{ ui = k.ui } == nodes and ui::find_node{ ui = k.ui, path = "File/New" } == null,
+        what = "shortcuts: the frame that matches them draws and describes nothing of the closed menus" }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = b.news == 1, what = "shortcuts: once" }
+    tap_board{ &k, &b, key = ui::Key::s, mods = ui::MOD_CTRL }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = b.saves == 0, what = "shortcuts: a disabled item's shortcut does nothing" }
+    tap_board{ &k, &b, key = ui::Key::t, mods = ui::MOD_CTRL | ui::MOD_SHIFT }
+    step_board{ &k, &b }
+    tap_board{ &k, &b, key = ui::Key::t, mods = ui::MOD_CTRL }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = b.reopens == 1, what = "shortcuts: a closed submenu's item works by Ctrl+Shift+T, and not by Ctrl+T" }
+    tap_board{ &k, &b, key = ui::Key::f2, mods = 0 }
+    step_board{ &k, &b }
+    tap_board{ &k, &b, key = ui::Key::b, mods = ui::MOD_CTRL }
+    step_board{ &k, &b }
+    tap_board{ &k, &b, key = ui::Key::equals, mods = ui::MOD_CTRL }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = b.renames == 1 and b.bolds == 1 and b.bold and b.zooms == 1,
+        what = "shortcuts: F2, Ctrl+B on a check (which it flips) and Ctrl+= in the second menu" }
+    tap_board{ &k, &b, key = ui::Key::d, mods = ui::MOD_CTRL }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = b.news == 11, what = "shortcuts: a button's Ctrl+D works it" }
+    ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "shortcuts closed: every frame is clean" }
+}
+
+// With File open: its own shortcut picks an item and closes the menu; another menu's works too.
+fn check_shortcut_open { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut k = make_desk2{ &heap, scale = 1.0 } iferr { return }
+    let mut b = make_board{}
+    step_board{ &k, &b }
+    _ = ui_test::click{ d = &k.d, ui = &k.ui, path = "File", show = show_board{ &b, _ } }
+    let open = ui::find_node{ ui = k.ui, path = "File/New" } != null
+    tap_board{ &k, &b, key = ui::Key::o, mods = ui::MOD_CTRL }
+    step_board{ &k, &b }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = open and b.opens == 1 and ui::find_node{ ui = k.ui, path = "File/New" } == null,
+        what = "shortcuts: with File open, Ctrl+O picks Open... and closes the menu" }
+    _ = ui_test::click{ d = &k.d, ui = &k.ui, path = "File", show = show_board{ &b, _ } }
+    tap_board{ &k, &b, key = ui::Key::c, mods = ui::MOD_CTRL }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = b.copies == 1, what = "shortcuts: with File open, Edit's Ctrl+C works too" }
+    ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "shortcuts open: every frame is clean" }
+}
+
+// A focused text field takes Ctrl+C (it copies its selection), so Edit > Copy's shortcut does not
+// work then; with the field not focused, it does. A letter typed into the field is no shortcut.
+fn check_shortcut_field { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut k = make_desk2{ &heap, scale = 1.0 } iferr { return }
+    let mut b = make_board{}
+    b.field = true
+    step_board{ &k, &b }
+    step_board{ &k, &b }
+    _ = ui_test::click{ d = &k.d, ui = &k.ui, path = "field", show = show_board{ &b, _ } }
+    _ = ui_test::type_text{ ui = &k.ui, text = "abc" }
+    step_board{ &k, &b }
+    tap_board{ &k, &b, key = ui::Key::a, mods = ui::MOD_CTRL }
+    tap_board{ &k, &b, key = ui::Key::c, mods = ui::MOD_CTRL }
+    step_board{ &k, &b }
+    let field_took = b.copies == 0 and slice::eq_bytes{ a = ui_test::get_clipboard{ d = k.d }, b = "abc" }
+    _ = ui_test::tap_key{ ui = &k.ui, key = ui::Key::n, mods = 0 }
+    _ = ui_test::type_text{ ui = &k.ui, text = "n" }
+    step_board{ &k, &b }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = field_took and b.news == 0 and slice::eq_bytes{ a = b.text[..b.len], b = "n" },
+        what = "shortcuts: a focused field takes Ctrl+C (it copies) and a typed letter, so neither is a shortcut" }
+    _ = ui_test::move_pointer{ ui = &k.ui, x = 390, y = 290 }
+    _ = ui_test::push_button{ ui = &k.ui, button = 0, down = true, clicks = 1 }
+    step_board{ &k, &b }
+    _ = ui_test::push_button{ ui = &k.ui, button = 0, down = false, clicks = 1 }
+    step_board{ &k, &b }
+    tap_board{ &k, &b, key = ui::Key::c, mods = ui::MOD_CTRL }
+    step_board{ &k, &b }
+    ui_test::expect{ &io, &t, ok = b.copies == 1, what = "shortcuts: with the field not focused, Ctrl+C is Edit > Copy's" }
+    ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "shortcuts and a field: every frame is clean" }
+}
+
+// The text shape of `needle` in the last frame, as wide as it measures; one of -1s when there is
+// none.
+fn find_text_rect { mut ui: ui::Ui, needle: []u8 } -> ui::Rect {
+    for i in 0..@as(usize, ui.draw.count) {
+        match ui.draw.cmds[i] {
+            text{ font, size, x, y, text } => {
+                if slice::eq_bytes{ a = ui::draw::get_text{ list = ui.draw, span = text }, b = needle } {
+                    return ui::Rect{ x, y, w = ui::measure_text{ &ui, font, size, text = needle }, h = size }
+                }
+            }
+            else => {}
+        }
+    }
+    return ui::Rect{ x = -1, y = -1, w = -1, h = -1 }
+}
+
+// The shortcut column of an open menu: every shortcut's text ends at the same x, a padding inside
+// the row's end; a label never reaches into the column; the menu is wide enough for its longest
+// label and its widest shortcut. The tests' font is 8 by 16 at 16 pixels, so a character is half
+// the pixel size wide.
+fn check_shortcut_column { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, scale: f32 } {
+    let mut k = make_desk2{ &heap, scale } iferr { return }
+    let mut b = make_board{}
+    step_board{ &k, &b }
+    _ = ui_test::click{ d = &k.d, ui = &k.ui, path = "File", show = show_board{ &b, _ } }
+    step_board{ &k, &b }
+    let n = find_text_rect{ ui = &k.ui, needle = "Ctrl+N" }
+    let o = find_text_rect{ ui = &k.ui, needle = "Ctrl+O" }
+    let f2 = find_text_rect{ ui = &k.ui, needle = "F2" }
+    let bold = find_text_rect{ ui = &k.ui, needle = "Ctrl+B" }
+    let new_row = ui::find_node{ ui = k.ui, path = "File/New" } ifnull ui::Node{ .. }
+    let rename = find_text_rect{ ui = &k.ui, needle = "Rename" }
+    let lined = n.w > 0 and n.x + n.w == o.x + o.w and n.x + n.w == f2.x + f2.w and n.x + n.w == bold.x + bold.w
+    // The row is padded half a padding (4 units) at its end, and the arrow column (a mark's 16
+    // units, 14 + 2) and the row's gap (4) follow the column.
+    let end = new_row.rect.x + new_row.rect.w - ui::to_pixels{ ui = k.ui, length = 4.0 } - ui::to_pixels{ ui = k.ui, length = 16.0 } - ui::to_pixels{ ui = k.ui, length = 4.0 }
+    ui_test::expect{ &io, &t, ok = lined and n.x + n.w == end and rename.x + rename.w < f2.x,
+        what = if scale == 1.0 { "shortcut column: the shortcuts end at one x, before the arrow column, after every label (scale 1)" } else { "shortcut column: the same at scale 1.5" } }
+    ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "shortcut column: every frame is clean" }
+}

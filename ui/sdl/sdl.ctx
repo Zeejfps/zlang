@@ -173,5 +173,26 @@ namespace ui_sdl {
         const DOWN: i32 = 0x40000051
         const UP: i32 = 0x40000052
         const KP_ENTER: i32 = 0x40000058
+        const KP_MINUS: i32 = 0x40000056
+        const KP_PLUS: i32 = 0x40000057
+        const INSERT: i32 = 0x40000049
+        const F1: i32 = 0x4000003A                // F1 to F12 are 0x4000003A to 0x40000045
+        const F12: i32 = 0x40000045
+        // A letter's key code is its lower-case character, a digit's and punctuation's their own
+        // character, on every layout SDL knows.
+        const LETTER_A: i32 = 'a'
+        const DIGIT_0: i32 = '0'
+        const MINUS: i32 = '-'
+        const EQUALS: i32 = '='
+        const PLUS: i32 = '+'
+        const COMMA: i32 = ','
+        const PERIOD: i32 = '.'
+        const SLASH: i32 = '/'
+        const BACKSLASH: i32 = '\\'
+        const SEMICOLON: i32 = ';'
+        const APOSTROPHE: i32 = '\''
+        const GRAVE: i32 = '`'
+        const LEFT_BRACKET: i32 = '['
+        const RIGHT_BRACKET: i32 = ']'
     }
 }

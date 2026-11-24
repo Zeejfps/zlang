@@ -191,13 +191,14 @@ ui/
     layout.ctx  ui::layout: solve, position: the flow solver in integer pixels (fit, grow, fix, take, min and max,
                 alignment, wrapped text and dots); its rounding rules are the comment at its top
     emit.ctx    Hit, get_rect; ui::emit: emit_frame (clips, opacity, hit regions; nothing is rounded here)
-    host.ctx    Event (the pointer in device pixels), Key, Cursor, Requests
+    host.ctx    Event (the pointer in device pixels), Key (a desktop's keys; `alt`: Alt alone), Shortcut, Cursor, Requests
     input.ctx interact.ctx focus.ctx state.ctx nodes.ctx layers.ctx scroll.ctx
                 one subsystem each: its state (a field of Ui) and make_state, reset_state, finish_frame
     input.ctx   push_event, get_pointer, get_time, is_released, take_key, get_keys, take_key_at, take_typed,
                 take_typed_before (typed text and strokes in the order they came), take_paste, set_cursor,
                 set_text_input, copy_text, ask_paste, set_animating, ask_wake (a frame at a time: `Requests.wake`),
-                take_requests
+                take_requests; take_shortcut and has_shortcuts (the strokes the last frame left), get_key_name,
+                write_shortcut
     interact.ctx PressOpts, Interaction, press, get_hover_time, take_wheel, take_wheel_x, is_pointer_over
     focus.ctx   Links, set_links, set_focus (waits up to two frames for a widget not recorded yet), ask_first_focus
                 (a dialog's first tab stop), claim_focus (a press's focus, for a widget's part), is_focused,
@@ -218,7 +219,8 @@ ui/
     window.ctx  WindowOpts, begin_window (move, resize, fold, close, held reachable), begin_dialog
     popup.ctx   add_combo; make_global_id, pack_id, unpack_id, write_popup_name (what popup widgets share)
     menu.ctx    begin_menu_bar, begin_menu (a bar's title or a submenu), add_menu_item, add_menu_check,
-                add_menu_separator, begin_context_menu
+                add_menu_separator, begin_context_menu; an item's `opts.shortcut` is drawn in a shortcut column and
+                works with its menu closed (a closed menu gives an open, silent scope on a frame with strokes left)
     drag.ctx    Payload, Drop, begin_drag (the ghost in the front overlay), accept_drop, is_dragging
     list.ctx    begin_list, begin_list_row; make_part_id
     tree.ctx    begin_tree_node

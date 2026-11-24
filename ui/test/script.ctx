@@ -14,8 +14,9 @@
 //   up [BUTTON]              and comes up
 //   click PATH               move to the node's centre, press and release the left button: 3 frames
 //   drag PATH DX DY          press at the node's centre, move by (DX, DY) pixels, release: 4 frames
-//   key NAME [MOD ...]       a key going down and up: tab, enter, escape, backspace, delete, left,
-//                            right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z, menu;
+//   key NAME [MOD ...]       a key going down and up, by its name in ui::Key: tab, enter, escape,
+//                            the letters a to z, digit_0 to digit_9, f1 to f12, minus, equals, ...;
+//                            `key alt` is Alt pressed and released alone (as a host sends it);
 //                            modifiers shift, ctrl, alt
 //   type TEXT                typed text
 //   wheel DY                 the wheel turned DY notches (positive is away from the user)
@@ -233,15 +234,31 @@ namespace ui_test {
         return false
     }
 
-    const KEY_NAMES: [21][]u8 = [
+    // Every key but `none`, by the name ui::Key gives it.
+    const KEY_NAMES: [77][]u8 = [
         "tab", "enter", "escape", "backspace", "delete", "left", "right", "up", "down", "home",
-        "end", "page_up", "page_down", "space", "a", "c", "v", "x", "y", "z", "menu",
+        "end", "page_up", "page_down", "space", "a", "c", "v", "x", "y", "z", "menu", "insert",
+        "b", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "w",
+        "digit_0", "digit_1", "digit_2", "digit_3", "digit_4", "digit_5", "digit_6", "digit_7", "digit_8", "digit_9",
+        "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+        "minus", "equals", "plus", "comma", "period", "slash", "backslash", "semicolon", "apostrophe", "grave",
+        "left_bracket", "right_bracket", "alt",
     ]
-    const KEYS: [21]ui::Key = [
+    const KEYS: [77]ui::Key = [
         ui::Key::tab, ui::Key::enter, ui::Key::escape, ui::Key::backspace, ui::Key::delete, ui::Key::left,
         ui::Key::right, ui::Key::up, ui::Key::down, ui::Key::home, ui::Key::end, ui::Key::page_up,
         ui::Key::page_down, ui::Key::space, ui::Key::a, ui::Key::c, ui::Key::v, ui::Key::x, ui::Key::y, ui::Key::z,
-        ui::Key::menu,
+        ui::Key::menu, ui::Key::insert,
+        ui::Key::b, ui::Key::d, ui::Key::e, ui::Key::f, ui::Key::g, ui::Key::h, ui::Key::i, ui::Key::j, ui::Key::k,
+        ui::Key::l, ui::Key::m, ui::Key::n, ui::Key::o, ui::Key::p, ui::Key::q, ui::Key::r, ui::Key::s, ui::Key::t,
+        ui::Key::u, ui::Key::w,
+        ui::Key::digit_0, ui::Key::digit_1, ui::Key::digit_2, ui::Key::digit_3, ui::Key::digit_4,
+        ui::Key::digit_5, ui::Key::digit_6, ui::Key::digit_7, ui::Key::digit_8, ui::Key::digit_9,
+        ui::Key::f1, ui::Key::f2, ui::Key::f3, ui::Key::f4, ui::Key::f5, ui::Key::f6,
+        ui::Key::f7, ui::Key::f8, ui::Key::f9, ui::Key::f10, ui::Key::f11, ui::Key::f12,
+        ui::Key::minus, ui::Key::equals, ui::Key::plus, ui::Key::comma, ui::Key::period, ui::Key::slash,
+        ui::Key::backslash, ui::Key::semicolon, ui::Key::apostrophe, ui::Key::grave,
+        ui::Key::left_bracket, ui::Key::right_bracket, ui::Key::alt,
     ]
 
     fn find_key { name: []u8 } -> ?ui::Key {

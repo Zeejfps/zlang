@@ -94,9 +94,11 @@ namespace ui {
     // (empty: its label), the box it is laid out by, whether it takes input, its tooltip's text, and
     // whether Tab and Shift+Tab stop at it (`tab_stop` false: they pass it by, as at a button in a
     // list's row; a press still gives it the focus, and Tab from it goes on from its place; HTML's
-    // tabindex -1). The core's own widget-like calls take them too (`begin_scroll`, `begin_popup`,
+    // tabindex -1), and its shortcut: a key that works it when no widget took the key (`take_shortcut`;
+    // a menu item, a menu check, a button and a checkbox honour it, and a menu item shows it in its
+    // shortcut column). The core's own widget-like calls take them too (`begin_scroll`, `begin_popup`,
     // `begin_modal`).
-    struct Opts { id: []u8 = "", box: Box = Box{ .. }, enabled: bool = true, tip: []u8 = "", tab_stop: bool = true }
+    struct Opts { id: []u8 = "", box: Box = Box{ .. }, enabled: bool = true, tip: []u8 = "", tab_stop: bool = true, shortcut: Shortcut = Shortcut{ .. } }
 
     // An explicit rectangle in the parent's own coordinates, out of the flow, in logical units.
     // The position is rounded to the nearest pixel and the size by the length rule, each on its

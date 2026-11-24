@@ -61,7 +61,8 @@ namespace ui {
         let name = get_widget_name{ opts, label }
         let id = make_id{ ui, name }
         let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
-        let keyed = opts.enabled and take_activation{ &ui, it }
+        let activated = opts.enabled and take_activation{ &ui, it }
+        let keyed = activated or (opts.enabled and take_shortcut{ &ui, shortcut = opts.shortcut })
         let fill = if not opts.enabled { t.control } else if it.held and it.hovered { t.control_pressed } else if it.hovered { t.control_hovered } else { t.control }
         let side = t.padding * 1.5
         let base = Box{
@@ -132,7 +133,8 @@ namespace ui {
         let name = get_widget_name{ opts, label }
         let id = make_id{ ui, name }
         let it = press{ &ui, id, opts = make_press_opts{ ui, opts } }
-        let keyed = opts.enabled and take_activation{ &ui, it }
+        let activated = opts.enabled and take_activation{ &ui, it }
+        let keyed = activated or (opts.enabled and take_shortcut{ &ui, shortcut = opts.shortcut })
         let changed = opts.enabled and (it.clicked or keyed)
         if changed { value = not value }
         let look = get_mark_look{ theme = t, on = value, enabled = opts.enabled, it }

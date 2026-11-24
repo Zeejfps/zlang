@@ -86,8 +86,14 @@ namespace ui_test {
         return ui::push_event{ &ui, event = ui::Event::wheel{ dx, dy } }
     }
 
-    // A key going down and coming up.
+    // A key going down and coming up. `Key::alt` is the Alt key alone, sent as a host sends it:
+    // `none` going down with Alt held and coming up with it let go (and `mods` added to both).
     fn tap_key { mut ui: ui::Ui, key: ui::Key, mods: u8 } -> bool {
+        if key == ui::Key::alt {
+            let taken = ui::push_event{ &ui, event = ui::Event::key{ key = ui::Key::none, down = true, repeat = false, mods = mods | ui::MOD_ALT } }
+            _ = ui::push_event{ &ui, event = ui::Event::key{ key = ui::Key::none, down = false, repeat = false, mods = mods ^ (mods & ui::MOD_ALT) } }
+            return taken
+        }
         let taken = ui::push_event{ &ui, event = ui::Event::key{ key, down = true, repeat = false, mods } }
         _ = ui::push_event{ &ui, event = ui::Event::key{ key, down = false, repeat = false, mods } }
         return taken

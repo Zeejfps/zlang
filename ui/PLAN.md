@@ -987,7 +987,10 @@ frame. The core calls nothing. Declarations [compiled, a4]:
 
 ```
 namespace ui {
-    enum Key: u8 { none, tab, enter, escape, backspace, delete, left, right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z }
+    enum Key: u8 { none, tab, enter, escape, backspace, delete, left, right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z, menu,
+                   insert, b, d, ... w (every letter), digit_0 ... digit_9, f1 ... f12, minus, equals, plus, comma, period, slash,
+                   backslash, semicolon, apostrophe, grave, left_bracket, right_bracket, alt }   // alt: Alt pressed and released alone
+    struct Shortcut { key: Key = Key::none, mods: u8 = 0 }
     const MOD_SHIFT: u8 = 1
     const MOD_CTRL: u8 = 2
     const MOD_ALT: u8 = 4
@@ -1433,7 +1436,8 @@ struct Box {
 }
 fn place { x: f32, y: f32, w: f32, h: f32 } -> Box              // logical units
 fn place_pixels { rect: Rect } -> Box                           // device pixels, taken as they are
-struct Opts { id: []u8 = "", box: Box = Box{ .. }, enabled: bool = true, tip: []u8 = "", tab_stop: bool = true }   // tab_stop false: Tab passes it by
+struct Opts { id: []u8 = "", box: Box = Box{ .. }, enabled: bool = true, tip: []u8 = "", tab_stop: bool = true, shortcut: Shortcut = Shortcut{ .. } }
+// tab_stop false: Tab passes it by; shortcut: a key that works it (a menu item shows it) when no widget took the key
 struct Range { min: f32 = 0.0, max: f32 = 1.0, step: f32 = 0.0, digits: u32 = 2 }
 struct TextRules { hint: []u8 = "", max_chars: u32 = 0, password: bool = false, filter: ?fn{ c: u32 } -> bool = null }
 struct WindowOpts { x: f32 = 40.0, y: f32 = 40.0, width: f32 = 360.0, height: f32 = 0.0, movable: bool = true, resizable: bool = true, closable: bool = true }
@@ -1492,6 +1496,7 @@ fn set_focus { mut ui: Ui, id: Id }
 fn is_focused { ui: Ui, id: Id } -> bool
 fn take_wheel { mut ui: Ui, id: Id } -> f32
 fn take_key { mut ui: Ui, key: Key, mods: u8 } -> bool
+fn take_shortcut { mut ui: Ui, shortcut: Shortcut } -> bool                         // a stroke the last frame left
 fn get_pointer { ui: Ui } -> Point                                                 // Point{ x: i32, y: i32 }: device pixels
 fn get_time { ui: Ui } -> f32
 fn get_hover_time { ui: Ui, id: Id } -> f32

@@ -10,10 +10,10 @@
 // tasks, a line each.
 //
 // The keyboard, beside the stock widgets' own (Tab, Enter, Space, the arrows in the list and the
-// menus, Escape on a menu or a dialog): in the list, Space marks the selected task done or not,
-// Delete deletes it, Enter renames it, Alt+Up and Alt+Down move it, the Menu key opens its menu;
-// anywhere a text field does not take them, Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste a task
-// and Ctrl+Z brings back the task deleted last.
+// menus, Escape on a menu or a dialog): every command of the menus has its shortcut there, shown
+// beside it and working with the menu closed wherever no widget took the key: Ctrl+N, Ctrl+Z, Ctrl+X,
+// Ctrl+C, Ctrl+V, Space (mark done), F2 (rename), Alt+Up and Alt+Down (move), Delete, Ctrl+H, Ctrl+=,
+// Ctrl+- and Ctrl+0 (zoom), F1. In the list Enter renames the selected task and the Menu key opens its menu.
 //
 // Units: everything here is logical units; the host picks the surface's pixels and the scale (the
 // monitor's times this program's zoom, `get_zoom`). Every control is a stock widget.
@@ -47,7 +47,6 @@ namespace tasks {
         dark: bool, hide_done: bool, zoom: i32,
         undo: Task, undo_at: usize, can_undo: bool, // the task deleted last
         paste_asked: bool,                          // the host answers with the clipboard next frame
-        menu_open: bool,                            // one of the program's menus was open
         note: Note, note_count: u32,
         quit: bool,
     }
@@ -80,7 +79,6 @@ namespace tasks {
         app.undo.len = 0
         app.undo.done = false
         app.paste_asked = false
-        app.menu_open = false
         app.note = Note::ready
         app.note_count = 0
         app.quit = false
@@ -248,7 +246,6 @@ namespace tasks {
             app.paste_asked = false
             _ = paste_tasks{ &app, text = ui::take_paste{ &ui } }
         }
-        app.menu_open = false
         let screen = ui::begin_element{ &ui, id = ui::NO_ID, axis = ui::Axis::column, box = ui::Box{ width = ui::GROW, height = ui::GROW, fill = t.background, .. } }
         show_menu_bar{ &ui, &app }
         {
@@ -267,24 +264,29 @@ namespace tasks {
         }
         show_status{ &ui, &app }
         ui::end{ &ui, scope = screen }
-        take_shortcuts{ &ui, &app }
         show_rename_dialog{ &ui, &app }
         show_prefs_dialog{ &ui, &app }
         show_about_dialog{ &ui, &app }
     }
 
     // ---- the menu bar
+    //
+    // Every command with a key is a menu item with a shortcut: the one declaration shows the key
+    // in the menu and makes it work with the menu closed. A key a widget took first (Ctrl+C in the
+    // field, Space on a focused button) is that widget's.
+
+    fn key { key: ui::Key, mods: u8 } -> ui::Shortcut { return ui::Shortcut{ key, mods } }
 
     fn show_menu_bar { mut ui: ui::Ui, mut app: App } {
         let opts = ui::Opts{ .. }
         let sel = get_selected{ app }
         let has = sel != null
+        let ctrl = ui::MOD_CTRL
         let bar = ui::begin_menu_bar{ &ui, opts }
         {
             let file = ui::begin_menu{ &ui, label = "File", opts }
             if file.open {
-                app.menu_open = true
-                if ui::add_menu_item{ &ui, label = "New task", opts } {
+                if ui::add_menu_item{ &ui, label = "New task", opts = ui::Opts{ shortcut = key{ key = ui::Key::n, mods = ctrl }, .. } } {
                     ui::set_focus{ &ui, id = app.entry_id }
                     ui::set_focus_visible{ &ui, visible = true }
                 }
@@ -294,44 +296,41 @@ namespace tasks {
                 let clear = ui::take_text{ &ui }
                 if ui::add_menu_item{ &ui, label = clear, opts = ui::Opts{ id = "Clear completed", enabled = done > 0, .. } } { clear_done{ &app } }
                 ui::add_menu_separator{ &ui }
-                if ui::add_menu_item{ &ui, label = "Quit", opts } { app.quit = true }
+                if ui::add_menu_item{ &ui, label = "Quit", opts = ui::Opts{ shortcut = key{ key = ui::Key::q, mods = ctrl }, .. } } { app.quit = true }
             }
             ui::end{ &ui, scope = file }
         }
         {
             let edit = ui::begin_menu{ &ui, label = "Edit", opts }
             if edit.open {
-                app.menu_open = true
-                if ui::add_menu_item{ &ui, label = "Undo delete", opts = ui::Opts{ enabled = app.can_undo, tip = "Ctrl+Z", .. } } { restore_task{ &app } }
+                if ui::add_menu_item{ &ui, label = "Undo delete", opts = ui::Opts{ enabled = app.can_undo, shortcut = key{ key = ui::Key::z, mods = ctrl }, .. } } { restore_task{ &app } }
                 ui::add_menu_separator{ &ui }
-                if ui::add_menu_item{ &ui, label = "Cut", opts = ui::Opts{ enabled = has, tip = "Ctrl+X", .. } } { cut_task{ &ui, &app } }
-                if ui::add_menu_item{ &ui, label = "Copy", opts = ui::Opts{ enabled = has, tip = "Ctrl+C", .. } } { copy_task{ &ui, &app } }
-                if ui::add_menu_item{ &ui, label = "Paste", opts = ui::Opts{ tip = "Ctrl+V: each line a task", .. } } { ask_paste{ &ui, &app } }
+                if ui::add_menu_item{ &ui, label = "Cut", opts = ui::Opts{ enabled = has, shortcut = key{ key = ui::Key::x, mods = ctrl }, .. } } { cut_task{ &ui, &app } }
+                if ui::add_menu_item{ &ui, label = "Copy", opts = ui::Opts{ enabled = has, shortcut = key{ key = ui::Key::c, mods = ctrl }, .. } } { copy_task{ &ui, &app } }
+                if ui::add_menu_item{ &ui, label = "Paste", opts = ui::Opts{ tip = "Each line a task", shortcut = key{ key = ui::Key::v, mods = ctrl }, .. } } { ask_paste{ &ui, &app } }
                 ui::add_menu_separator{ &ui }
                 show_task_items{ &ui, &app }
                 ui::add_menu_separator{ &ui }
-                if ui::add_menu_item{ &ui, label = "Preferences...", opts } { app.prefs = true }
+                if ui::add_menu_item{ &ui, label = "Preferences...", opts = ui::Opts{ shortcut = key{ key = ui::Key::comma, mods = ctrl }, .. } } { app.prefs = true }
             }
             ui::end{ &ui, scope = edit }
         }
         {
             let view = ui::begin_menu{ &ui, label = "View", opts }
             if view.open {
-                app.menu_open = true
-                _ = ui::add_menu_check{ &ui, label = "Hide completed", value = &app.hide_done, opts }
+                _ = ui::add_menu_check{ &ui, label = "Hide completed", value = &app.hide_done, opts = ui::Opts{ shortcut = key{ key = ui::Key::h, mods = ctrl }, .. } }
                 _ = ui::add_menu_check{ &ui, label = "Dark theme", value = &app.dark, opts }
                 ui::add_menu_separator{ &ui }
-                if ui::add_menu_item{ &ui, label = "Zoom in", opts = ui::Opts{ enabled = app.zoom < @as(i32, ZOOM_COUNT) - 1, .. } } { app.zoom = app.zoom + 1 }
-                if ui::add_menu_item{ &ui, label = "Zoom out", opts = ui::Opts{ enabled = app.zoom > 0, .. } } { app.zoom = app.zoom - 1 }
-                if ui::add_menu_item{ &ui, label = "Actual size", opts = ui::Opts{ enabled = app.zoom != ZOOM_NORMAL, .. } } { app.zoom = ZOOM_NORMAL }
+                if ui::add_menu_item{ &ui, label = "Zoom in", opts = ui::Opts{ enabled = app.zoom < @as(i32, ZOOM_COUNT) - 1, shortcut = key{ key = ui::Key::equals, mods = ctrl }, .. } } { app.zoom = app.zoom + 1 }
+                if ui::add_menu_item{ &ui, label = "Zoom out", opts = ui::Opts{ enabled = app.zoom > 0, shortcut = key{ key = ui::Key::minus, mods = ctrl }, .. } } { app.zoom = app.zoom - 1 }
+                if ui::add_menu_item{ &ui, label = "Actual size", opts = ui::Opts{ enabled = app.zoom != ZOOM_NORMAL, shortcut = key{ key = ui::Key::digit_0, mods = ctrl }, .. } } { app.zoom = ZOOM_NORMAL }
             }
             ui::end{ &ui, scope = view }
         }
         {
             let help = ui::begin_menu{ &ui, label = "Help", opts }
             if help.open {
-                app.menu_open = true
-                if ui::add_menu_item{ &ui, label = "About Tasks", opts } { app.about = true }
+                if ui::add_menu_item{ &ui, label = "About Tasks", opts = ui::Opts{ shortcut = key{ key = ui::Key::f1, mods = 0 }, .. } } { app.about = true }
             }
             ui::end{ &ui, scope = help }
         }
@@ -339,19 +338,22 @@ namespace tasks {
     }
 
     // The items that act on the selected task: in the Edit menu and in a task's context menu.
+    // Their keys work wherever no widget took them: Space and Delete in the list (which leaves
+    // them), F2 anywhere, Alt+Up and Alt+Down.
     fn show_task_items { mut ui: ui::Ui, mut app: App } {
         let sel = get_selected{ app }
         let has = sel != null
         let at = sel ifnull 0
         let done = has and app.tasks[at].done
-        if ui::add_menu_item{ &ui, label = if done { "Mark not done" } else { "Mark done" }, opts = ui::Opts{ id = "Mark done", enabled = has, tip = "Space", .. } } {
+        if ui::add_menu_item{ &ui, label = if done { "Mark not done" } else { "Mark done" }, opts = ui::Opts{ id = "Mark done", enabled = has, shortcut = key{ key = ui::Key::space, mods = 0 }, .. } } {
             app.tasks[at].done = not app.tasks[at].done
         }
-        if ui::add_menu_item{ &ui, label = "Rename...", opts = ui::Opts{ enabled = has, tip = "Enter", .. } } { begin_rename{ &app, at } }
-        if ui::add_menu_item{ &ui, label = "Move up", opts = ui::Opts{ enabled = has and at > 0, tip = "Alt+Up", .. } } { move_task{ &app, at, by = -1 } }
-        if ui::add_menu_item{ &ui, label = "Move down", opts = ui::Opts{ enabled = has and at + 1 < app.count, tip = "Alt+Down", .. } } { move_task{ &app, at, by = 1 } }
-        if ui::add_menu_item{ &ui, label = "Delete", opts = ui::Opts{ enabled = has, tip = "Delete", .. } } { remove_task{ &app, at } }
+        if ui::add_menu_item{ &ui, label = "Rename...", opts = ui::Opts{ enabled = has, shortcut = key{ key = ui::Key::f2, mods = 0 }, .. } } { begin_rename{ &app, at } }
+        if ui::add_menu_item{ &ui, label = "Move up", opts = ui::Opts{ enabled = has and at > 0, shortcut = key{ key = ui::Key::up, mods = ui::MOD_ALT }, .. } } { move_task{ &app, at, by = -1 } }
+        if ui::add_menu_item{ &ui, label = "Move down", opts = ui::Opts{ enabled = has and at + 1 < app.count, shortcut = key{ key = ui::Key::down, mods = ui::MOD_ALT }, .. } } { move_task{ &app, at, by = 1 } }
+        if ui::add_menu_item{ &ui, label = "Delete", opts = ui::Opts{ enabled = has, shortcut = key{ key = ui::Key::delete, mods = 0 }, .. } } { remove_task{ &app, at } }
     }
+
 
     fn copy_task { mut ui: ui::Ui, mut app: App } {
         let at = get_selected{ app } ifnull { return }
@@ -447,16 +449,14 @@ namespace tasks {
             ui::end{ &ui, scope = row.scope }
         }
         ui::end{ &ui, scope = list.scope }
-        if list.focused { take_list_keys{ &ui, &app } }
         // A right press on a row opens the menu at the pointer for that row; the Menu key, while
         // the list has the focus, below the list.
         let target = if menu_row != ui::NO_ID { menu_row } else { list.id }
         let menu = ui::begin_context_menu{ &ui, id = "task menu", target, opts = ui::Opts{ .. } }
         if menu.open {
-            app.menu_open = true
             show_task_items{ &ui, &app }
             ui::add_menu_separator{ &ui }
-            if ui::add_menu_item{ &ui, label = "Copy", opts = ui::Opts{ enabled = get_selected{ app } != null, .. } } { copy_task{ &ui, &app } }
+            if ui::add_menu_item{ &ui, label = "Copy", opts = ui::Opts{ enabled = get_selected{ app } != null, shortcut = key{ key = ui::Key::c, mods = ui::MOD_CTRL }, .. } } { copy_task{ &ui, &app } }
         }
         ui::end{ &ui, scope = menu }
     }
@@ -482,32 +482,6 @@ namespace tasks {
             remove_task{ &app, at }
             ui::set_focus{ &ui, id = list }
         }
-    }
-
-    // The keys the list answers while it has the focus, beside the ones it takes itself.
-    fn take_list_keys { mut ui: ui::Ui, mut app: App } {
-        let at = get_selected{ app } ifnull { return }
-        if ui::take_key{ &ui, key = ui::Key::space, mods = 0 } { app.tasks[at].done = not app.tasks[at].done }
-        if ui::take_key{ &ui, key = ui::Key::delete, mods = 0 } {
-            remove_task{ &app, at }
-            return
-        }
-        if ui::take_key{ &ui, key = ui::Key::up, mods = ui::MOD_ALT } {
-            move_task{ &app, at, by = -1 }
-            return
-        }
-        if ui::take_key{ &ui, key = ui::Key::down, mods = ui::MOD_ALT } { move_task{ &app, at, by = 1 } }
-    }
-
-    // The program's keys that no widget took: copy, cut, paste and undo on tasks. Not while one
-    // of its menus is open (they act on the menu then), and never behind a dialog (the core gives
-    // code behind a modal no keys).
-    fn take_shortcuts { mut ui: ui::Ui, mut app: App } {
-        if app.menu_open { return }
-        if ui::take_key{ &ui, key = ui::Key::c, mods = ui::MOD_CTRL } { copy_task{ &ui, &app } }
-        if ui::take_key{ &ui, key = ui::Key::x, mods = ui::MOD_CTRL } { cut_task{ &ui, &app } }
-        if ui::take_key{ &ui, key = ui::Key::v, mods = ui::MOD_CTRL } { ask_paste{ &ui, &app } }
-        if ui::take_key{ &ui, key = ui::Key::z, mods = ui::MOD_CTRL } { restore_task{ &app } }
     }
 
     // The bar along the bottom: what was done last, and the counts.

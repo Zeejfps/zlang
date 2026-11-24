@@ -231,6 +231,36 @@ frames 3
 value "task count" 5
 value "done count" 0
 
+# Shortcuts with every menu closed: each works the frame after its key. Ctrl+N puts the focus in
+# the field; typed there, Ctrl+Z is the field's own undo, not Edit > Undo delete; F2 renames the
+# selected task (its dialog gives its field the focus at the end of the frame it opens in, so a
+# frame more); Ctrl+= and Ctrl+0 zoom in and back; F1 is About.
+click tasks/#0
+key n ctrl
+frames 2
+expect "new task" focused
+type "draft"
+frames 1
+key z ctrl
+frames 2
+text "new task" ""
+value "task count" 5
+key f2
+frames 3
+expect "Rename task/title" focused
+key escape
+frames 2
+key equals ctrl
+frames 2
+shot ui/out/tasks-zoomed.png
+key digit_0 ctrl
+frames 2
+key f1
+frames 2
+expect "About Tasks"
+key escape
+frames 2
+
 # A smaller window: the content is laid out again in it.
 resize 360 340
 frames 3

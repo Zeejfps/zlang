@@ -6,7 +6,25 @@
 // whatever its window system reports (ui_sdl does), so the core never scales a pointer. Typed text
 // is in the focused font's encoding.
 namespace ui {
-    enum Key: u8 { none, tab, enter, escape, backspace, delete, left, right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z, menu }   // menu: the context-menu key
+    // A key, by what it is on a US layout (a host maps the OS's key codes, which follow the layout's
+    // letters). `menu` is the context-menu key. `alt` is not a key the host sends: the core makes a
+    // stroke of it when Alt goes down and comes up with no other key or press between (a host sends
+    // the Alt key itself as `none` with its modifier, as it sends Shift), which is how Alt alone
+    // reaches a menu bar. The keys after `menu` came later and are listed after it, so the numbers
+    // of the first ones did not change.
+    enum Key: u8 {
+        none, tab, enter, escape, backspace, delete, left, right, up, down, home, end, page_up, page_down, space, a, c, v, x, y, z, menu,
+        insert,
+        b, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, w,
+        digit_0, digit_1, digit_2, digit_3, digit_4, digit_5, digit_6, digit_7, digit_8, digit_9,
+        f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
+        minus, equals, plus, comma, period, slash, backslash, semicolon, apostrophe, grave, left_bracket, right_bracket,
+        alt,
+    }
+
+    // What a shortcut is: a key and exactly the modifiers held with it (MOD_SHIFT, MOD_CTRL,
+    // MOD_ALT). `Key::none` is no shortcut.
+    struct Shortcut { key: Key = Key::none, mods: u8 = 0 }
     const MOD_SHIFT: u8 = 1
     const MOD_CTRL: u8 = 2
     const MOD_ALT: u8 = 4

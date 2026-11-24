@@ -352,15 +352,39 @@ namespace ui_sdl {
         if keycode == key::PAGEUP { return ui::Key::page_up }
         if keycode == key::PAGEDOWN { return ui::Key::page_down }
         if keycode == key::SPACE { return ui::Key::space }
-        if keycode == key::A { return ui::Key::a }
-        if keycode == key::C { return ui::Key::c }
-        if keycode == key::V { return ui::Key::v }
-        if keycode == key::X { return ui::Key::x }
-        if keycode == key::Y { return ui::Key::y }
-        if keycode == key::Z { return ui::Key::z }
         if keycode == key::APPLICATION { return ui::Key::menu }
+        if keycode == key::INSERT { return ui::Key::insert }
+        if keycode >= key::LETTER_A and keycode < key::LETTER_A + 26 { return LETTER_KEYS[@as(usize, keycode - key::LETTER_A)] }
+        if keycode >= key::DIGIT_0 and keycode < key::DIGIT_0 + 10 { return DIGIT_KEYS[@as(usize, keycode - key::DIGIT_0)] }
+        if keycode >= key::F1 and keycode <= key::F12 { return F_KEYS[@as(usize, keycode - key::F1)] }
+        if keycode == key::MINUS or keycode == key::KP_MINUS { return ui::Key::minus }
+        if keycode == key::EQUALS { return ui::Key::equals }
+        if keycode == key::PLUS or keycode == key::KP_PLUS { return ui::Key::plus }
+        if keycode == key::COMMA { return ui::Key::comma }
+        if keycode == key::PERIOD { return ui::Key::period }
+        if keycode == key::SLASH { return ui::Key::slash }
+        if keycode == key::BACKSLASH { return ui::Key::backslash }
+        if keycode == key::SEMICOLON { return ui::Key::semicolon }
+        if keycode == key::APOSTROPHE { return ui::Key::apostrophe }
+        if keycode == key::GRAVE { return ui::Key::grave }
+        if keycode == key::LEFT_BRACKET { return ui::Key::left_bracket }
+        if keycode == key::RIGHT_BRACKET { return ui::Key::right_bracket }
         return null
     }
+
+    const LETTER_KEYS: [26]ui::Key = [
+        ui::Key::a, ui::Key::b, ui::Key::c, ui::Key::d, ui::Key::e, ui::Key::f, ui::Key::g, ui::Key::h, ui::Key::i,
+        ui::Key::j, ui::Key::k, ui::Key::l, ui::Key::m, ui::Key::n, ui::Key::o, ui::Key::p, ui::Key::q, ui::Key::r,
+        ui::Key::s, ui::Key::t, ui::Key::u, ui::Key::v, ui::Key::w, ui::Key::x, ui::Key::y, ui::Key::z,
+    ]
+    const DIGIT_KEYS: [10]ui::Key = [
+        ui::Key::digit_0, ui::Key::digit_1, ui::Key::digit_2, ui::Key::digit_3, ui::Key::digit_4,
+        ui::Key::digit_5, ui::Key::digit_6, ui::Key::digit_7, ui::Key::digit_8, ui::Key::digit_9,
+    ]
+    const F_KEYS: [12]ui::Key = [
+        ui::Key::f1, ui::Key::f2, ui::Key::f3, ui::Key::f4, ui::Key::f5, ui::Key::f6,
+        ui::Key::f7, ui::Key::f8, ui::Key::f9, ui::Key::f10, ui::Key::f11, ui::Key::f12,
+    ]
 
     fn to_mods { mods: u16 } -> u8 {
         let mut m: u8 = 0

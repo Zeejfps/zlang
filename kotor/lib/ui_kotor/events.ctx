@@ -82,15 +82,39 @@ namespace ui_kotor {
         if keycode == sdl::key::of_scancode{ scancode = SCANCODE_PAGEUP } { return ui::Key::page_up }
         if keycode == sdl::key::of_scancode{ scancode = SCANCODE_PAGEDOWN } { return ui::Key::page_down }
         if keycode == sdl::key::SPACE { return ui::Key::space }
-        if keycode == 'a' { return ui::Key::a }
-        if keycode == 'c' { return ui::Key::c }
-        if keycode == 'v' { return ui::Key::v }
-        if keycode == 'x' { return ui::Key::x }
-        if keycode == 'y' { return ui::Key::y }
-        if keycode == 'z' { return ui::Key::z }
+        if keycode >= 'a' and keycode <= 'z' { return LETTER_KEYS[@as(usize, keycode - 'a')] }
+        if keycode >= '0' and keycode <= '9' { return DIGIT_KEYS[@as(usize, keycode - '0')] }
         if keycode == sdl::key::of_scancode{ scancode = SCANCODE_APPLICATION } { return ui::Key::menu }
+        if keycode == sdl::key::of_scancode{ scancode = SCANCODE_INSERT } { return ui::Key::insert }
+        if keycode == '-' or keycode == sdl::key::of_scancode{ scancode = SCANCODE_KP_MINUS } { return ui::Key::minus }
+        if keycode == '=' { return ui::Key::equals }
+        if keycode == '+' or keycode == sdl::key::of_scancode{ scancode = SCANCODE_KP_PLUS } { return ui::Key::plus }
+        if keycode == ',' { return ui::Key::comma }
+        if keycode == '.' { return ui::Key::period }
+        if keycode == '/' { return ui::Key::slash }
+        if keycode == '\\' { return ui::Key::backslash }
+        if keycode == ';' { return ui::Key::semicolon }
+        if keycode == '\'' { return ui::Key::apostrophe }
+        if keycode == '`' { return ui::Key::grave }
+        if keycode == '[' { return ui::Key::left_bracket }
+        if keycode == ']' { return ui::Key::right_bracket }
+        // F1 to F12 stay the game's (its own bindings and tools use them), so they are not the
+        // library's keys here.
         return null
     }
+
+    const SCANCODE_INSERT: i32 = 73
+    const SCANCODE_KP_MINUS: i32 = 86
+    const SCANCODE_KP_PLUS: i32 = 87
+    const LETTER_KEYS: [26]ui::Key = [
+        ui::Key::a, ui::Key::b, ui::Key::c, ui::Key::d, ui::Key::e, ui::Key::f, ui::Key::g, ui::Key::h, ui::Key::i,
+        ui::Key::j, ui::Key::k, ui::Key::l, ui::Key::m, ui::Key::n, ui::Key::o, ui::Key::p, ui::Key::q, ui::Key::r,
+        ui::Key::s, ui::Key::t, ui::Key::u, ui::Key::v, ui::Key::w, ui::Key::x, ui::Key::y, ui::Key::z,
+    ]
+    const DIGIT_KEYS: [10]ui::Key = [
+        ui::Key::digit_0, ui::Key::digit_1, ui::Key::digit_2, ui::Key::digit_3, ui::Key::digit_4,
+        ui::Key::digit_5, ui::Key::digit_6, ui::Key::digit_7, ui::Key::digit_8, ui::Key::digit_9,
+    ]
 
     fn to_mods { mods: u16 } -> u8 {
         let mut m: u8 = 0

@@ -29,6 +29,7 @@ fn main { mut io: Io, mut mem: Mem } -> i32 {
     check_full_input{ &io, &t, &heap }
     check_keys{ &io, &t, &heap }
     check_wake{ &io, &t, &heap }
+    check_shortcuts{ &io, &t, &heap }
     check_wheel{ &io, &t, &heap }
     check_tab{ &io, &t, &heap }
     check_no_stops{ &io, &t, &heap }
@@ -575,6 +576,74 @@ fn check_full_input { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = ui::take_paste{ ui = &gui }, b = "ok" } and ui::take_paste{ ui = &gui }.len == 0, what = "frame 3: only the paste that fits arrives, and only once" }
     ui::end_frame{ ui = &gui }
     ui_test::expect{ &io, &t, ok = gui.stats.dropped == 1 and ui::has_problem{ ui = gui, kind = ui::ProblemKind::events_full }, what = "frame 3: the big paste is counted" }
+}
+
+// The strokes a frame leaves are the next frame's shortcuts: taken once, by exact modifiers, not
+// those a widget took nor Tab or a plain arrow, not behind a modal; the frame that leaves them asks
+// for the next at once. Alt pressed and released alone is a stroke of its own.
+fn check_shortcuts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap } iferr { return }
+    let mut d = make_driver{ &heap } iferr { return }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::n, mods = ui::MOD_CTRL }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::f2, mods = 0 }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::left, mods = 0 }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::enter, mods = 0 }
+    ui::begin_frame{ ui = &gui, frame = d.info }                                   // 1: the keys' frame
+    let none_yet = not ui::has_shortcuts{ ui = gui } and not ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::n, mods = ui::MOD_CTRL } }
+    _ = ui::take_key{ ui = &gui, key = ui::Key::enter, mods = 0 }                 // a widget takes Enter
+    ui::end_frame{ ui = &gui }
+    let r1 = ui::take_requests{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = none_yet and ui_test::has_wake{ requests = r1, want = 0.0 }, what = "shortcuts: none in the keys' frame, which asks for the next at once" }
+    ui::begin_frame{ ui = &gui, frame = d.info }                                   // 2
+    let plain_n = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::n, mods = 0 } }
+    let ctrl_n = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::n, mods = ui::MOD_CTRL } }
+    let again = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::n, mods = ui::MOD_CTRL } }
+    let f2 = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::f2, .. } }
+    let tab = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::tab, .. } }
+    let left = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::left, .. } }
+    let enter = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ key = ui::Key::enter, .. } }
+    let nothing = ui::take_shortcut{ ui = &gui, shortcut = ui::Shortcut{ .. } }
+    ui::end_frame{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = not plain_n and ctrl_n and not again and f2 and not tab and not left and not enter and not nothing,
+        what = "shortcuts: the next frame has Ctrl+N (by its exact modifiers, once) and F2; not Tab, a plain arrow, a taken Enter, nor Key::none" }
+    let r2 = ui::take_requests{ ui = &gui }
+    ui::begin_frame{ ui = &gui, frame = d.info }                                   // 3
+    let gone = not ui::has_shortcuts{ ui = gui }
+    ui::end_frame{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = r2.wake == null and gone, what = "shortcuts: a frame later they are gone, and nothing more is asked for" }
+
+    // Alt alone: down with only Alt held, up with nothing between.
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::alt, mods = 0 }
+    ui::begin_frame{ ui = &gui, frame = d.info }                                   // 4
+    let ks = ui::get_keys{ ui = gui }
+    let alone = ks.len == 1 and ks[0].key == ui::Key::alt and ks[0].mods == 0
+    ui::end_frame{ ui = &gui }
+    _ = ui::push_event{ ui = &gui, event = ui::Event::key{ key = ui::Key::none, down = true, repeat = false, mods = ui::MOD_ALT } }
+    _ = ui_test::tap_key{ ui = &gui, key = ui::Key::f, mods = ui::MOD_ALT }
+    _ = ui::push_event{ ui = &gui, event = ui::Event::key{ key = ui::Key::none, down = false, repeat = false, mods = 0 } }
+    _ = ui::push_event{ ui = &gui, event = ui::Event::key{ key = ui::Key::none, down = true, repeat = false, mods = ui::MOD_ALT | ui::MOD_CTRL } }
+    _ = ui::push_event{ ui = &gui, event = ui::Event::key{ key = ui::Key::none, down = false, repeat = false, mods = 0 } }
+    _ = ui::push_event{ ui = &gui, event = ui::Event::key{ key = ui::Key::none, down = true, repeat = false, mods = ui::MOD_ALT } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 1 }
+    _ = ui::push_event{ ui = &gui, event = ui::Event::key{ key = ui::Key::none, down = false, repeat = false, mods = 0 } }
+    _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
+    ui::begin_frame{ ui = &gui, frame = d.info }                                   // 5
+    let ks5 = ui::get_keys{ ui = gui }
+    let not_alone = ks5.len == 1 and ks5[0].key == ui::Key::f and ks5[0].mods == ui::MOD_ALT
+    ui::end_frame{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = alone and not_alone,
+        what = "Alt alone is a Key::alt stroke; Alt with a key, with Ctrl (AltGr) or with a click between is not" }
+
+    // How a shortcut is written.
+    ui::begin_frame{ ui = &gui, frame = d.info }
+    _ = @fmt(&gui, "{}|{}|{}|{}|{}", ui::write_shortcut{ shortcut = ui::Shortcut{ key = ui::Key::n, mods = ui::MOD_CTRL | ui::MOD_SHIFT }, _ },
+        ui::write_shortcut{ shortcut = ui::Shortcut{ key = ui::Key::f2, .. }, _ }, ui::write_shortcut{ shortcut = ui::Shortcut{ key = ui::Key::equals, mods = ui::MOD_CTRL }, _ },
+        ui::write_shortcut{ shortcut = ui::Shortcut{ key = ui::Key::up, mods = ui::MOD_ALT }, _ }, ui::write_shortcut{ shortcut = ui::Shortcut{ key = ui::Key::delete, .. }, _ })
+    let written = ui::take_text{ ui = &gui }
+    ui::end_frame{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = slice::eq_bytes{ a = written, b = "Ctrl+Shift+N|F2|Ctrl+=|Alt+Up|Del" }, what = "shortcuts are written Ctrl+Shift+N, F2, Ctrl+=, Alt+Up, Del" }
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "shortcuts: the frames are clean" }
 }
 
 // ask_wake: a frame's soonest ask is its Requests.wake; a NaN is ignored, a negative time is 0,
