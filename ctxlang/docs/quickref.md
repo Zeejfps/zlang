@@ -446,7 +446,7 @@ What a first draft gets wrong, from the agents' write-ups ([friction.md](todo/fr
 habits of other languages.
 
 From other languages. ctxc says what to write for each, in one error (§21, rule 7), and
-`ctxc check --fix` writes the first eight; the rest need a choice it leaves to you:
+`ctxc check --fix` writes the first eleven; the rest need a choice it leaves to you:
 
 | Written | Write |
 |---|---|
@@ -458,22 +458,18 @@ From other languages. ctxc says what to write for each, in one error (§21, rule
 | `s.len()` | `s.len`, a field |
 | `fn main()`, `fn add(a: i32)`, `fn two -> i32` | `fn main {}`, `fn add { a: i32 }`, `fn two {} -> i32` (§2) |
 | `var x = 0`, `loop { }` | `let mut x = 0`, `while true { }` |
+| `P{ x: 1, y: 2 }` | `P{ x = 1, y = 2 }` |
+| `K.a`, `io.println` | `K::a`, `io::println` (§10) |
+| `double`, `boolean`, `byte`, `size_t` | `f64`, `bool`, `u8`, `usize` |
 | `add(1, 2)`, `two()` | `add{ a = 1, b = 2 }`, `two{}`: a call names its fields (§3) |
 | `Point(1, 2)` | `Point{ x = 1, y = 2 }` (§7) |
 | `enum K { a, b }` | `enum K: u8 { a, b }`, or `union K { a, b }` if the values don't matter (§12, Enums) |
 | `println("hi")` | `io::println{ &io, s = "hi" }`, with `mut io: Io` among the fn's fields (§15) |
 | `xs.push(7)` | `list::push{ list = &xs, item = 7 }`: there are no methods |
 | `io::println{ &io, ... }` where the fn has no `io` | add `mut io: Io` to the fn's fields and pass `&io` down (§15) |
-
-Where ctxc's error doesn't name the fix yet:
-
-| Written | ctxc says | Write |
-|---|---|---|
-| `P{ x: 1, y: 2 }` | expected '}', found ':' | `P{ x = 1, y = 2 }` |
-| `K.a` for an enum's value | `K` is a type, not a value | `K::a` (§12, Enums) |
-| `"a" + b` | `+` needs numbers | `@fmt` into a `utf8::Builder` |
-| `string`, `str` | unknown type or namespace | `[]u8` or `utf8::String` |
-| `let mut` at top level | expected a declaration | a local of `main`, passed down: no globals (§1, rule 2) |
+| `string`, `int`, `float`, `char` | `[]u8` or `utf8::String`, `i32`, `f32` or `f64`, `u8` |
+| `"a" + b` | `@fmt` into a `utf8::Builder` |
+| `let mut x` at top level | a local of `main`, passed down: no globals (§1, rule 2) |
 
 ctxlang's own rules (the error says what to write, and `ctxc check --fix` writes the
 first four):

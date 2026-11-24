@@ -1,0 +1,4 @@
+// A type's name from another language names ctxlang's.
+
+fn f { s: string, n: int, d: double, b: boolean } {}  //~ error at 11: there is no `string` in ctxlang: text is `[]u8`, or `utf8::String`, which holds valid UTF-8  //~ error at 22: there is no `int` in ctxlang: write `i32`, or another of `i8`, `i16`, `i32` and `i64`  //~ error at 30: there is no `double` in ctxlang: write `f64`  //~ error at 41: there is no `boolean` in ctxlang: write `bool`
+fn main {} {}

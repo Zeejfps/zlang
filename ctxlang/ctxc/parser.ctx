@@ -213,6 +213,12 @@ namespace parser {
             let decls = decl_list{ &p, top = false }
             expect{ &p, k = tok::Kind::rbrace }
             d = syntax::DeclKind::space{ name, decls }
+        } else if k == tok::Kind::kw_let or (is_word{ p, word = "var" } and kind{ p, ahead = 1 } == tok::Kind::ident) {
+            // `let x = 0` where declarations go: there is no state at top level (§1, rule 2).
+            // It is parsed as the statement it would be, so the next one is reported too.
+            let t = p.toks[p.i]
+            slip{ &p, span = t.span, msg = "there is no state at top level in ctxlang: what the program shares is a local of `main`, passed down to what needs it; a value that never changes is `const NAME: T = value`" }
+            _ = let_stmt{ &p, id, var = k != tok::Kind::kw_let }
         } else {
             expected{ &p, what = "a declaration" }
         }
@@ -2091,7 +2097,15 @@ namespace parser {
                 }
             } else {
                 let name = ident{ &p }
-                if accept{ &p, k = tok::Kind::assign } {
+                if next_is{ p, k = tok::Kind::colon } {
+                    // `x: 1`, a field as other languages give one: `x = 1`.
+                    let tight = touching{ p, i = p.i - 1 }
+                    let colon = take{ &p }
+                    fix_span{ &p, span = colon.span, text = if tight { " =" } else { "=" }, safe = true, msg = "write `=`" }
+                    slip{ &p, span = colon.span, msg = "a field is given with `=` in ctxlang: write `x = 1`, not `x: 1`" }
+                    let value = expr{ &p }
+                    try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false, spread = false } }
+                } else if accept{ &p, k = tok::Kind::assign } {
                     let value = expr{ &p }
                     try! list::push{ list = &items, item = syntax::Item{ span = span_from{ p, start = s }, name, value, pun = false, spread = false } }
                 } else if not at_item_end{ p } {

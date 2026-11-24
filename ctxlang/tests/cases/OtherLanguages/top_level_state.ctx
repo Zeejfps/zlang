@@ -1,0 +1,5 @@
+// `let` where declarations go: there is no state at top level.
+
+let mut counter: i32 = 0  //~ error at 1: there is no state at top level in ctxlang: what the program shares is a local of `main`, passed down to what needs it; a value that never changes is `const NAME: T = value`
+var total = 0  //~ error at 1: there is no state at top level in ctxlang: what the program shares is a local of `main`, passed down to what needs it; a value that never changes is `const NAME: T = value`
+fn main {} {}

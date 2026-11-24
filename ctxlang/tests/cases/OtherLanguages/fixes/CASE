@@ -52,3 +52,27 @@
 //# exit: 1
 //# stderr has:
 //| "message":"a call names its fields, in braces: write `add{ a = 1, b = &y }`","notes":[],"fixes":[{"safe":false,"message":"name the fields in their order","edits":[{"file":"{dir}/b.ctx","line":4,"column":15,"end_line":4,"end_column":21,"text":"{ a = 1, b = &y }"}]}]}
+// `x: 1` in braces, `.` for `::` and the type names that are one ctxlang type are fixed too.
+//# write c.ctx:
+//| enum K: u8 { a, b }
+//| struct P { x: i32, y: f64 }
+//| fn same { a: boolean, d: double } -> boolean { return a and d > 0.0 }
+//| fn main { mut io: Io } {
+//|     let p = P{ x: 1, y: 2.0 }
+//|     let k = K.b
+//|     _ = same{ a = k == K.a, d = p.y }
+//|     io.println{ &io, s = "hi" }
+//| }
+//# $ ctxc check --fix {dir}/c.ctx
+//# stderr has:
+//| check: no errors
+//# file c.ctx:
+//| enum K: u8 { a, b }
+//| struct P { x: i32, y: f64 }
+//| fn same { a: bool, d: f64 } -> bool { return a and d > 0.0 }
+//| fn main { mut io: Io } {
+//|     let p = P{ x = 1, y = 2.0 }
+//|     let k = K::b
+//|     _ = same{ a = k == K::a, d = p.y }
+//|     io::println{ &io, s = "hi" }
+//| }

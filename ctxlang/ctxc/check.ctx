@@ -3412,6 +3412,7 @@ namespace check {
     // is reported.
     fn unknown { mut c: Checker, n: syntax::Name, qualified: bool } {
         if not qualified {
+            if foreign_type{ &c, n } { return }
             errorf{ &c, at = n.span, msg = @fmt("unknown type or namespace `{}`", str{ s = n.text }) }
             return
         }
@@ -11301,6 +11302,55 @@ namespace check {
 
     // ---- forms of other languages (§21, rule 7)
 
+    // Text: a `[]u8`, a string literal or a `utf8::String`, which `+` doesn't join.
+    fn is_text { c: Checker, t: Id } -> bool {
+        let x = types::prune{ s = c.ty, t }
+        if x == types::STRLIT { return true }
+        match types::get{ s = c.ty, id = x } {
+            slice{ elem } => { return types::prune{ s = c.ty, t = elem } == types::U8 }
+            record{ decl } => { return slice::eq_bytes{ a = get_decl{ c, d = decl }.qual, b = "utf8::String" } }
+            else => { return false }
+        }
+    }
+
+    fn text_plus { mut c: Checker, at: source::Span } {
+        error{ &c, at, msg = "text doesn't join with `+` in ctxlang: write the parts into a `utf8::Builder`, `try @fmt(&b, \"{}{}\", a, b)`" }
+    }
+
+    // A type's name from another language, `string` or `int`: the error that names ctxlang's,
+    // and the fix where there is one type it is. False for any other name.
+    fn foreign_type { mut c: Checker, n: syntax::Name } -> bool {
+        for f in FOREIGN_TYPES {
+            if slice::eq_bytes{ a = f.name, b = n.text } {
+                if f.fix.len > 0 { diag::fix_one{ diags = c.diags, safe = f.safe, msg = "write ctxlang's type", span = n.span, text = f.fix } }
+                errorf{ &c, at = n.span, msg = @fmt("there is no `{}` in ctxlang: {}", str{ s = n.text }, str{ s = f.say }) }
+                return true
+            }
+        }
+        return false
+    }
+
+    struct ForeignType { name: []u8, say: []u8, fix: []u8, safe: bool }
+
+    const TEXT_SAYS: []u8 = "text is `[]u8`, or `utf8::String`, which holds valid UTF-8"
+
+    const FOREIGN_TYPES: [_]ForeignType = [
+        ForeignType{ name = "string", say = TEXT_SAYS, fix = "[]u8", safe = false },
+        ForeignType{ name = "String", say = TEXT_SAYS, fix = "[]u8", safe = false },
+        ForeignType{ name = "str", say = TEXT_SAYS, fix = "[]u8", safe = false },
+        ForeignType{ name = "int", say = "write `i32`, or another of `i8`, `i16`, `i32` and `i64`", fix = "i32", safe = false },
+        ForeignType{ name = "uint", say = "write `u32`, or another of `u8`, `u16`, `u32` and `u64`", fix = "u32", safe = false },
+        ForeignType{ name = "long", say = "write `i64`", fix = "i64", safe = false },
+        ForeignType{ name = "short", say = "write `i16`", fix = "i16", safe = false },
+        ForeignType{ name = "char", say = "a character is a byte, `u8`, and `'a'` is an integer literal", fix = "u8", safe = false },
+        ForeignType{ name = "byte", say = "write `u8`", fix = "u8", safe = true },
+        ForeignType{ name = "float", say = "write `f32`, or `f64` for a double", fix = "f32", safe = false },
+        ForeignType{ name = "double", say = "write `f64`", fix = "f64", safe = true },
+        ForeignType{ name = "boolean", say = "write `bool`", fix = "bool", safe = true },
+        ForeignType{ name = "size_t", say = "write `usize`", fix = "usize", safe = true },
+        ForeignType{ name = "void", say = "a function that returns nothing has no `->`, and a pointer to bytes is `*u8`", fix = "", safe = false },
+    ]
+
     // `f(a, b)`, a call written with parentheses, or `Point(1, 2)`, a literal: an error whose
     // message writes it in braces with the callee's fields in their order, each argument with
     // `&` where its field is `mut`. args are the spans of what is in the parentheses, parens
@@ -12458,6 +12508,10 @@ namespace check {
                 as_suggestion{ &c, e = a, t = r }
                 as_suggestion{ &c, e = b, t = l }
             }
+            if op == tok::Kind::plus and (is_text{ c, t = lt } or is_text{ c, t = rt }) {
+                text_plus{ &c, at }
+                return types::ERROR
+            }
             errorf{ &c, at, msg = @fmt("operands of `{}` have incompatible types: {} and {}; convert one with @as", opname, tstr{ c, t = lt }, tstr{ c, t = rt }) }
             return types::ERROR
         }
@@ -12465,6 +12519,8 @@ namespace check {
             if not is_int{ c, t = op_type{ c, t } } {
                 errorf{ &c, at, msg = @fmt("`{}` needs integers, got {}", opname, tstr{ c, t }) }
             }
+        } else if op == tok::Kind::plus and is_text{ c, t } {
+            text_plus{ &c, at }
         } else if not is_num{ c, t = op_type{ c, t } } {
             errorf{ &c, at, msg = @fmt("`{}` needs numbers, got {}", opname, tstr{ c, t }) }
         }
@@ -12874,6 +12930,25 @@ namespace check {
     // ---- postfix
 
     fn field_expr { mut c: Checker, e: syntax::Expr, base: syntax::Expr, name: syntax::Name } -> Id {
+        // `K.a` for a variant, `io.println` for a namespace's member: `::` (§21, rule 7). A
+        // local or a field of the name, whatever its type, is what the name is.
+        let local = if base.k is path{ segs } { segs.len == 1 and local_named{ c, name = segs[0].name.text, call = false } != NONE } else { true }
+        if base.k is path{ segs } and name.text.len > 0 and not local {
+            if let entry = callee_entry{ c, segs } {
+                let mut what = str{ s = "" }
+                if entry is space { what = str{ s = "a namespace's member" } }
+                if entry is decl{ i } {
+                    let k = get_decl{ c, d = i }.kind
+                    if k == Kind::enumeration or k == Kind::sum { what = str{ s = "a variant" } }
+                }
+                if what.bytes.len > 0 {
+                    let dot = source::Span{ file = e.span.file, start = e.at, end = e.at + 1 }
+                    diag::fix_one{ diags = c.diags, safe = true, msg = "write `::`", span = dot, text = "::" }
+                    errorf{ &c, at = dot, msg = @fmt("{} is reached with `::` in ctxlang: write `{}::{}`", what, str{ s = source_text{ c, span = base.span } }, str{ s = name.text }) }
+                    return types::ERROR
+                }
+            }
+        }
         let bt = typed{ &c, e = base }
         if bt == types::ERROR or name.text.len == 0 { return types::ERROR }
         let is_len = slice::eq_bytes{ a = name.text, b = "len" }
@@ -13023,6 +13098,16 @@ namespace check {
         if is_distinct{ c, t } {
             errorf{ &c, at = expr_at{ e }, msg = @fmt("{} has no field `{}`: a distinct type has none of its own; convert it with @as({}, x)", tstr{ c, t }, str{ s = name.text }, tstr{ c, t = distinct_base{ c, t } }) }
             return types::ERROR
+        }
+        if e.k is field{ base } and base.k is path{ segs } and segs.len == 1 {
+            // `io.println` where `io` is a field and `io::println` a function: `::`.
+            let ns = lookup_path{ c, ns = c.sc.ns, name = segs[0].name.text }
+            if ns is space{ ns = inner } and map::has{ m = get_space{ c, ns = inner }.values, key = name.text } {
+                let dot = source::Span{ file = e.span.file, start = e.at, end = e.at + 1 }
+                diag::fix_one{ diags = c.diags, safe = true, msg = "write `::`", span = dot, text = "::" }
+                errorf{ &c, at = dot, msg = @fmt("`{}` here is a local, of type {}, which has no field `{}`; the namespace's member is reached with `::`: write `{}::{}`", str{ s = segs[0].name.text }, tstr{ c, t }, str{ s = name.text }, str{ s = segs[0].name.text }, str{ s = name.text }) }
+                return types::ERROR
+            }
         }
         let mut b = message{ c }
         try! @fmt(&b, "{} has no field `{}`", tstr{ c, t }, str{ s = name.text })

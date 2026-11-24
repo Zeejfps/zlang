@@ -1,0 +1,10 @@
+// `K.a` for a variant and `io.println` for a namespace's member: `::`.
+
+enum K: u8 { a, b }
+union Shape { dot, square{ side: i32 } }
+fn main { mut io: Io } -> i32 {
+    let k = K.a  //~ error at 14: a variant is reached with `::` in ctxlang: write `K::a`
+    let s = Shape.dot  //~ error at 18: a variant is reached with `::` in ctxlang: write `Shape::dot`
+    io.println{ &io, s = "hi" }  //~ error at 7: `io` here is a local, of type Io, which has no field `println`; the namespace's member is reached with `::`: write `io::println`
+    return 0
+}
