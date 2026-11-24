@@ -53,7 +53,7 @@ game call waits at most for the block being mixed (well under a millisecond for 
 lock isn't recursive: inside mix.ctx only the public fns lock, and what they call (`stop_voice`,
 `take_voice`, `voice_of`) doesn't. Windows' slim lock isn't fair: a thread that unlocks and locks
 again at once can keep it, so the pump sleeps between top-ups (mixtest's stress check yields
-between blocks for the same reason). A command queue (ctxlang/threads.md, "Examples") would avoid
+between blocks for the same reason). A command queue would avoid
 the waiting altogether; it isn't needed while a block is this quick.
 
 **Memory.** The voices read their sounds' bytes, which belong to the game (the ambience's

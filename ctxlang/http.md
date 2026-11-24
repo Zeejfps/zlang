@@ -1,6 +1,6 @@
 # HTTP: design
 
-Status: **design**, threads.md's step 8, after net.md. Nothing here is built. HTTP/1.1, client and
+Status: **design**, threads.md's item 1, after net.md. Nothing here is built. HTTP/1.1, client and
 server, written in ctxlang over `net` and `tls` (net.md), with URLs (`url`) and WebSocket
 (`websocket`) beside it.
 
@@ -358,7 +358,7 @@ distribution's bundle on Linux, some milliseconds; on Windows and macOS the OS v
 a config costs little. A program that fetches often makes one config and passes it.
 
 **Deadlines** are a task's, as for every blocking call: fetch in a task and `task::wait_for`, then
-`task::cancel` (threads.md, Examples, A timeout, which is a fetch).
+`task::cancel` (internals.md, Tasks, Cancellation, whose example is a fetch).
 
 ## Serving
 
@@ -394,9 +394,9 @@ that is a worker woken per request (idle workers are reused; nothing is created 
 server is busy), on Evented a fiber. A handler that reads a body slowly is the handler's to bound the
 same way; `serve_connection` doesn't time a body, whose size and pace only the handler knows.
 
-**The accept loop is the program's**, a task per connection in a `task::Group`, as threads.md's server
-is. `http` has no `serve` that accepts and starts tasks itself: a start's `run` must be a bind of a
-task fn written in the call (threads.md, The API), so a `serve` of std's would start its own task fn
+**The accept loop is the program's**, a task per connection in a `task::Group`, as net.md's server
+is (TCP, A server). `http` has no `serve` that accepts and starts tasks itself: a start's `run` must be a bind of a
+task fn written in the call (spec §15, Tasks, rule 3), so a `serve` of std's would start its own task fn
 around the program's handler, calling one function value from many tasks at once with whatever that
 value holds, which exclusivity can't check through a `&fn`. The loop is twenty lines, and shows what
 runs concurrently and what each connection costs.
@@ -448,7 +448,7 @@ fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, site: *S
 
 Each connection's buffers are its task's locals, on the worker's stack: nothing is allocated per
 connection, and nothing needs returning to a free list. `site` is shared read-only through a pointer
-(threads.md, Scoping, rule 5); a site that changes while served puts its state behind a mutex.
+(spec §3.1, rule 6); a site that changes while served puts its state behind a mutex.
 
 ### Stopping
 

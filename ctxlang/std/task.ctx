@@ -1,5 +1,5 @@
 // std: task. Tasks: calls that may run concurrently with the code that started them (spec §15,
-// Tasks; ctxlang/threads.md). A task is a call of a `#task` fn, made by a bind written in the
+// Tasks; ctxlang/internals.md, Tasks). A task is a call of a `#task` fn, made by a bind written in the
 // start's call that supplies every field, so the call shows everything the task receives. Its
 // handle is a local of the starter's, and the task never outlives the handle's scope: leaving it
 // without waiting cancels the task and waits for it there.
@@ -289,7 +289,7 @@ namespace task {
         mutex::unlock{ mutex = &t.lock }
     }
 
-    // ---- what std's blocking calls use (threads.md, Capabilities)
+    // ---- what std's blocking calls use (internals.md, Tasks, Capabilities)
 
     // Fails with `cancelled` if the calling task has been asked to stop. Never outside a task.
     fn check { mut cancel: Cancel } -> ! {

@@ -132,6 +132,226 @@ program asks for one (spec §19).
   exponent form below `1e-4` and from `1e16`, and a `.0` suffix; `f32_digits` is the same over
   an f32's own digits (spec §13, Formatting, rule 9).
 
+## Tasks: the Threaded backend
+
+The language's side is spec §15, Tasks; the API is std/task.ctx. What isn't built (the Evented
+backend, and open questions) is in [threads.md](threads.md). This section is how the built backend
+behaves, and why.
+
+### Capabilities
+
+`Io`, `Fs`, `Proc` (through `Io`) and `Threads` include `task::Cancel`, whose `#thread_local` static
+`current` is the running task's slot; `Net` will too (net.md). `Threads` is
+`{ ..os::Threads, ..Mem, ..task::State, ..task::Cancel }`: permission to run tasks, with the
+backend's state, and `Mem` because the table lives in pages. Each is a capability without fields, so
+`main` receives them. Everything a capability std hands out reaches is safe from many threads at
+once: per-thread (`io`'s output buffer), behind a lock, or atomic. Only namespace `task` reads
+`current`; the platform's layers call `task::check`, `get_cancel_object`, `begin_synchronous` and
+`end_synchronous`, passing the capability they hold. `proc`'s layer functions take `os::Proc`, which
+doesn't include `Io`, so `os::pipe_read`, `pipe_write`, `wait` and `wait_for` take a
+`mut cancel: task::Cancel`, passed as `cancel = &proc`.
+
+### Cancellation
+
+Each task has a flag and a cancel object, made with its slot and reset when the slot
+is reused. `cancel`, `cancel_all` and a handle's scope ending set the flag and signal the object. A
+task that is cancelled isn't stopped: its blocking calls fail, so the code it runs returns through its
+usual error paths, `defer`s and all. `cancel` then waits for the task to end, which a call that can't
+be interrupted (below) delays: a deadline is a request to stop at that time, not a bound on when the
+task has stopped.
+
+**Every blocking call of std's checks the flag before it blocks** (`task::check`) and fails with
+`task::cancelled`; `thread::sleep` returns early instead, and `io::read`, which has no error, returns
+0 as at the end of its input. Calls that may block for long also wait on the cancel object while
+they block:
+
+| Call | Windows | Linux | macOS |
+|---|---|---|---|
+| `proc::read`, `write` (std's child pipes) | overlapped: `WaitForMultipleObjects` on the operation's event and the cancel event; cancelled, `CancelIoEx(handle, &its_overlapped)` cancels this operation only, then waits for it to complete before its buffer is let go | `poll` on the pipe and the eventfd; this program's ends of child pipes are `O_NONBLOCK` | as Linux, with the cancel pipe |
+| `proc::wait`, `wait_for` | `WaitForMultipleObjects` on the child's handle and the cancel event | `poll` on a `pidfd_open` descriptor (Linux 5.3) and the eventfd, then `waitpid` | `kevent` with `EVFILT_PROC`/`NOTE_EXIT` and the cancel pipe, then `waitpid` |
+| `io::read` (standard input) | a console: wait on the input handle and the cancel event, then `PeekConsoleInputW`; events that aren't key presses are read and dropped and the wait goes on; on a key press the read begins, and waits for its line uninterruptibly. An inherited pipe: `begin_synchronous`, `_read`, `end_synchronous` (below). A file: checked before only | `poll` on fd 0 and the eventfd, then `read` (fd 0 stays blocking: it is shared with other programs) | as Linux |
+| `thread::sleep` | `WaitForSingleObject` on the cancel event, with the time | `poll` on the eventfd, with the time | as Linux |
+| `net`'s | overlapped, as pipes | `poll`, as pipes | as Linux |
+
+**Checked before only**, by decision, each with its reason: `fs`'s calls (regular files, and
+metadata: `open`, `list`, `remove`, renames), since disk IO can't be waited on with poll or kqueue
+and Windows doesn't promise to cancel file system calls (`MoveFileEx` among them), and they finish
+in disk time; reading standard input that is a file, for the same reason; name lookup on POSIX, since
+`getaddrinfo` has no cancellation and `getaddrinfo_a` is glibc's alone (net.md); `mutex::lock`,
+`condition::wait` and calls into C, which aren't IO and wait on what the program itself holds.
+
+**Windows' synchronous reads** (standard input from an inherited anonymous pipe, which can't be
+overlapped): `begin_synchronous` checks the flag and marks the slot "in a synchronous call", under the
+slot's lock; `end_synchronous` clears it, under the lock. `cancel`, holding the lock, calls
+`CancelSynchronousIo` on the worker's thread while the mark is set, and again every millisecond until
+it is cleared. A call not yet entered gets `ERROR_NOT_FOUND`, and the next try reaches it; the worker
+can't clear the mark and start another call while `cancel` holds the lock, so a late cancel can't
+reach a later call.
+
+**An operation that completes returns its result**, even when its task was cancelled meanwhile; the
+next blocking call sees the flag. A `write` cancelled after some of its bytes went fails with
+`cancelled`, and how many went is unknown: the stream's state is unknown, so the program closes it.
+
+**Cancellation follows the scopes down.** A task that waits (`wait`, `wait_for`, `wait_all`) when it
+is cancelled, or is cancelled while it waits, cancels what it waits for, then still waits for it to
+end; `wait_for` then waits to the end and returns true. A cancelled task that returns ends its own
+handles' scopes, which cancel their tasks (spec §15, Tasks, rule 6). So cancelling a task reaches every task
+it started, and a task never ends before the tasks it started. How a waiting task is woken: a waiter
+records in its own slot what it waits on, under the table's mutex; `cancel` sets the flag under the
+same mutex and broadcasts the condition the waiter waits on. The waiter checks the flag and the end
+under that mutex before every wait, so neither can be missed.
+
+`check_cancelled` is for loops that compute without blocking.
+
+A deadline is a task's: run the call with `start_concurrent`, then `wait_for` and `cancel`:
+
+```
+let mut t: task::Task(!Response)
+try task::start_concurrent{ &threads, task = &t, run = fetch{ &net, request = &request, _ } }
+let response = if task::wait_for{ &threads, task = &t, nanoseconds = 5000000000 } {
+    task::wait{ &threads, task = &t }
+} else {
+    task::cancel{ &threads, task = &t }      // task::cancelled, or what came first
+}
+```
+
+### How std's IO takes part
+
+| Capability | Calls that block | With the Threaded backend |
+|---|---|---|
+| `Fs` | `open`, `read`, `write`, `read_all`, `list`, ... | block the worker; checked before (Cancellation) |
+| `Io` | `read` (standard input), `flush` and writes that fill the buffer | block the worker. Each worker has its own output buffer (it is `#thread_local`), which it writes out when a task ends and before the end is published, ignoring the flag, so a cancelled task's output isn't lost; output that can't be written blocks it, as it would block the program without tasks. A task run at once shares its starter's buffer |
+| `Proc` | `read`, `write` (pipes), `wait`, `wait_for`, `run` | block the worker. A cancelled `wait` or `wait_for` leaves the `Child` as it was: not released, its pipes open, to be waited on or killed. A cancelled `run`, which owns its child, kills it, waits for it uninterruptibly (a killed child ends at once), and fails with `cancelled` |
+| `Threads` | `sleep` | waits on the cancel object |
+| `Net` | connect, accept, send, receive, name lookup | block the worker |
+
+`Net` and HTTP are designed in their own documents (net.md, http.md), with TLS: they are a protocol
+and a library, not concurrency. What this design fixes for them: blocking calls, `..task::Cancel` in
+`Net`, `cancelled` among their errors, and the table's row above.
+
+std's allocators are one thread's at a time: tasks that allocate each have their own arena, from
+pages of their own or from a buffer their starter gives them, or share one behind a mutex.
+
+### The backend
+
+What `task::State` holds and does, all of it std over the platform layer's threads:
+
+What `task::State` holds and does, all of it std over the platform layer's threads:
+
+- **The table.** Slots in pages from `mem::pages`, which grow as tasks start and are reused once their
+  task has ended and been waited on, under one mutex. A slot holds the task's entry and record, the
+  address of its result (its `Task`'s) or its group, the flag and the cancel object, what the task
+  blocks on or waits on, its worker, and its state: running, ended. A slot's generation guards
+  against a handle that names a reused slot.
+- **The record.** A start copies the bind's record into memory the slot owns (spec §15, Tasks, rule 5),
+  from free lists by size under the table's mutex, and frees it when the task ends. The bind's own
+  record, in the starter's frame, is dead once the start returns, so a loop that starts a task per
+  iteration (a server) keeps no record per task in its frame.
+- **Workers.** Threads that run one task at a time. `start` takes an idle worker, or starts one while
+  fewer than the limit are busy; otherwise, or when the operating system refuses a thread or the
+  table can't grow, it runs the task at once. `start_concurrent` and `start_blocking` take an idle
+  worker or start one whatever the limit, and fail with `out_of_resources` only when the operating
+  system refuses a thread or the table can't grow. A worker idle for 10 seconds ends.
+- **The limit** is soft and applies to `start` only: 64 busy workers, since tasks that do IO spend
+  their time blocked and the processors' count would be too few. `set_limit` takes the table's mutex
+  and applies to the next `start`; lowering it stops no worker. 0 makes `start` always run at once.
+- **No queue.** A task either has a worker or has run. Nothing waits for a free worker.
+- **Stacks.** Workers have 8 MiB by default, reserved and committed as used, with headroom past it for
+  the stack check to land in (a quarter of it, at least 1 MiB).
+  `set_stack` applies to workers started after it; an idle worker whose stack is smaller than
+  the setting ends instead of taking a task. (Stack bounds per task fn, which would size a worker to its task, are part of the Evented
+  backend: threads.md.)
+- **A panic** in a task ends the program, as on any thread, reported as `panic in task NAME:`, NAME
+  being the task fn's.
+
+### The interpreter
+
+`ctxc interp` runs `start`'s tasks at once, which `start` allows, and `wait` and its kin return at
+once. `start_concurrent`, `start_blocking` and their `_in` forms stop the run as not supported by
+interp: it runs one thread, so it can't keep their promise. Files, standard input and other programs
+are already not supported there, so what the interpreter runs of tasks is code that computes and
+prints; it detects no deadlock beyond what it already stops on (a mutex another thread holds).
+
+### What a program without tasks pays
+
+A program that doesn't take `Threads` starts no worker and links nothing of the backend. Its blocking
+calls check `task::Cancel`'s `current`, which stays 0: a plain global in a program that isn't
+threaded (spec §15, Entry point, rule 8), a thread-local in one that is. One load and a branch per
+blocking call. A function with a task handle pays for its scope's end only where the handle might
+still hold a task.
+
+### Decisions
+
+1. **A task's inputs are a bind's.** The bind is ctxlang's deferred call: it copies read-only
+   arguments and holds `mut` places when it runs (spec §4), and the escape check already knows what it
+   points into. A task gets its data, capabilities included, as any call does, checked the same way.
+   Considered and rejected: a `*mut T` (unchecked); a work queue as a capability (a capability is
+   permission, not data; it holds no state of its own; it goes one way, and a one-shot task becomes a
+   queue of one); a generated id per `#task` fn with an argument literal typed by it (the fn's name is
+   already its static id and the bind already its typed arguments; it would need a type that depends
+   on a value).
+2. **Granular capabilities**, not one `Io` for everything as Zig has: `Threads` is permission to run
+   concurrently, and `Fs`, `Io`, `Proc` and `Net` stay permissions for what they touch. They share the
+   backend's state by including `task::Cancel`, which costs no space and changes no public signature.
+3. **No keywords, no colour.** `start` and `wait` are std functions taking `Threads`; a function that
+   blocks is the same function in a task or not.
+4. **Structured, with no detach.** Every task ends within its handle's scope, which is what lets it
+   borrow its starter's locals; leaving a scope without waiting cancels, as Swift's `async let` does,
+   so the only implicit thing is cleanup and a scope that wants a result says `wait`. Considered and
+   rejected: linear handles that must be waited on exactly once, which fight early returns and need
+   the same implicit end anyway, and add a kind of type generics, arrays and control flow must learn.
+5. **The handle holds the result**, in the starter's frame, so the backend's table needs no room for
+   results of every type. It is never copied, so it doesn't move while the task writes into it.
+6. **Capabilities are shared, data is exclusive.** Tasks may share capabilities, which are permission;
+   std makes what they reach safe from many threads. Places follow exclusivity over the task's life.
+   What a library can't do from another thread is the capability's to declare (`#thread_bound`).
+7. **`#task` marks entries.** Only task fns start tasks, so the set is closed: stack bounds per task,
+   thread-boundness checked at the declaration, and a place that says "this is a unit of concurrent
+   work". A library function is started through a small task fn of the program's.
+8. **`start` returns no error**, and runs the task at once when it can't run it concurrently; only
+   `start_concurrent` and `start_blocking` promise concurrency, and may fail. So most code runs on any
+   backend and in the interpreter, and code that needs concurrency says so.
+9. **Cancellation fails blocking calls** rather than stopping a task, so a task always leaves through
+   its own error paths; a cancelled wait cancels what it waits for and a task's ending scopes cancel
+   what it started, so cancellation follows tasks down. Calls that can't be interrupted are listed,
+   each with its reason, rather than promised.
+10. **The backend is picked per executable when it is built**, as the platform's layer is. `Threads`
+   must stay a capability without fields, since `main` receives it, so it can't hold the function
+   fields a choice at run time would need; and the blocking calls that would dispatch take `Fs`,
+   `Io` and `Proc`, not `Threads`. A test build may pick a backend that simulates IO and time.
+11. **No signals for cancellation on POSIX.** A cancel object per slot, waited on with the operation,
+   interrupts every call that can be waited on; a signal would add a reserved signal, an
+   async-signal-safe handler, and a re-send protocol for no call that the cancel object doesn't
+   already reach.
+
+### Decisions made building it
+
+What the Threaded backend's build settled, where this document left room:
+
+1. **`task::Cancel`'s `current` is the running task's slot**, `?*mut Slot`, not a number: slots live
+   in pages that are never freed, so the pointer stays valid, and `check` is one load of its flag.
+2. **Capabilities never conflict in a call** (spec §3.1, rule 6), not only at a start: one never
+   changes (spec §15, rule 8), so `os::pipe_read{ &proc, cancel = &proc, ... }` passes one twice.
+3. **The namespace that declares a handle type implements it**: std's `task` keeps pointers to
+   groups and copies results, so the handle rules (spec §15, Tasks, rule 4) don't apply inside it.
+4. **A handle that is an array's element ends its loan only with its scope**: which element a wait
+   names isn't known to the compiler. Waiting on `loads[i]` doesn't free what that task borrowed;
+   the array's scope does.
+5. **A wait or cancel on a handle zero on every path, and a start into one that holds a task on
+   every path, are compile errors**; on some paths only, they panic at run time. A loop forgets
+   what it knows of a handle declared before it.
+6. **A defer's body is checked against the loans live where it is written**: it may run at an early
+   exit while they still are.
+7. **A bind written as a start's `run` has its size and its task fn's name in its record**, after
+   its code: `@record_size` reads the size, and a worker names the task in a panic's report
+   (`panic in task NAME:`) from the copy (`rt::task_name`).
+8. **The interpreter refuses `start_concurrent`** through the platform layer: `os::CONCURRENT` is
+   false there, and `os::concurrency_unsupported` stops the run.
+9. **On Linux a child started with `die_with_parent` from a task ends with the worker's thread**
+   (`PR_SET_PDEATHSIG`), which may end 10 seconds after the task, when the worker has waited for
+   another in vain.
+10. **KOTOR's mixer shares its device through a pointer** (spec §3.1, rule 6), as the thread did: the game
+   reads `pumping` and `underruns` while it runs, so the device can't be the task's alone.
 
 ## Decisions made
 

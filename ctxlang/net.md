@@ -1,7 +1,7 @@
 # Networking and TLS: design
 
-Status: **design**, threads.md's step 8. Nothing here is built. It is written against threads.md's
-contract as built: the Threaded backend, `task::Cancel` and its four functions, cancellation that
+Status: **design**, threads.md's item 1. Nothing here is built. It is written against the tasks'
+contract as built (internals.md, Tasks): the Threaded backend, `task::Cancel` and its four functions, cancellation that
 fails blocking calls, and the layers' cancellable waits that `proc` already uses. http.md is built on
 top of it. TLS is OpenSSL 3 on every platform, verified by the operating system on Windows and
 macOS (TLS, OpenSSL).
@@ -10,9 +10,9 @@ macOS (TLS, OpenSSL).
 
 A program that serves or fetches anything over a network needs sockets, names, and TLS. ctxlang has
 files, pipes and child processes, each behind a capability, each with blocking calls that a task can
-cancel. Networking is the case threads.md was shaped around: many connections open at once, each a
+cancel. Networking is the case tasks were shaped around: many connections open at once, each a
 task, each blocked in a receive most of its life, and a server that stops by cancelling the task that
-accepts. What threads.md fixed for it (Capabilities; How std's IO takes part): blocking calls,
+accepts. What tasks fixed for it (internals.md, Tasks: Capabilities; How std's IO takes part): blocking calls,
 `..task::Cancel` in `Net`, `task::cancelled` among its errors, and a row in Cancellation's table.
 
 ## What other languages learned
@@ -38,8 +38,8 @@ accepts. What threads.md fixed for it (Capabilities; How std's IO takes part): b
   (Name lookup). TLS libraries that work over memory buffers (OpenSSL's BIOs, Schannel's SSPI,
   rustls) leave the socket to the caller, so TLS needs no cancellation of its own.
 
-ctxlang's shape follows from what it already has: blocking calls everywhere (threads.md's no-colour
-rule), a capability that says who may touch the network, a declared open error set as `proc` has,
+ctxlang's shape follows from what it already has: blocking calls everywhere (internals.md, Tasks,
+Decisions, 3), a capability that says who may touch the network, a declared open error set as `proc` has,
 the layers' waits for cancellation, and TLS as a state machine over buffers so that net is the only
 code that blocks.
 
@@ -89,7 +89,7 @@ capability Net { ..task::Cancel, ..os::Net, ..os::Tls }
 ```
 
 - `task::Cancel`, so that every blocking call checks and waits on the task's cancel object
-  (threads.md, Capabilities).
+  (internals.md, Tasks, Capabilities).
 - `os::Net`, the platform layer's permission and state for sockets (below), as `Proc` includes
   `os::Proc`. On Windows it holds Winsock's statics; on Linux and macOS it is empty, since sockets are
   the C library's.
@@ -105,7 +105,7 @@ nothing beyond `Net`'s sockets but read the trust store, which is part of reachi
 layer declares identically, each declaring `net::Error` (spec §8, Errors, rule 14), as `proc` calls
 `os::pipe_read`. They take `mut net: Net`, the layer's own `os::Net`, and those that block also
 `mut cancel: task::Cancel`, called as `os::tcp_receive{ &net, cancel = &net, ... }`: std's `Net`
-converts to both (threads.md, Decisions made building it, 2).
+converts to both (internals.md, Tasks, Decisions made building it, 2).
 
 **Winsock's start.** Windows needs `WSAStartup` before the first socket call, and a lookup of
 `ConnectEx` and `AcceptEx` (`WSAIoctl` with `SIO_GET_EXTENSION_FUNCTION_POINTER`, so `mswsock` isn't
@@ -224,9 +224,9 @@ allocates is freed before `lookup` returns; nothing of the caller's is allocated
   calls `GetAddrInfoExCancel` with the handle, which doesn't block, then waits for the event, which
   the cancelled query still sets; `GetAddrInfoExOverlappedResult` then gives `WSA_E_CANCELLED`, and
   `lookup` fails with `task::cancelled`. A query that completed first stands, and its result is
-  returned, as threads.md says of any operation (verified against Microsoft's documentation of
+  returned, as internals.md says of any operation (Tasks, Cancellation; verified against Microsoft's documentation of
   `GetAddrInfoExW` and its sample, which cancels the same way).
-- **Linux and macOS: checked before only**, as threads.md's table already says. `getaddrinfo` can't be
+- **Linux and macOS: checked before only**, as the cancellation table already says (internals.md, Tasks). `getaddrinfo` can't be
   interrupted; `getaddrinfo_a` is glibc's alone, and runs the query on a thread of its own anyway. A
   cancel then waits for the lookup to end: at most the resolver's timeout times its attempts times its
   servers (`timeout:5 attempts:2` by default in resolv.conf, so 10 s for one server).
@@ -315,7 +315,7 @@ Linux, which forks; on macOS `posix_spawn`'s `POSIX_SPAWN_CLOEXEC_DEFAULT` alrea
 **Happy Eyeballs is out of scope** (RFC 8305: start a connect to the first address, start the next
 250 ms later if none has connected, take the first that does). It needs concurrent connects, so
 `Threads`, which `net`'s functions don't take: `Net` is permission to reach the network, not to run
-tasks (threads.md, Decisions, 2). A program composes it from `lookup` and `connect` in tasks:
+tasks (internals.md, Tasks, Decisions, 2). A program composes it from `lookup` and `connect` in tasks:
 
 ```
 struct Race { lock: mutex::Mutex, socket: ?net::Socket, last: ! }
@@ -368,6 +368,62 @@ fn connect_racing { mut net: Net, mut threads: Threads, addresses: []net::Addres
   systems' defaults differ (Linux dual-stack, Windows IPv6-only, OpenBSD with no choice), so one
   setting gives one behaviour.
 - The backlog, `SOMAXCONN` for 0.
+
+### A server
+
+A task per connection, in a group, so stopping the server (cancelling the task that runs `serve`)
+stops every handler, and `serve` returning, by any path, waits for them: the group is its local.
+`mem` gives pages and never takes them back, so a connection's memory is reused: a handler that ends
+puts its `Connection` on the server's free list, under a mutex. A handler borrows nothing of `serve`'s
+frame: `c` points into pages, which tasks share as threads do (spec §3.1, rule 6). `net`'s calls
+are as they were sketched before this document; Order of work, 8 makes it compile.
+
+```
+struct Connection { socket: net::Socket, server: *mut Server, next: ?*mut Connection }
+struct Server { lock: mutex::Mutex, free: ?*mut Connection }        // connections to reuse
+
+fn give_back { server: *mut Server, c: *mut Connection } {
+    mutex::lock{ mutex = &server.lock }
+    c.next = server.free
+    server.free = c
+    mutex::unlock{ mutex = &server.lock }
+}
+
+fn take_connection { mut mem: Mem, server: *mut Server } -> ?*mut Connection {
+    mutex::lock{ mutex = &server.lock }
+    defer mutex::unlock{ mutex = &server.lock }
+    if let c = server.free {
+        server.free = c.next
+        return c
+    }
+    let page = mem::pages{ &mem, size = @size_of(Connection) } ifnull { return null }
+    return @cast(*mut Connection, &page[0])
+}
+
+#task
+fn handle { mut net: Net, c: *mut Connection } -> ! {
+    serve_requests{ &net, socket = c.socket } iferr {}  // requests and responses until the peer closes
+    net::close{ &net, socket = c.socket }
+    give_back{ server = c.server, c }
+}
+
+fn serve { mut net: Net, mut mem: Mem, mut threads: Threads, server: *mut Server, listener: net::Listener } -> ! {
+    let mut handlers: task::Group
+    while true {
+        let socket = try net::accept{ &net, listener }      // fails with cancelled when serve's task is
+        let c = take_connection{ &mem, server } ifnull {
+            net::close{ &net, socket }
+            continue
+        }
+        c.* = Connection{ socket, server, next = null }
+        task::start_concurrent_in{ &threads, group = &handlers, run = handle{ &net, c, _ } } iferr err{ error } {
+            net::close{ &net, socket }
+            give_back{ server, c }
+            return error
+        }
+    }
+}
+```
 
 ### Options
 
@@ -480,7 +536,7 @@ Every blocking call checks the flag first (`task::check`) and fails with `task::
 | `lookup` | `GetAddrInfoExW` with an event and a cancel handle; `GetAddrInfoExCancel` (Name lookup) | checked before only | checked before only |
 | `shutdown`, `close`, options, addresses | don't block | | |
 
-What a cancelled call leaves, as threads.md says of any operation: **one that completed stands**, and
+What a cancelled call leaves, as internals.md says of any operation (Tasks, Cancellation): **one that completed stands**, and
 returns its result; the next call sees the flag. Otherwise:
 
 - A cancelled `receive` received nothing that is lost on Windows (`CancelIoEx` cancels before data is
@@ -488,7 +544,7 @@ returns its result; the next call sees the flag. Otherwise:
   ran). The socket is still usable, but a protocol over it is mid-message, so a program normally
   closes it.
 - A cancelled `send` may have sent some of the bytes, how many unknown: **the stream's state is
-  unknown, and the program closes it** (threads.md, Cancellation).
+  unknown, and the program closes it** (internals.md, Tasks, Cancellation).
 - A cancelled `connect` or `accept` leaves nothing: the socket being connected, or made for AcceptEx,
   is closed by the call.
 
@@ -498,8 +554,8 @@ reads do. The cost is two system calls per operation; the Evented backend replac
 ## Timeouts
 
 There are no timeout parameters and no deadlines on sockets. A deadline is a task's: run the call in
-a task started with `start_concurrent`, and `task::wait_for` then `task::cancel` (threads.md,
-Examples, A timeout):
+a task started with `start_concurrent`, and `task::wait_for` then `task::cancel` (internals.md,
+Tasks, Cancellation):
 
 ```
 #task
@@ -524,7 +580,8 @@ gets those and no shorter ones.
 
 Considered and rejected: a deadline per socket, as Go has, or a timeout per call. Either is a second
 way to stop a call, beside cancellation, with its own error and its own interaction with it, and
-threads.md's design is that a deadline is a request to stop at a time (Decisions, 9). Its cost is one
+the tasks' design is that a deadline is a request to stop at a time (internals.md, Tasks,
+Decisions, 9). Its cost is one
 task, which on the Evented backend is a fiber.
 
 ## TLS
@@ -744,8 +801,8 @@ error.
 runs only under the stream's lock, and the socket IO between engine steps doesn't hold it, so a
 reader blocked in `net::receive` doesn't block the writer. This is what WebSocket needs (http.md).
 Two readers, or two writers, at once are the program's error. Since `read` and `write` take the
-stream as `mut`, two tasks share it through a pointer to memory both reach (threads.md, Scoping, rule
-5), as the mixer's device is shared.
+stream as `mut`, two tasks share it through a pointer to memory both reach (spec §3.1, rule
+6), as the mixer's device is shared.
 
 **Server name.** `begin_client`'s `host` is required and is the name verified: `Trust::roots` checks
 the name too, so a test's certificate is for `localhost` or `127.0.0.1`.
@@ -853,7 +910,7 @@ without colliding, and passes the port to its peer on the command line or throug
    ends with `task::cancel` returning `cancelled` within a second. A lookup cancelled while Windows
    is still resolving can't be produced reliably (a test can't make the configured DNS servers
    slow), so `GetAddrInfoExCancel`'s path is covered by Testing 6.
-4. **A group's server** as threads.md's example: 50 clients at once against an accept loop with a
+4. **A group's server** as in TCP, A server: 50 clients at once against an accept loop with a
    handler per connection, then cancelling the server's task, which must end every handler.
 5. **TLS** against Python's `ssl`: a Python TLS server with checked-in test certificates
    (tests/data/tls: a test CA, a server certificate for `localhost` and `127.0.0.1`, one expired, one
@@ -886,7 +943,7 @@ next. "Verified" is what must pass before it is done; every package also runs th
    ```
 
    A change to std/task.ctx: `await_group` with a deadline, as `await` has one. Files: std/task.ctx,
-   spec §17's `task` row, threads.md's API. Verified: a group whose tasks end before the deadline
+   spec §17's `task` row. Verified: a group whose tasks end before the deadline
    (true, and `wait_all` then gives their first error at once), one whose task sleeps past it (false,
    the group untouched, then `cancel_all`), 0 on a busy group, and a waiter cancelled while it waits
    (the group stopped, true).
@@ -916,8 +973,8 @@ next. "Verified" is what must pass before it is done; every package also runs th
    itself without a lookup; `name.invalid` gives `not_found`; the cancel test on Windows.
 7. **UDP.** The datagram functions, `SIO_UDP_CONNRESET`. Files: the layers, std/net.ctx. Verified:
    Testing 1's UDP cases and a cancelled `receive_from`.
-8. **Server test and docs.** Testing 4; threads.md's server example made to compile against the real
-   API; spec §17's table rows for `net`. Files: tests, threads.md, spec.md.
+8. **Server test and docs.** Testing 4; TCP's server example made to compile against the real
+   API; spec §17's table rows for `net`. Files: tests, net.md, spec.md.
 9. **The OpenSSL binding.** std/tls/openssl.ctx over memory BIOs; `os::Tls` in every layer with its
    `#c::link`s (Windows' static archives and their dependencies, Linux's `-l:libssl.so.3`, macOS's
    archives with Homebrew's `dirs` and the frameworks, the interpreter's empty, with `os::TLS` false);
@@ -940,7 +997,7 @@ next. "Verified" is what must pass before it is done; every package also runs th
 1. **`Net` is one capability for TCP, UDP, lookup and TLS.** Considered and rejected: `Tls` of its
    own (it reaches nothing but sockets and the trust store, so it would be a permission no program
    holds without `Net`); `Dns` of its own (a program that connects to names needs both, always).
-2. **Blocking calls, cancellation for deadlines**, as threads.md decides for all IO. Rejected:
+2. **Blocking calls, cancellation for deadlines**, as tasks decide for all IO (internals.md, Tasks, Decisions, 9). Rejected:
    timeouts per call and deadlines per socket (Timeouts).
 3. **Sockets are numbers, as `proc::Pipe` and `fs::File` are**, closed by the program. Rejected: a
    socket that closes itself when its scope ends, which ctxlang has no destructors for; a handle type
