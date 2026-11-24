@@ -916,7 +916,7 @@ namespace parser {
                     if a == tok::Kind::eof or a == tok::Kind::kw_else { return false }
                     if after.nl {
                         if arms { return false }
-                        if continues{ k = a } { return true }
+                        if continues{ k = a } or is_at{ p, i = k + 1 } { return true }
                         if a == tok::Kind::minus or a == tok::Kind::amp {
                             p.cond_break = k + 1
                             p.cond_mark = diag::mark{ diags = p.diags.* }
@@ -937,7 +937,7 @@ namespace parser {
     // ends in: k continues an expression and begins none, and so no statement. `-` and `&`
     // begin one (`-1`, `&x`), and a postfix `(`, `[` or `{` must be on its expression's line.
     fn continues { k: tok::Kind } -> bool {
-        return k == tok::Kind::kw_and or k == tok::Kind::kw_or or k == tok::Kind::kw_is or is_cmp{ k } or is_handler{ k }
+        return k == tok::Kind::kw_and or k == tok::Kind::kw_or or is_cmp{ k } or is_handler{ k }
                or k == tok::Kind::plus or k == tok::Kind::plus_wrap or k == tok::Kind::minus_wrap
                or k == tok::Kind::star or k == tok::Kind::star_wrap or k == tok::Kind::slash or k == tok::Kind::percent
                or k == tok::Kind::pipe or k == tok::Kind::caret or k == tok::Kind::shl or k == tok::Kind::shr
@@ -1015,7 +1015,7 @@ namespace parser {
             let t = p.toks[k]
             if t.kind == tok::Kind::lbrace { return true }
             if t.kind == tok::Kind::rbrace or t.kind == tok::Kind::semi { return false }
-            if t.nl and not (continues{ k = t.kind } or t.kind == tok::Kind::minus or t.kind == tok::Kind::amp) { return false }
+            if t.nl and not (continues{ k = t.kind } or is_at{ p, i = k } or t.kind == tok::Kind::minus or t.kind == tok::Kind::amp) { return false }
             k = k + 1
         }
         return false
@@ -1235,7 +1235,7 @@ namespace parser {
         let start = p.i
         let mut e = null_expr{ &p }
         let h = p.hand
-        if next_is{ p, k = tok::Kind::kw_is } {
+        if at_is{ p } {
             let op = p.toks[p.i]
             let a = e
             e = is_expr{ &p, start, e }
@@ -1251,8 +1251,29 @@ namespace parser {
             return e
         }
         p.hand.bare = false
-        if is_cmp{ k = kind{ p, ahead = 0 } } or next_is{ p, k = tok::Kind::kw_is } { fail{ &p, msg = "comparisons do not chain" } }
+        if is_cmp{ k = kind{ p, ahead = 0 } } or at_is{ p } { fail{ &p, msg = "comparisons do not chain" } }
         return e
+    }
+
+    // Whether the current token, after an expression, is the operator `is` (§8, Is).
+    fn at_is { p: Parser } -> bool {
+        return not p.bad and is_at{ p, i = p.i }
+    }
+
+    // Whether token i, after an expression, is the operator `is`: `is` is a keyword only
+    // there, and a name anywhere else (§1, rule 4). On the expression's line it is always the
+    // operator, since no name can follow an expression. At the start of a line it is one only
+    // before a pattern on that line, a name, `null` or an integer literal, `-` and one too: a
+    // statement that begins with the name `is` goes on with something else (`is = 1`,
+    // `is{ ... }`, `is.x`).
+    fn is_at { p: Parser, i: usize } -> bool {
+        let t = p.toks[i]
+        if t.kind != tok::Kind::ident or not slice::eq_bytes{ a = text_of{ p, t }, b = "is" } { return false }
+        if not t.nl { return true }
+        if i + 1 >= p.toks.len or p.toks[i + 1].nl { return false }
+        let k = p.toks[i + 1].kind
+        if k == tok::Kind::minus and i + 2 < p.toks.len { return p.toks[i + 2].kind == tok::Kind::int or p.toks[i + 2].kind == tok::Kind::char }
+        return k == tok::Kind::ident or k == tok::Kind::kw_null or k == tok::Kind::int or k == tok::Kind::char
     }
 
     // `e is a | b`, after e, which began at token `start`. A `not` in front of e takes the whole
@@ -2128,10 +2149,15 @@ namespace parser {
         return p.text[t.span.start..t.span.end]
     }
 
-    // A name, or a missing one where the name should have been.
+    // A name, or a missing one where the name should have been. A keyword there gets told so.
     fn ident { mut p: Parser } -> syntax::Name {
         if next_is{ p, k = tok::Kind::ident } { return keyword_name{ &p } }
-        expected{ &p, what = "a name" }
+        if tok::is_keyword{ kind = kind{ p, ahead = 0 } } {
+            let word = utf8::String{ bytes = text_of{ p, t = p.toks[p.i] } }
+            failf{ &p, msg = @fmt("expected a name, found '{}': `{}` is a keyword and can't be a name; use another, such as `{}_`", word, word, word) }
+        } else {
+            expected{ &p, what = "a name" }
+        }
         let at = prev_end{ p }
         return syntax::Name{ id = new_id{ &p }, span = source::Span{ file = p.file, start = at, end = at }, text = p.text[..0] }
     }

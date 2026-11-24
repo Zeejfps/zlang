@@ -324,11 +324,26 @@ What a model writes by default should compile, or fail with the exact fix.
       ctxc, std, the examples or KOTOR has one (their syntax dumps are unchanged); one of
       the suite's programs did, and is now `try (mk{ p = &x }.r)`.
 
-- [ ] **3.7 `is` doesn't break names.**
+- [x] **3.7 `is` doesn't break names.**
   `let is = ...` and `fn is{}` are "expected a name, found 'is'", far from the cause. Make `is`
   contextual (as `distinct` is), or give the error the fix.
   - Details: F#15; [spec §1, rule 4](spec.md#1-top-level).
   - *Done when:* `is` works as a name, or the error says it is a keyword and suggests another.
+  - *Done:* `is` is a name ([spec §8, Is, rule 9](spec.md#is), [§1, rule 4](spec.md#1-top-level)):
+    a local, a fn, a field, a variant, a namespace. It is the operator only after an
+    expression. On the expression's line that is every `is` there, since no name can follow
+    an expression; so no program that compiled reads differently. At the start of a line it
+    is the operator when a pattern follows on that line (a name, `null`, an integer literal),
+    as a test that goes on from the line before does, and a name before anything else
+    (`is = 1`, `is{ ... }`, `is.x = 1`); every such statement was a syntax error before. The
+    lexer has no `is` token any more, and the syntax dumps of std, ctxc, the examples and
+    KOTOR are unchanged.
+    Every other keyword where a name belongs now says what it is, at the word: ``expected a
+    name, found 'for': `for` is a keyword and can't be a name; use another, such as `for_` ``,
+    for a local, a fn, a field, a context field, a variant, a const, a namespace, an item's
+    name, a field access and a binding alike (they share the parser's one place for a name).
+    `in`, `at`, `distinct`, `error` and `static` were names outside their own place already,
+    and the spec's list of keywords now has `ifoverflow`, which it had left out.
 
 ## 4. Don't make the model hand-roll error-prone code
 

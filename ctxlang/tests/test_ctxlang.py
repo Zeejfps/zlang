@@ -1150,6 +1150,88 @@ fn main { mut io: Io } { _ = run{ &io, k = K::a, n = 1 } iferr 0 }
         self.assertIn('live a i32 main.ctx:12:30-15:6\n', out)      # to the end of its block
 
 
+class KeywordsAsNames(Base):
+    """§1, rule 4: `is` is a keyword only after an expression, and a keyword where a name
+    belongs is an error that says it is one."""
+
+    def test_is_is_a_name(self):
+        self.assertOutput(r"""
+struct S { is: bool }
+union U { is, isnt{ is: i32 } }
+namespace is { fn two {} -> i32 { return 2 } }
+fn is { a: i32, b: i32 } -> bool { return a == b }
+fn pick { is: bool } -> U { if is { return U::is }; return U::isnt{ is = 4 } }
+fn main { mut io: Io } {
+    let same = is{ a = 1, b = 1 }                   // a fn,
+    let s = S{ is = same }                          // a field,
+    let u = pick{ is = s.is }
+    io::println_bool{ &io, n = u is is }            // the operator, then a variant
+    io::println_bool{ &io, n = s.is and u is is | isnt }
+    let v = pick{ is = false }
+    if v is isnt{ is } { io::println_i64{ &io, n = is } }     // a binding
+    let t = v
+        is isnt | is                                // the operator: a pattern follows on its line
+    let mut is = t                                  // a local
+    is = not is                                     // a statement that begins with the name
+    io::println_bool{ &io, n = is }
+    let n = match u {
+        is => 1
+        isnt{ is } => is
+    }
+    let w = if is { 1 } else { n
+        + is::two{} }                               // a namespace
+    io::println_i64{ &io, n = w }
+    for is in [1, 2] { io::println_i64{ &io, n = is } }
+    if u
+       is is { io::println{ &io, s = "next line" } }
+}
+""", 'true\ntrue\n4\nfalse\n3\n1\n2\nnext line\n')
+
+    def test_is_begins_a_statement(self):
+        # At the start of a line, `is` is the operator only before a pattern.
+        self.assertOutput(r"""
+fn is { mut io: Io, n: i32 } { io::println_i64{ &io, n } }
+struct P { x: i32 }
+fn main { mut io: Io } {
+    let a = 1
+    is{ &io, n = a }                                // not `a is ...`: a call
+    let mut is = P{ x = 2 }
+    let b = a
+    is.x = b + 5
+    io::println_i64{ &io, n = is.x }
+}
+""", '1\n6\n')
+
+    def test_a_keyword_is_no_name(self):
+        said = "expected a name, found '%s': `%s` is a keyword and can't be a name; use another, such as `%s_`"
+        for decl, word, line, col in [
+            ('fn g {} { let for = 1 }', 'for', 4, 15),
+            ('fn g {} { let mut try = 1 }', 'try', 4, 19),
+            ('fn match {} {}', 'match', 4, 4),
+            ('fn g { while: i32 } {}', 'while', 4, 8),
+            ('struct T { type: i32 }', 'type', 4, 12),
+            ('enum E: u8 { true, false }', 'true', 4, 14),
+            ('union U { null }', 'null', 4, 11),
+            ('const and: i32 = 1', 'and', 4, 7),
+            ('namespace fn {}', 'fn', 4, 11),
+            ('fn g {} { _ = f{ if = 1 } }', 'if', 4, 18),
+            ('fn g { s: S } -> i32 { return s.else }', 'else', 4, 33),
+            ('fn g { s: ?S } { if s is some{ ifnull } { } }', 'ifnull', 4, 32),
+        ]:
+            with self.subTest(decl=decl):
+                with self.assertRaises(CompileError) as cm:
+                    run('\nstruct S { a: i32 }\nfn f { a: i32 } -> i32 { return a }\n%s\nfn main {} {}\n' % decl)
+                self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (said % (word, word, word), (line, col)), decl)
+        # The words that are keywords in one place only are names everywhere else.
+        self.assertOutput(r"""
+fn main { mut io: Io } {
+    let is = 1; let at = 2; let in = 3; let distinct = 4; let error = 5; let static = 6
+    for in in [is, at] { io::println_i64{ &io, n = in } }
+    io::println_i64{ &io, n = in + distinct + error + static }
+}
+""", '1\n2\n18\n')
+
+
 class ListExample(Base):
     def test_runs(self):
         self.assertOutput(LIST_SRC, '10\n20\n30\n40\n100\n10\n')
@@ -2189,7 +2271,7 @@ class Parser(Base):
             ('for i at k in 0..n {}', "a range's number is its own index: write `for i in lo..hi`, without the `at`", 2, 11),
             ('for i in range(n) {}', 'a `for` counts over a range written `lo..hi`: write `for i in 0..n`', 2, 14),
             ('for i in 0.. {}', "expected an expression, found '{'", 2, 18),
-            ('let for = 1', "expected a name, found 'for'", 2, 9),
+            ('let for = 1', "expected a name, found 'for': `for` is a keyword and can't be a name; use another, such as `for_`", 2, 9),
             ('let some{ value } = x', 'a `let` with a pattern needs an `else`', 3, 1),
             ('let null = x', 'a `let` with a pattern needs an `else`', 3, 1),
             ('let ok{ value } = r else err{ e } {', "expected '}' to close block", 3, 2),
@@ -8479,12 +8561,14 @@ fn main {} {
 }
 """ % body, 'expected Ref, got ?Ref')
 
-    def test_is_is_a_keyword(self):
-        self.assertCompileError("""
-fn main {} {
-    let is = 1
+    def test_is_is_a_keyword_only_after_an_expression(self):
+        # §1, rule 4; class KeywordsAsNames has the rest.
+        self.assertOutput("""
+fn main { mut io: Io } {
+    let is: ?i32 = 1
+    io::println_bool{ &io, n = is is some }
 }
-""", "expected a name, found 'is'")
+""", 'true\n')
 
 
 class IfLet(Base):
@@ -12480,7 +12564,7 @@ fn main { mut o: g::O } -> i32 { return g::a{ &o } + g::b{ p = &o } }
             ('capability V { extern x: i32 }\ncapability W { extern x: i32 }\ncapability O { ..V, ..W }\nfn main {} {}',
              'capability `O` includes `x` twice: from `V` and from `W`', 3, 21),
             # `extern` marks a capability's field only
-            ('struct S { extern x: i32 }\nfn main {} {}', "expected a name, found 'extern'", 1, 12),
+            ('struct S { extern x: i32 }\nfn main {} {}', "expected a name, found 'extern': `extern` is a keyword and can't be a name; use another, such as `extern_`", 1, 12),
             # `#c::symbol` names a C variable's symbol; a field's attributes go on lines before it
             ('capability O {\n    #c::symbol{ name = "x" }\n    f: extern fn{}\n}\nfn main {} {}',
              "`c::symbol` on a capability's field applies only to a C variable, `extern name: T`", 2, 5),

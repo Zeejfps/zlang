@@ -58,6 +58,9 @@ namespace gff {                                   // namespaces may span files (
 - **Results must be used:** `_ = f{}` to discard. A bare call statement must return nothing.
 - **No methods:** `list::push{ list = &xs, item }`, not `xs.push`. No operator overloading,
   no traits; a generic `T` can't be compared or hashed unless you pass functions for it.
+- **A keyword can't be a name** (§1, rule 4), and the error says which word it is: name the
+  field `kind`, not `type`, and the local `found`, not `match`. `is`, `in`, `at`, `error`,
+  `distinct` and `static` are keywords only in their own place, and names everywhere else.
 
 ## Types (§12)
 

@@ -107,8 +107,6 @@ as the write-ups gave them.
     `w` needs `mut w`, which spreads to every caller up to the routine. *Hit by 2:* engine (2),
     hud.
 
-15. **`is` is a keyword,** so `let is = gff::get_struct{ ... }` and `fn is{ a, b }` are "expected a
-    name, found 'is'", far from the cause. *Hit by 2:* gui (1), render (1).
 
 16. **Hex literals aren't in the spec.** The lexer takes `0xFFFFFFFF`, `0b` and `_` separators,
     but §11 Literals shows only decimal, so drafts wrote `4294967295`. *Hit by 2:* glspike, walk.
