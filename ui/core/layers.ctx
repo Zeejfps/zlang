@@ -632,7 +632,9 @@ namespace ui {
                 if above < n {
                     ui.layers.modals[above].saved = m.saved
                 } else if not ui.focus.claimed {
+                    // The focus it gives back wins over a set_focus still waiting for its widget.
                     ui.focus.focused = m.saved
+                    ui.focus.wanted = NO_ID
                 }
             }
             let mut left: usize = 0

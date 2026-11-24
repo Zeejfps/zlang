@@ -35,6 +35,7 @@ fn main { mut io: Io, mut mem: Mem } -> i32 {
     check_links{ &io, &t, &heap }
     check_hover_focus{ &io, &t, &heap }
     check_focus_drop{ &io, &t, &heap }
+    check_focus_wait{ &io, &t, &heap }
     check_modal{ &io, &t, &heap }
     check_state{ &io, &t, &heap }
     check_keep{ &io, &t, &heap }
@@ -812,6 +813,61 @@ fn check_hover_focus { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     ui_test::expect{ &io, &t, ok = ui::is_focused{ ui = gui, id = a } and app.spots[0].it.focused and not app.spots[1].it.focused,
         what = "frame 6: B under the resting pointer does not take it back" }
     ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "the hover-focus frames are clean" }
+}
+
+// set_focus on a widget that is not recorded yet waits for it: through the end of the frame that
+// asked and two frames more. Recorded in that time it has the focus from the frame after it
+// appears; later it does not. A frame that also has a modal open after the call keeps the ask.
+fn check_focus_wait { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    let mut gui = make_ui{ &heap } iferr { return }
+    let mut d = make_driver{ &heap } iferr { return }
+    let mut app = make_app{}
+    add_focus_spots{ &app }
+    let b = find_id{ ui = gui, name = "B" }
+    app.spots[2].shown = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 1
+    // Asked between frames 1 and 2; B appears in frame 4, the second frame after the one that asked.
+    ui::set_focus{ ui = &gui, id = b }
+    ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 2
+    let waits2 = ui::is_focused{ ui = gui, id = b }
+    ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 3
+    let waits3 = ui::is_focused{ ui = gui, id = b }
+    app.spots[2].shown = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 4
+    let seen4 = app.spots[2].it.focused
+    ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 5
+    ui_test::expect{ &io, &t, ok = waits2 and waits3 and seen4 and app.spots[2].it.focused and ui::is_focused{ ui = gui, id = b },
+        what = "focus wait: a set_focus on B, not recorded, waits two frames; B recorded in the second has it there and keeps it" }
+
+    // One frame too late: asked before frame 6, B appears in frame 9: the ask is gone by then.
+    ui::set_focus{ ui = &gui, id = ui::NO_ID }
+    app.spots[2].shown = false
+    ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 6
+    ui::set_focus{ ui = &gui, id = b }
+    ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 7
+    ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 8
+    ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 9
+    let gone = not ui::is_focused{ ui = gui, id = b }
+    app.spots[2].shown = true
+    ui_test::step_frame{ &d, ui = &gui, show = show_app{ &app, _ } }                // 10
+    ui_test::expect{ &io, &t, ok = gone and not app.spots[2].it.focused and gui.focus.focused == ui::NO_ID,
+        what = "focus wait: an ask whose widget does not appear within two frames after it is dropped" }
+
+    // Asked inside a frame before a widget recorded later in it, with a modal opening between:
+    // the modal does not put the ask aside, and B has the focus the next frame.
+    ui_test::step_frame{ &d, ui = &gui, show = show_ask_then_modal{ &app, b, _ } }     // 11
+    ui_test::step_frame{ &d, ui = &gui, show = show_ask_then_modal{ &app, b, _ } }     // 12
+    ui_test::expect{ &io, &t, ok = app.spots[2].it.focused, what = "focus wait: asked before a modal opens and its widget is recorded in it, it has the focus" }
+    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "focus wait: every frame is clean" }
+}
+
+// A set_focus on `b` in the frame's first statement, the first frame only, then a modal holding the
+// spots.
+fn show_ask_then_modal { mut ui: ui::Ui, mut app: App, b: ui::Id } {
+    if app.frame == 10 { ui::set_focus{ &ui, id = b } }
+    let m = ui::begin_modal{ &ui, id = "modal", opts = ui::Opts{ .. } }
+    show_app{ &ui, &app }
+    ui::end{ &ui, scope = m }
 }
 
 // Focus is dropped when its owner is not recorded, and by a left press no focusable widget takes.

@@ -199,7 +199,8 @@ ui/
                 set_text_input, copy_text, ask_paste, set_animating, ask_wake (a frame at a time: `Requests.wake`),
                 take_requests
     interact.ctx PressOpts, Interaction, press, get_hover_time, take_wheel, take_wheel_x, is_pointer_over
-    focus.ctx   Links, set_links, set_focus, claim_focus (a press's focus, for a widget's part), is_focused,
+    focus.ctx   Links, set_links, set_focus (waits up to two frames for a widget not recorded yet), ask_first_focus
+                (a dialog's first tab stop), claim_focus (a press's focus, for a widget's part), is_focused,
                 is_focus_visible and set_focus_visible (the focus came by keys or by hover-focus: draw the ring;
                 a pointer press hides it)
     layers.ctx  begin_overlay, begin_modal, begin_window_layer, raise_window, open_popup, open_popup_on, begin_popup,

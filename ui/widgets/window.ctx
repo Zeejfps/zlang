@@ -252,17 +252,29 @@ namespace ui {
     // modal layer). While `open` is false it records nothing and gives a closed scope. Escape, or
     // its close button, sets `open` false. The scope is open while it is: record the content into
     // it (a column, the theme's gap apart), then `ui::end` it either way. `opts.box` is laid over
-    // the card's look. It takes the focus aside while it is up (nothing has it, so Tab goes into it)
-    // and gives it back when it goes.
+    // the card's look. It takes the focus aside while it is up and gives it back when it goes. The
+    // frame it opens the focus goes to its first tab stop (its close cross is none), unless the
+    // caller gives it to another widget in the dialog with `set_focus` in that frame.
     fn begin_dialog { mut ui: Ui, title: []u8, mut open: bool, opts: Opts } -> Scope {
         if not open { return Scope{ .. } }
         let t = derive_theme{ theme = ui.theme }
         let name = get_widget_name{ opts, label = title }
         let id = make_id{ ui, name }
+        // The frame it opens (it was not recorded in the last one), the focus goes to its first
+        // tab stop, unless the caller's set_focus names another that frame.
+        let mut v = load_state{ &ui, id }
+        let fresh = v.i[0] + 1 != @as(i64, ui.frame)
+        v.i[0] = @as(i64, ui.frame)
+        store_state{ &ui, id, values = v }
         let outer = push_id{ &ui, name }
         _ = begin_modal{ &ui, id = ".modal", opts = Opts{ .. } }
+        if fresh { ask_first_focus{ &ui } }
         let close_id = make_id{ ui, name = ".close" }
-        let close = press{ &ui, id = close_id, opts = make_press_opts{ ui, opts } }
+        // The close cross is no tab stop (Escape closes a dialog), so Tab and the first focus go
+        // to the content.
+        let mut close_opts = make_press_opts{ ui, opts }
+        close_opts.tab_stop = false
+        let close = press{ &ui, id = close_id, opts = close_opts }
         let keyed = opts.enabled and take_activation{ &ui, it = close }
         // Escape is taken here, in the modal's tree, so only the frontmost dialog sees it; a popup
         // open in the dialog took it first.

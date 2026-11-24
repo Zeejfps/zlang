@@ -51,6 +51,7 @@ fn check_windows { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: aren
     check_window_order{ &io, &t, &heap }
     check_window_scroll{ &io, &t, &heap }
     check_dialog_modal{ &io, &t, &heap }
+    check_dialog_focus{ &io, &t, &heap }
     check_menu_pointer{ &io, &t, &heap }
     check_menu_keys{ &io, &t, &heap }
     check_submenu_flip{ &io, &t, &heap }
@@ -695,6 +696,64 @@ fn check_window_scroll { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Are
     ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "window scroll: every frame is clean" }
 }
 
+// A dialog with two fields, opened by a button: with `name_second` it names its second field with
+// set_focus in the frame it opens (`naming`, once), or it leaves the default.
+struct Ask { open: bool, name_second: bool, naming: bool, opens: u32, a: [16]u8, a_len: usize, b: [16]u8, b_len: usize }
+
+fn show_ask { mut ui: ui::Ui, mut s: Ask } {
+    if ui::add_button{ &ui, label = "Open", opts = ui::Opts{ box = ui::place{ x = 10.0, y = 10.0, w = 80.0, h = 28.0 }, .. } } {
+        s.open = true
+        s.opens = s.opens + 1
+        s.naming = s.name_second
+    }
+    let d = ui::begin_dialog{ &ui, title = "Ask", open = &s.open, opts = ui::Opts{ .. } }
+    if d.open {
+        let mut a = ui::TextBuf{ bytes = s.a[..], len = s.a_len }
+        _ = ui::add_text_field{ &ui, label = "first", text = &a, rules = ui::TextRules{ .. }, opts = ui::Opts{ .. } }
+        s.a_len = a.len
+        if s.naming {
+            ui::set_focus{ &ui, id = ui::make_id{ ui, name = "second" } }
+            s.naming = false
+        }
+        let mut b = ui::TextBuf{ bytes = s.b[..], len = s.b_len }
+        _ = ui::add_text_field{ &ui, label = "second", text = &b, rules = ui::TextRules{ .. }, opts = ui::Opts{ .. } }
+        s.b_len = b.len
+    }
+    ui::end{ &ui, scope = d }
+}
+
+// The frame a dialog opens its first tab stop takes the focus, or the one the caller names with
+// set_focus in that frame (from inside the dialog: its id is the dialog's); the field has it in the
+// next frame and takes the typing there, although a click (a press that took no focus) opened it.
+fn check_dialog_focus { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
+    for second in [false, true] {
+        let mut gui = make_ui{ &heap, dark = true } iferr { return }
+        let mut d = make_driver{ &heap, width = 400, height = 300, scale = 1.0 } iferr { return }
+        let mut s: Ask
+        s.open = false
+        s.name_second = second
+        s.naming = false
+        s.opens = 0
+        s.a_len = 0
+        s.b_len = 0
+        ui_test::step_frame{ &d, ui = &gui, show = show_ask{ &s, _ } }
+        // The click's release frame opens the dialog.
+        _ = ui_test::click{ &d, ui = &gui, path = "Open", show = show_ask{ &s, _ } }
+        // In the frame it opens, a named field already has it (set_focus is at once); the first tab
+        // stop gets it at the end of that frame.
+        let at_open = has_node_flag{ ui = gui, path = "Ask/second", flag = ui::NODE_FOCUSED } == second and not has_node_flag{ ui = gui, path = "Ask/first", flag = ui::NODE_FOCUSED }
+        let opened = s.open and s.opens == 1 and at_open
+        _ = ui_test::type_text{ ui = &gui, text = "hi" }
+        ui_test::step_frame{ &d, ui = &gui, show = show_ask{ &s, _ } }
+        let want = if second { "Ask/second" } else { "Ask/first" }
+        let other = if second { "Ask/first" } else { "Ask/second" }
+        let typed = if second { slice::eq_bytes{ a = s.b[..s.b_len], b = "hi" } and s.a_len == 0 } else { slice::eq_bytes{ a = s.a[..s.a_len], b = "hi" } and s.b_len == 0 }
+        ui_test::expect{ &io, &t, ok = opened and has_node_flag{ ui = gui, path = want, flag = ui::NODE_FOCUSED } and not has_node_flag{ ui = gui, path = other, flag = ui::NODE_FOCUSED } and typed,
+            what = if second { "dialog focus: the field set_focus named in the frame the dialog opens has the focus the next frame, and the typing" } else { "dialog focus: its first tab stop (not the close cross) has the focus the frame after it opens, and the typing" } }
+        ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "dialog focus: every frame is clean" }
+    }
+}
+
 // A dialog over windows: a click on a window under its scrim does nothing, the focus a window
 // button had is put aside while it is up, Escape closes it and gives the focus back.
 fn check_dialog_modal { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
@@ -708,6 +767,7 @@ fn check_dialog_modal { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Aren
     s.dialog = true
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     let aside = not has_node_flag{ ui = gui, path = "Tasks/A1", flag = ui::NODE_FOCUSED }
+    let first = has_node_flag{ ui = gui, path = "Confirm/OK", flag = ui::NODE_FOCUSED }
     let blocked = ui_test::find_center{ ui = gui, path = "Tasks/A1" } == null
     let a1 = find_rect{ ui = gui, path = "Tasks/A1" }
     _ = ui_test::move_pointer{ ui = &gui, x = a1.x + 3, y = a1.y + 3 }
@@ -716,14 +776,15 @@ fn check_dialog_modal { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Aren
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
     _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 1 }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ &s, _ } }
-    ui_test::expect{ &io, &t, ok = had and aside and blocked and s.a_clicks == 1 and s.dialog, what = "dialog: it blocks the windows under it and puts their focus aside" }
+    ui_test::expect{ &io, &t, ok = had and aside and first and blocked and s.a_clicks == 1 and s.dialog, what = "dialog: it blocks the windows under it, puts their focus aside and gives it to its first tab stop, OK" }
     _ = ui_test::tap_key{ ui = &gui, key = ui::Key::tab, mods = 0 }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
-    let inside = has_node_flag{ ui = gui, path = "Confirm/.close", flag = ui::NODE_FOCUSED }
+    // The press on the scrim took the focus away; Tab gives it to OK, past the close cross.
+    let inside = has_node_flag{ ui = gui, path = "Confirm/OK", flag = ui::NODE_FOCUSED }
     press_window_key{ &d, ui = &gui, key = ui::Key::escape, show = show_desk{ &s, _ } }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     ui_test::expect{ &io, &t, ok = inside and not s.dialog and has_node_flag{ ui = gui, path = "Tasks/A1", flag = ui::NODE_FOCUSED },
-        what = "dialog: Tab goes into it; Escape closes it and gives the focus back" }
+        what = "dialog: Tab goes into it, to OK and not the cross; Escape closes it and gives the focus back" }
     s.dialog = true
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     _ = ui_test::click{ &d, ui = &gui, path = "Confirm/OK", show = show_desk{ &s, _ } }

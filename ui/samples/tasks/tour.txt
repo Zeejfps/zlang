@@ -176,6 +176,18 @@ key escape
 frames 2
 text tasks/#2/title "Reply to Ada about the Q3 budget"
 
+# Rename by the pointer, from the Edit menu: the dialog gives its first tab stop, the field, the
+# focus the frame after it opens, though a click opened it; typing replaces the whole title.
+click tasks/#2
+click Edit
+click "Edit/Rename..."
+frames 1
+expect "Rename task/title" focused
+type "Reply to Ada"
+key escape
+frames 2
+text tasks/#2/title "Reply to Ada about the Q3 budget"
+
 # Preferences: back to the dark theme by its radio button, and a zoom of 150 % from the combo.
 click Edit
 click "Edit/Preferences..."

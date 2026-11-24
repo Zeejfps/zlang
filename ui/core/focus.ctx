@@ -7,6 +7,9 @@
 //  - Focus is dropped at end_frame when its owner was not recorded (no `press` of it and no
 //    `set_focus` of it that frame), and when a left press of the frame went to no focusable widget
 //    (a click on empty space or on a widget that takes no focus ends a text field's editing).
+//    A `set_focus` of a widget not recorded yet waits for it through the end of the frame that
+//    asked and FOCUS_WAIT frames more, so a dialog that opens this frame can name its field.
+//    `ask_first_focus` gives it, the frame a dialog opens, to the first tab stop of its tree.
 //  - The key strokes nobody took during the frame then move focus, in the order they were pushed:
 //    Tab and Shift+Tab to the next and the previous tab stop (wrapping; from no focus to the first
 //    or the last; from a focused widget that is no tab stop, from its place), an arrow key with no modifier along the focused widget's link in that direction.
@@ -42,9 +45,27 @@ namespace ui {
     }
 
     // Gives `id` the keyboard focus now (NO_ID: nobody has it). It is kept while the widget with
-    // that id is recorded.
+    // that id is recorded. A widget that is not recorded yet gets it too: the focus waits for it
+    // through the end of this frame and up to FOCUS_WAIT frames more (a field in a dialog that
+    // opens this frame, or the next), and is dropped if it has not appeared by then. A modal that
+    // opens after the call does not put the asked focus aside; a press that gives a widget the
+    // focus, or a left press on what takes none, takes it away as it takes any focus.
     fn set_focus { mut ui: Ui, id: Id } {
         focus::take_focus{ &ui, id, claimed = false }
+        ui.focus.wanted = id
+        ui.focus.wanted_wait = focus::FOCUS_WAIT
+        ui.focus.wanted_seen = id != NO_ID and focus::has_stop{ ui, id }
+        // Asked between frames, it is the next frame's ask.
+        ui.focus.asked = if ui.in_frame { ui.frame } else { ui.frame +% 1 }
+    }
+
+    // Asks that, at the end of this frame, the focus go to the first tab stop recorded in the
+    // tree being recorded now (a dialog's modal tree), unless `set_focus` or a press gives it to
+    // something in this frame. What a dialog calls the frame it opens, so its first field takes
+    // the keys.
+    fn ask_first_focus { mut ui: Ui } {
+        ui.focus.first_asked = true
+        ui.focus.first_order = tree::get_order{ ui }
     }
 
     // Gives `id` the keyboard focus as a press of a focusable widget does: kept through the end of
@@ -79,6 +100,9 @@ namespace ui {
         struct Stop { id: Id, order: u32, tab: bool }
         struct Link { id: Id, links: Links }
 
+        // How many frames after the one that asked a `set_focus` waits for its widget to appear.
+        const FOCUS_WAIT: u32 = 2
+
         struct State {
             focused: Id,
             seen: bool,                 // its owner was recorded this frame
@@ -86,6 +110,12 @@ namespace ui {
             visible: bool,              // the focus came by keys or by a hover: it is drawn
             stops: []mut Stop, stop_count: u32,
             links: []mut Link, link_count: u32,
+            wanted: Id,                 // what set_focus asked for and that has not appeared yet
+            wanted_wait: u32,           // frames it still waits after this one
+            wanted_seen: bool,          // it was recorded this frame
+            asked: u64,                 // the frame set_focus was last called in (or before)
+            first_asked: bool,          // ask_first_focus was called this frame
+            first_order: u32,           // in the tree of this order
         }
 
         // A frame has as many tab stops as it has room for hit regions (each belongs to an
@@ -94,7 +124,10 @@ namespace ui {
         fn make_state(S) { realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !State {
             let stops = try alloc::make(Stop, S){ realloc, &heap, count = @as(usize, cap.hits) }
             let links = try alloc::make(Link, S){ realloc, &heap, count = @as(usize, cap.hits / 4) }
-            return State{ focused = NO_ID, seen = false, claimed = false, visible = false, stops, stop_count = 0, links, link_count = 0 }
+            return State{
+                focused = NO_ID, seen = false, claimed = false, visible = false, stops, stop_count = 0, links, link_count = 0,
+                wanted = NO_ID, wanted_wait = 0, wanted_seen = false, asked = 0, first_asked = false, first_order = 0,
+            }
         }
 
         fn reset_state { mut ui: Ui } {
@@ -102,16 +135,31 @@ namespace ui {
             ui.focus.claimed = false
             ui.focus.stop_count = 0
             ui.focus.link_count = 0
+            ui.focus.wanted_seen = false
+            ui.focus.first_asked = false
         }
 
+        // A press that takes the focus (`claimed`) wins over a set_focus still waiting.
         fn take_focus { mut ui: Ui, id: Id, claimed: bool } {
             ui.focus.focused = id
             ui.focus.seen = true
-            if claimed { ui.focus.claimed = true }
+            if claimed {
+                ui.focus.claimed = true
+                ui.focus.wanted = NO_ID
+            }
+        }
+
+        // Whether `id` was recorded as focusable this frame.
+        fn has_stop { ui: Ui, id: Id } -> bool {
+            for s in ui.focus.stops[..@as(usize, ui.focus.stop_count)] {
+                if s.id == id { return true }
+            }
+            return false
         }
 
         // A focusable widget, once: a second press of the same id right after is not another stop.
         fn add_stop { mut ui: Ui, id: Id, tab: bool } {
+            if id == ui.focus.wanted { ui.focus.wanted_seen = true }
             let n = @as(usize, ui.focus.stop_count)
             if n > 0 and ui.focus.stops[n - 1].id == id { return }
             if n >= ui.focus.stops.len {
@@ -124,7 +172,33 @@ namespace ui {
 
         fn finish_frame { mut ui: Ui } {
             if ui.focus.focused != NO_ID and not ui.focus.seen { ui.focus.focused = NO_ID }
-            if ui.input.now.pressed[0] and not ui.focus.claimed { ui.focus.focused = NO_ID }
+            if ui.input.now.pressed[0] and not ui.focus.claimed {
+                ui.focus.focused = NO_ID
+                ui.focus.wanted = NO_ID
+            }
+            // A set_focus still waiting: its widget has it once it was recorded, and keeps it
+            // waiting for FOCUS_WAIT frames while it was not.
+            if ui.focus.wanted != NO_ID {
+                if ui.focus.wanted_seen {
+                    ui.focus.focused = ui.focus.wanted
+                    ui.focus.wanted = NO_ID
+                } else {
+                    let now = ui.focus.asked == ui.frame
+                    if not now and ui.focus.wanted_wait > 0 { ui.focus.wanted_wait = ui.focus.wanted_wait - 1 }
+                    if now or ui.focus.wanted_wait > 0 {
+                        ui.focus.focused = ui.focus.wanted
+                    } else {
+                        ui.focus.wanted = NO_ID
+                    }
+                }
+            } else if ui.focus.first_asked and ui.focus.asked != ui.frame and not ui.focus.claimed {
+                for s in ui.focus.stops[..@as(usize, ui.focus.stop_count)] {
+                    if s.tab and s.order == ui.focus.first_order {
+                        ui.focus.focused = s.id
+                        break
+                    }
+                }
+            }
             let mut i: usize = 0
             while i < @as(usize, ui.input.now.keys) {
                 let k = ui.input.keys[i]

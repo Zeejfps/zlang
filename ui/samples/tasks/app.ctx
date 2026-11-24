@@ -44,7 +44,6 @@ namespace tasks {
         entry_id: ui::Id,                           // its id, for File > New task
         edit: [120]u8, edit_len: usize, editing: i32,   // the rename dialog's text, and its task
         rename: bool, prefs: bool, about: bool,     // which dialog is up
-        focus_rename: bool,                         // the rename field is to take the focus
         dark: bool, hide_done: bool, zoom: i32,
         undo: Task, undo_at: usize, can_undo: bool, // the task deleted last
         paste_asked: bool,                          // the host answers with the clipboard next frame
@@ -73,7 +72,6 @@ namespace tasks {
         app.rename = false
         app.prefs = false
         app.about = false
-        app.focus_rename = false
         app.dark = true
         app.hide_done = false
         app.zoom = ZOOM_NORMAL
@@ -207,7 +205,6 @@ namespace tasks {
         app.edit_len = n
         app.editing = @as(i32, at)
         app.rename = true
-        app.focus_rename = true
     }
 
     fn get_selected { app: App } -> ?usize {
@@ -575,17 +572,6 @@ namespace tasks {
         if app.rename and (app.editing < 0 or app.editing >= @as(i32, app.count)) { app.rename = false }
         let d = ui::begin_dialog{ &ui, title = "Rename task", open = &app.rename, opts = ui::Opts{ box = get_dialog_box{ width = 440.0 }, .. } }
         if d.open {
-            let id = ui::make_id{ ui, name = "title" }
-            // The dialog puts the focus aside at the end of the frame it opens in, so its field is
-            // given the focus until a frame starts with the field holding it.
-            if app.focus_rename {
-                if ui::is_focused{ ui, id } {
-                    app.focus_rename = false
-                } else {
-                    ui::set_focus{ &ui, id }
-                    ui::set_focus_visible{ &ui, visible = true }
-                }
-            }
             let mut edit = ui::TextBuf{ bytes = app.edit[..], len = app.edit_len }
             let entered = ui::add_text_field{ &ui, label = "title", text = &edit, rules = ui::TextRules{ hint = "The task", .. }, opts = ui::Opts{ box = ui::Box{ width = ui::GROW, .. }, .. } }
             app.edit_len = edit.len
@@ -608,7 +594,6 @@ namespace tasks {
             }
         }
         ui::end{ &ui, scope = d }
-        if not app.rename { app.focus_rename = false }
     }
 
     fn show_prefs_dialog { mut ui: ui::Ui, mut app: App } {
