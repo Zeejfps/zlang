@@ -59,6 +59,13 @@ What follows from it, and what a reviewer checks:
   `ceil_pixels`, `round_pixels` or the conversions above, which take NaN as 0 and hold what is out of
   range. Test the extremes: `i32` max, a negative size, a scale of 0 or NaN.
 - A test compares rectangles with `==`, never with a tolerance.
+- A widget whose pixel sizes come from its own last width (a table's columns from last frame's
+  `get_rect`) declares the part that holds them `take{ 1.0 }` of itself, not a fixed size: a part
+  counts for nothing when its parent is fitted, so the widget follows its parent and is never held
+  at its own last width.
+- A window's place and size are logical state. A drag adds the pointer's pixels to the pixel place
+  it had at the press and stores the result over the scale, which converts back to the same pixel:
+  that, not adding `drag_x / scale` to a logical value, is what keeps a dragged window from drifting.
 
 ## Rules
 
@@ -112,11 +119,26 @@ kotor/tools/ctxc run ui/tests/fonts                    # stage 4: FreeType and H
 kotor/tools/ctxc run ui/tests/layout                   # stages 5 and 6: the Ui, ids, the tree, layout, emit, the pixel properties
 kotor/tools/ctxc run ui/tests/input                    # stage 7: input, interaction, focus, state, nodes, the driver
 kotor/tools/ctxc run ui/tests/layers                   # stage 8: overlays, windows, modals, popups, tooltips, scroll regions
+kotor/tools/ctxc run ui/tests/widgets                  # stages 9 to 12: the stock widgets (basic.ctx, windows.ctx, data.ctx)
 kotor/tools/ctxc run ui/tests/shots -- --out ui/out    # stages 3 and 4: pictures from the OpenGL backend (needs a GPU); look at them
-kotor/tools/ctxc run ui/tests/draw -- --update         # rewrite goldens after an intended change
+kotor/tools/ctxc run ui/tests/draw -- --update         # rewrite goldens after an intended change (any test takes it)
+kotor/tools/ctxc run ui/samples/demo_gl                # the gallery in a window
+kotor/tools/ctxc run ui/samples/demo_gl -- --headless --page Windows --theme light --scale 1.5 --shot ui/out/windows.png
+kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
 kotor/tools/ctxc run kotor/tools/uicompat              # ui built beside kotor's libraries
 ui/tools/check                                         # the shader check, every headless ui test in turn, then uicompat
 ```
+
+demo_gl's options: `--font PATH` (default the platform's, `C:/Windows/Fonts/segoeui.ttf` on
+Windows), `--theme dark|light`, `--page TITLE` (a listed gallery page: Basic, Windows, Data),
+`--scale S` (device pixels a logical unit; in a window, the monitor's scale times S), `--size WxH`
+(the surface in logical units, default 1040x720), `--script PATH` (drive the gallery with a
+script, then stop), `--frames N` (headless without a script: 2), `--headless` (an offscreen target
+of a hidden window), `--shot PATH` (the last frame as a PNG when it stops). It exits 1 when a
+frame was not well formed, GL reported an error, the font library refused something or a script
+line failed. A script (`ui/test/script.ctx` has the commands: frames, wait, move, down, up, click,
+drag, key, type, wheel, shot, expect, value) is how a screenshot shows a menu open, a combo open, a
+tooltip or a drag in progress.
 
 Later stages add `ui/tests/<name>` programs (PLAN.md section 6.2 lists them with their stage). A test
 exits 1 when any check fails and prints each failure; `ui/tools/check` exits non-zero if any test does.
@@ -156,9 +178,40 @@ ui/
     host.ctx    Event (the pointer in device pixels), Key, Cursor, Requests
     input.ctx interact.ctx focus.ctx state.ctx nodes.ctx layers.ctx scroll.ctx
                 one subsystem each: its state (a field of Ui) and make_state, reset_state, finish_frame
+    input.ctx   push_event, get_pointer, get_time, is_released, take_key, get_keys, take_key_at, take_typed,
+                take_paste, set_cursor, set_text_input, copy_text, ask_paste, set_animating, take_requests
+    interact.ctx PressOpts, Interaction, press, get_hover_time, take_wheel, take_wheel_x, is_pointer_over
+    focus.ctx   Links, set_links, set_focus, claim_focus (a press's focus, for a widget's part), is_focused,
+                is_focus_visible and set_focus_visible (the focus came by keys or by hover-focus: draw the ring;
+                a pointer press hides it)
     layers.ctx  begin_overlay, begin_modal, begin_window_layer, raise_window, open_popup, open_popup_on, begin_popup,
-                close_popup, close_popups, is_popup_open, make_popup_id, is_tip_due, begin_tooltip
+                close_popup, close_popups, is_popup_open, get_open_popup, make_popup_id, is_tip_due, begin_tooltip
     scroll.ctx  begin_scroll, begin_scroll_with, get_scroll, set_scroll, find_rows (a virtual list's rows in view)
+  widgets/    namespace ui         the stock widgets, over the core's public calls only (no ui::tree/layout/emit)
+    opts.ctx    Range, get_widget_name, merge_box, make_press_opts, take_activation, finish_widget,
+                get_widget_flags, add_focus_ring (drawn only while is_focus_visible), get_ring_width
+    theme.ctx   make_dark_theme, make_light_theme, derive_theme, mix_color, get_accent_pressed,
+                get_border_strong, get_raised_color, get_rule_color
+    icons.ctx   Icon, paint_icon (the stock marks as lines), get_mark_stroke
+    basic.ctx   add_label, add_button, add_checkbox, add_radio, add_progress, add_image, add_separator,
+                add_spacer, begin_row, begin_column, begin_panel, begin_group, add_tooltip
+    slider.ctx  add_slider
+    window.ctx  WindowOpts, begin_window (move, resize, fold, close, held reachable), begin_dialog
+    popup.ctx   add_combo; make_global_id, pack_id, unpack_id, write_popup_name (what popup widgets share)
+    menu.ctx    begin_menu_bar, begin_menu (a bar's title or a submenu), add_menu_item, add_menu_check,
+                add_menu_separator, begin_context_menu
+    drag.ctx    Payload, Drop, begin_drag (the ghost in the front overlay), accept_drop, is_dragging
+    list.ctx    begin_list, begin_list_row; make_part_id
+    tree.ctx    begin_tree_node
+    tabs.ctx    begin_tabs, begin_tab
+    table.ctx   begin_table, begin_table_row, next_cell, add_cell_text
+    plot.ctx    add_plot
+    color.ctx   add_color_edit
+  samples/gallery/  namespace gallery  every widget, no main: gallery.ctx (the page switcher, the theme
+                                   switch) and one page a file, page_basic.ctx, page_text.ctx,
+                                   page_windows.ctx, page_data.ctx, each with its LISTED flag; tour.txt
+                                   (a script through the basic page)
+  samples/demo_gl/                 program: the gallery on OpenGL and SDL (options under Commands)
   stage/      namespace ui_stage   the staged level: instances, clip slots, atlas and glyph cache, batching, passes;
                                    its canvas is the surface in device pixels
   fonts/      namespace ui_fonts   outline fonts: FreeType rasterises, HarfBuzz shapes; the TextProvider
@@ -169,13 +222,17 @@ ui/
   record_stage/ namespace ui_rec   write_staged, the dump of a Staged: its own directory, because it names ui_stage
                                    and a program that records only draw lists should not have to add ui/stage
   test/       namespace ui_test    Tally, expect, has_flag, compare_golden, make_test_font, write_png, Driver (the scripted
-                                   host, which speaks device pixels)
+                                   host, which speaks device pixels: click, drag, tap_key, ...)
+    script.ctx  run_script: the text scripts demo_gl's --script runs (the commands are its top comment)
   tests/<name>/                    programs: build.ctx, main.ctx, golden/*.txt
+  tests/widgets/                   main.ctx (make_ui, make_driver, write_frame, write_nodes, count_text) and a file
+                                   of checks a stage: basic.ctx (9), field.ctx (10), windows.ctx (11), data.ctx
+                                   (12), with goldens golden/basic-*, field-*, windows-*, data-*
   tools/check                      the shader check and a bash loop over the headless tests
   out/                             (ignored) screenshots
 ```
 
-Planned packages (PLAN.md section 2.1): `widgets`, `vulkan`, `samples/*`. Backends and hosts are siblings of `core`, never children, because `add_sources` adds a
+Planned packages (PLAN.md section 2.1): `vulkan`, `samples/tasks`, `samples/demo_vulkan`. Backends and hosts are siblings of `core`, never children, because `add_sources` adds a
 directory and everything below it; a program lists exactly the directories it needs. A test or sample
 (anything with a `fn main`) must not live under a directory another program adds.
 
