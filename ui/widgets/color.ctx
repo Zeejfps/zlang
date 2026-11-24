@@ -116,7 +116,7 @@ namespace ui {
                     chosen = false
                 }
                 if count < 8 {
-                    digits = @wrap_shl(digits, 4) | d
+                    digits = (digits <<% 4) | d
                     count = count + 1
                 }
             }

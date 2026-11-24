@@ -684,9 +684,9 @@ struct Rng { state: u32 }
 
 fn next_random { mut rng: Rng, below: u32 } -> u32 {
     let mut x = rng.state
-    x = x ^ @wrap_shl(x, 13)
+    x = x ^ (x <<% 13)
     x = x ^ (x >> 17)
-    x = x ^ @wrap_shl(x, 5)
+    x = x ^ (x <<% 5)
     rng.state = x
     return x % below
 }
