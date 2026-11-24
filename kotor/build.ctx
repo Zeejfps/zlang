@@ -23,6 +23,8 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "../ui/core" }           // the ui library (ui/PLAN.md): render::add_staged names ui_stage::Staged
     build::add_sources{ &b, exe, dir = "../ui/stage" }
     build::add_sources{ &b, exe, dir = "../ui/gl/glsl" }        // its shaders' text, which render_gl draws its passes with
+    build::add_sources{ &b, exe, dir = "../ui/widgets" }        // its stock widgets, for the developer overlay (game/devui.ctx)
+    build::add_sources{ &b, exe, dir = "lib/ui_kotor" }         // the library on kotor's renderer, fonts and events
     build::add_sources{ &b, exe, dir = "lib/engine" }
     build::add_sources{ &b, exe, dir = "lib/save" }
     build::add_sources{ &b, exe, dir = "lib/rules" }

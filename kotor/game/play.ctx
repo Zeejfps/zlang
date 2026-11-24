@@ -192,6 +192,7 @@ namespace play {
         let mut owed = speed::Owed{ dt = 0.0, clock_dt = 0.0 }    // --speed: the presentation's time to catch up
         let mut speed_blur: f32 = 0.0              // the Frame Buffer Effects option's speed blur (programmed effect 1601 on the leader, lib/vfx/coded.ctx), eased in and out
         let mut fxh = fxhud::Hud{ .. }                 // the GPU Timing option's lines over the picture
+        let mut dui = devui::Overlay{ .. }             // and its window, built with the ui library (game/devui.ctx)
         let mut fcs = focus::Focus{ .. }                 // depth of field in conversations (game/focus.ctx)
         while not quit {
             frame_no = frame_no + 1
@@ -201,12 +202,12 @@ namespace play {
             // 1. Input: the window's events, then the script's lines for this frame. A scripted key or click
             // is put on SDL's queue (game/inject.ctx) and read back at once, so it takes the path a real one does.
             if ld.quit { quit = true }
-            pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp }
+            pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp, &dui }
             while next_line < script.len and script[next_line].frame <= frame_no {
                 let s = script[next_line]
                 next_line = next_line + 1
                 if inject::handle_scripted{ &sdl, inp = &inputs, word = s.word, rest = s.rest } {
-                    pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp }
+                    pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp, &dui }
                     continue
                 }
                 if ci::eq{ a = s.word, b = "savewhen" } {
@@ -241,7 +242,7 @@ namespace play {
                     } else {
                         _ = @fmt(&w.io, "kotor: input script: hoveron {}: nothing of it can be picked on the screen\n", tag)
                     }
-                    pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp }
+                    pump_events{ &sdl, &w, &dev, ui, &dview, &mg_mouse, &keys, &quit, &want_save, &want_load, loading_up = loading::is_up{ l = ld }, &disp, &dui }
                     continue
                 }
                 // One call per owner, in turn: the first that knows the word takes the line. A new owner adds
@@ -696,6 +697,7 @@ namespace play {
                 dlgview::draw{ v = &dview, frame = &frame }
                 ingame::draw{ ui, &w, &dev, &frame }    // HOOK(ingame)
                 if disp.applied.fx_timing { fxhud::draw{ h = &fxh, &w, &dev, &frame } }
+                devui::draw{ o = &dui, &w, &dev, &sdl, &frame, on = disp.applied.fx_timing, scale = ui.gui.scale, dt }
                 gpu::submit{ &dev, frame = &frame } iferr err{ error } {
                     _ = @fmt(&w.io, "kotor: submit failed: {}\n", error)
                     return 1
@@ -1032,7 +1034,7 @@ namespace play {
     fn pump_events {
         mut sdl: sdl::Sdl, mut w: world::World, mut dev: gpu::Device, ui: *mut ingame::Ingame, mut dview: dlgview::View,
         mut mg_mouse: mg_game::Mouse, mut keys: ctl::Keys, mut quit: bool, mut want_save: []u8, mut want_load: []u8, loading_up: bool,
-        mut disp: display::Display,
+        mut disp: display::Display, mut dui: devui::Overlay,
     } {
         while true {
             let polled = sdl::poll{ &sdl } ifnull { break }
@@ -1064,6 +1066,7 @@ namespace play {
                     continue
                 }
             }
+            if devui::handle_event{ o = &dui, ev = e } { continue }    // the developer overlay's window, while it is up
             if dlgview::handle_event{ v = &dview, g = &ui.gui, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }
             if ingame::handle_event{ ui, &w, &dev, ev = e, scale_x = 1.0, scale_y = 1.0 } { continue }    // HOOK(ingame)
             match e {

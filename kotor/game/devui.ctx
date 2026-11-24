@@ -1,0 +1,157 @@
+// The developer overlay (ui/PLAN.md stage 15): the GPU Timing option's numbers in a window built with the ui
+// library's stock widgets and drawn through lib/ui_kotor, beside fxhud's lines (game/fxhud.ctx), which stay as they
+// are. The window lists each pass of the picture with its time and its share of the frame, the total, a plot of the
+// total over the last frames and what the last frame's 2D drew; it can be moved, folded and resized. Its text is
+// the game's console font as a glyph table, at the GUI's scale.
+//
+// The library draws in device pixels: its UI pass is the screen target, and the pointer reaches it in render pixels
+// (display::map_event), one a pixel. While the window is shown it takes the pointer events over it, before the
+// conversation panels and the interface see them (handle_event).
+namespace devui {
+    const HISTORY: usize = 120          // frames the plot shows
+
+    struct Overlay {
+        tried: bool = false,                        // the Ui, the staged level and the font were made (or failed)
+        gui: ?*mut ui::Ui = null,
+        staged: ?*mut ui_stage::Staged = null,
+        host: ui_kotor::Host = ui_kotor::Host{ .. },
+        shown: bool = false,                        // drawn this frame: the next frame's events go to it
+        open: bool = true,
+        totals: [120]f32 = [0.0; 120],              // the last frames' totals, oldest first
+        total_count: usize = 0,
+    }
+
+    // Adds the overlay's passes to `frame`, over what it holds, when `on` (the GPU Timing option): nothing when there
+    // are no timings yet, as fxhud. `scale` is the GUI's quarter-step scale (device pixels a logical unit), `dt` the
+    // frame's seconds. Called every drawn frame, so an overlay switched off takes no more events.
+    fn draw {
+        mut o: Overlay, mut w: world::World, mut dev: gpu::Device, mut sdl: sdl::Sdl, mut frame: render::Frame,
+        on: bool, scale: f32, dt: f32,
+    } {
+        o.shown = false
+        if not on { return }
+        let t = gpu::get_timings{ dev }
+        if t.count == 0 { return }
+        if not o.tried {
+            o.tried = true
+            make{ &o, &w, &dev }
+        }
+        let gui = o.gui ifnull { return }
+        let staged = o.staged ifnull { return }
+        add_total{ &o, ms = t.total }
+        let info = ui_kotor::make_frame_info{ size = gpu::screen_size{ dev }, scale, dt }
+        ui::begin_frame{ ui = gui, frame = info }
+        show{ ui = gui, &o, t, stats = gpu::get_stats{ dev } }
+        ui::end_frame{ ui = gui }
+        let requests = ui::take_requests{ ui = gui }
+        ui_kotor::apply_requests{ &sdl, host = &o.host, requests }
+        ui_stage::stage{ out = staged, list = &gui.draw, provider = null }
+        ui_kotor::submit{ &frame, staged, target = null }
+        lift_pointer{ &frame }
+        o.shown = true
+    }
+
+    // The game's pointer is the last quad of the interface's run (lib/ingame), which the overlay's passes come after:
+    // its quad moves to a run of its own over them, the same in the same pixel space, and the old one is left
+    // transparent, so the pointer stays on top (and a pointer the OS draws, which hides frame.pointer.quad, is
+    // still hidden).
+    fn lift_pointer { mut frame: render::Frame } {
+        if not frame.pointer.shown or frame.pointer.quad >= frame.quad_count { return }
+        let q = frame.pointer.quad
+        let mut s = frame.step_count
+        while s > 0 {
+            s = s - 1
+            let step = frame.steps[s]
+            if step.kind != render::StepKind::ui or q < step.first or q >= step.first + step.count { continue }
+            let quad = frame.quads[q]
+            let at = frame.quad_count
+            render::begin_ui{ &frame, width = step.width, height = step.height, target = step.target }
+            render::add_quad{ &frame, quad }
+            if frame.quad_count == at + 1 {
+                frame.quads[q].color.a = 0.0
+                frame.pointer.quad = at
+            }
+            return
+        }
+    }
+
+    // Offers an event (in render pixels) to the overlay: true when it takes it. A move is never kept from the game,
+    // whose pointer (which the game draws itself) has to follow it over the window too.
+    fn handle_event { mut o: Overlay, ev: sdl::Event } -> bool {
+        if not o.shown { return false }
+        let gui = o.gui ifnull { return false }
+        let taken = ui_kotor::push_event{ ui = gui, event = ev, pointer_scale = 1.0 }
+        return taken and not (ev is mouse_motion)
+    }
+
+    // The Ui, its staged level and the console font (fnt_d16x16 where an install has no fnt_console, as fxhud).
+    fn make { mut o: Overlay, mut w: world::World, mut dev: gpu::Device } {
+        let kotor_glyphs = alloc::make(render::Glyph, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = 256 } iferr { return }
+        let glyphs = alloc::make(ui::Glyph, heap::Heap){ realloc = heap::alloc, heap = w.heap, count = 256 } iferr { return }
+        let mut found = font::load{ fs = &w.fs, &dev, h = w.heap, rm = w.rm.*, name = "fnt_console", variant = false, glyphs = kotor_glyphs } iferr { null }
+        if found == null { found = font::load{ fs = &w.fs, &dev, h = w.heap, rm = w.rm.*, name = "fnt_d16x16", variant = true, glyphs = kotor_glyphs } iferr { null } }
+        let f = found ifnull { return }
+        let cap = ui::Capacity{
+            elements = 1024, text = 16384, cmds = 4096, clips = 64, hits = 1024, states = 256, nodes = 1024, fonts = 2,
+            scopes = 64, layers = 8, lines = 1024, measures = 64, shaped = 64,
+        }
+        let made = ui::make{ realloc = heap::alloc, heap = w.heap, cap } iferr { return }
+        let gui = alloc::new(ui::Ui, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = made } iferr { return }
+        // Glyph tables live on their own textures, so the atlas is never used: it is made as small as it goes.
+        let stage_cap = ui_stage::Capacity{
+            rects = 1024, glyphs = 64, images = 4096, shapes = 512, draws = 256, passes = 2,
+            atlas_width = 64, atlas_height = 64, atlas_max_height = 64, glyph_cache = 64, raster_bytes = 64,
+        }
+        let made_staged = ui_stage::make{ realloc = heap::alloc, heap = w.heap, cap = stage_cap } iferr { return }
+        let staged = alloc::new(ui_stage::Staged, heap::Heap){ realloc = heap::alloc, heap = w.heap, value = made_staged } iferr { return }
+        gui.theme = ui::make_dark_theme{}
+        gui.theme.font = ui::add_font{ ui = gui, font = ui_kotor::from_font{ font = f, glyphs } } ifnull { return }
+        gui.theme.font_size = f.height
+        o.gui = gui
+        o.staged = staged
+    }
+
+    fn add_total { mut o: Overlay, ms: f32 } {
+        if o.total_count < HISTORY {
+            o.totals[o.total_count] = ms
+            o.total_count = o.total_count + 1
+            return
+        }
+        for i in 1..HISTORY { o.totals[i - 1] = o.totals[i] }
+        o.totals[HISTORY - 1] = ms
+    }
+
+    // The window: a row a pass (its name, its share of the total as a bar, its milliseconds), the total, the plot
+    // of the totals, and the last frame's 2D.
+    fn show { mut ui: ui::Ui, mut o: Overlay, t: render::Timings, stats: render::Stats } {
+        let opts = ui::Opts{ .. }
+        let win = ui::begin_window{ &ui, title = "GPU timing", open = &o.open,
+            window = ui::WindowOpts{ x = 16.0, y = 60.0, width = 320.0, closable = false, .. }, opts }
+        if win.open {
+            let name_box = ui::Box{ width = ui::fix{ size = 96.0 }, .. }
+            let ms_box = ui::Box{ width = ui::fix{ size = 88.0 }, .. }
+            for i in 0..@as(usize, t.count) {
+                // A pass's name may come again (a UI run after each view): the row's key is its place.
+                let key = ui::push_key{ &ui, key = @as(u64, i) }
+                let row = ui::begin_row{ &ui, opts }
+                ui::add_label{ &ui, text = t.names[i], opts = ui::Opts{ box = name_box, .. } }
+                let share = if t.total > 0.0 { t.ms[i] / t.total } else { 0.0 }
+                ui::add_progress{ &ui, value = share, opts = ui::Opts{ id = "share", .. } }
+                _ = @fmt(&ui, "{} ms", ui::write_fixed{ v = t.ms[i], digits = 3, _ })
+                let ms = ui::take_text{ &ui }
+                ui::add_label{ &ui, text = ms, opts = ui::Opts{ box = ms_box, .. } }
+                ui::end{ &ui, scope = row }
+                ui::end{ &ui, scope = key }
+            }
+            ui::add_separator{ &ui, opts }
+            _ = @fmt(&ui, "total {} ms", ui::write_fixed{ v = t.total, digits = 3, _ })
+            let total = ui::take_text{ &ui }
+            ui::add_label{ &ui, text = total, opts }
+            ui::add_plot{ &ui, label = "totals", values = o.totals[..o.total_count], opts }
+            _ = @fmt(&ui, "2D: {} quads in {} draws", stats.quads, stats.ui_draws)
+            let quads = ui::take_text{ &ui }
+            ui::add_label{ &ui, text = quads, opts }
+        }
+        ui::end{ &ui, scope = win }
+    }
+}
