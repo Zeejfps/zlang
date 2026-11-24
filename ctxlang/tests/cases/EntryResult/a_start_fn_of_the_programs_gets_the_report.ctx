@@ -11,8 +11,14 @@ fn main { mut io: Io } -> ! {
     return boom{ n = 7 }
 }
 
+// A program with a start fn of its own writes through C's stdio, which ends a line with
+// `\r\n` on Windows.
 //# exit: 41
-//# stdout escaped:
+//# [windows] stdout escaped:
 //| in main\r
-//# stderr escaped:
+//# [posix] stdout:
+//| in main
+//# [windows] stderr escaped:
 //| error: boom{ n = 7 }\r
+//# [posix] stderr:
+//| error: boom{ n = 7 }

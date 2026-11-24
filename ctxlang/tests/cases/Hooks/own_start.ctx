@@ -13,6 +13,11 @@ fn main { mut io: Io, args: Args } -> i32 {
 
 //# args: x
 //# exit: 42
-//# stdout escaped:
+// A program with a start fn of its own writes through C's stdio, which ends a line with
+// `\r\n` on Windows.
+//# [windows] stdout escaped:
 //| boot\r
 //| 0\r
+//# [posix] stdout:
+//| boot
+//| 0

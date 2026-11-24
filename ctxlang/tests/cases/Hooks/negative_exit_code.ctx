@@ -3,4 +3,6 @@
 
 fn main {} -> i32 { return -4 }
 
-//# exit: -4
+// Windows keeps the code's 32 bits; elsewhere a process's exit code is its low 8.
+//# [windows] exit: -4
+//# [posix] exit: 252

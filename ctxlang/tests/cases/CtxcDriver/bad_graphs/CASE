@@ -189,12 +189,13 @@
 //# [windows] project
 //# [windows] errors:
 //| build.ctx: describes two executables of the same name
-// Elsewhere they are two executables: `ctxc run .` ends with 0, and the build's first
-// executable prints `plain`.
+// Elsewhere they are two executables, so the graph is taken, and `t` is built from src,
+// whose main names the generated `keep`, which this build no longer makes: that error, from
+// the program, is what shows the graph wasn't refused.
 //# [posix] $ ctxc run .
-//# [posix] exit: 0
-//# [posix] stdout any
+//# [posix] exit: 1
+//# [posix] stderr:
+//| src/main.ctx:1:52: error: unknown type or namespace `keep`
 //# [posix] project
-//# [posix] $ {t}
-//# [posix] stdout:
-//| plain
+//# [posix] errors:
+//| {dir}/src/main.ctx:1:52: error: unknown type or namespace `keep`
