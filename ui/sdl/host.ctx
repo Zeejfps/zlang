@@ -268,6 +268,17 @@ namespace ui_sdl {
         return Event::other{ kind }
     }
 
+    // The core's number for one of SDL's pointer buttons. SDL counts left 1, middle 2, right 3 and
+    // the two side buttons 4 and 5; the core counts left 0, right 1, middle 2 (the button a widget
+    // presses with is 0 and a context menu's is 1), and the side buttons follow as 3 and 4.
+    fn to_button { button: u8 } -> u8 {
+        if button == 1 { return 0 }
+        if button == 3 { return 1 }
+        if button == 2 { return 2 }
+        if button == 0 { return 0 }
+        return button - 1
+    }
+
     // The core's event for a host event, or null for one the core does not take (quit, resize). A
     // key it has no name for is Key::none, which carries the modifiers held. Pointer positions are window coordinates times `pointer_scale`
     // (Sizes.pointer_scale), rounded down: the device pixel the pointer's coordinate begins in. A
@@ -277,7 +288,7 @@ namespace ui_sdl {
         let s = if pointer_scale > 0.0 { pointer_scale } else { 1.0 }
         match event {
             motion{ x, y } => { return ui::Event::pointer_move{ x = ui::floor_pixels{ v = @as(f32, x) * s }, y = ui::floor_pixels{ v = @as(f32, y) * s } } }
-            button{ down, button, clicks } => { return ui::Event::pointer_button{ button, down, clicks } }
+            button{ down, button, clicks } => { return ui::Event::pointer_button{ button = to_button{ button }, down, clicks } }
             leave => { return ui::Event::pointer_leave }
             wheel{ dx, dy } => { return ui::Event::wheel{ dx, dy } }
             key{ down, repeat, keycode, mods } => {
