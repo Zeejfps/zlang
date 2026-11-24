@@ -22,38 +22,38 @@
 // at 18 + 7 i. The caret is 1 wide and 14 high; `Requests.text_rect` is where it is.
 
 #test
-fn draws_a_field_in_its_five_looks_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_field_in_its_five_looks_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_looks{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, dark = true, name = "field-dark" }
+    try record_looks{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, dark = true, name = "field-dark" }
 }
 
 #test
-fn draws_a_field_in_its_five_looks_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_field_in_its_five_looks_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_looks{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, dark = false, name = "field-light" }
+    try record_looks{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, dark = false, name = "field-light" }
 }
 
 #test
-fn draws_a_field_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_field_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_scaled_field{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_scaled_field{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn draws_a_number_entry_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_number_entry_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_number{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_number{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn lists_the_fields_nodes_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn lists_the_fields_nodes_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_field_nodes{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_field_nodes{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 // ---- the scenes
@@ -274,7 +274,7 @@ fn has_text_shape { ui: ui::Ui, needle: []u8 } -> bool {
 // The five looks in one column, a frame each: at rest; the name hovered; the name focused with its
 // caret at its end; the name's last word selected; the long text focused at its end, scrolled.
 fn record_looks {
-    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
+    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8,
     dark: bool, name: []u8,
 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
@@ -297,7 +297,7 @@ fn record_looks {
     click_at{ &r, &f, x = l.x + 3, y = l.y + 3, clicks = 1 }
     press_key{ &r, &f, key = ui::Key::end, mods = 0 }
     try write_frame{ &sink, ui = r.ui, name = "the long text focused at its end, scrolled" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch })
     // looks: every frame is clean
     @expect(&t, is_clean_rig{ r } and sink.lost == 0)
     // looks: the text cursor over a field
@@ -308,7 +308,7 @@ fn record_looks {
 
 // The same column at scale 1.5, the name focused: every border the same on all four sides, the
 // caret 2 pixels wide (1 unit) and the line 21 high (14 units).
-fn record_scaled_field { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_scaled_field { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut r = try make_rig{ &heap, dark = true, scale = 1.5 }
     let mut f = make_form{ look = Look::looks }
@@ -318,7 +318,7 @@ fn record_scaled_field { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::A
     let n = ui::find_node{ ui = r.ui, path = "name" } ifnull ui::Node{ .. }
     click_at{ &r, &f, x = n.rect.x + n.rect.w - 4, y = n.rect.y + n.rect.h / 2, clicks = 1 }
     try write_frame{ &sink, ui = r.ui, name = "at scale 1.5, the name focused" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "field-scale", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "field-scale", actual = ui_rec::get_text{ sink }, scratch })
     let rect = r.d.requests.text_rect
     // The name's text starts 12 pixels in (8 units), at 15 + 12; "Ada" is three characters of
     // 10.5 pixels, 31.5, the caret's offset the nearest pixel, 32.
@@ -329,7 +329,7 @@ fn record_scaled_field { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::A
 }
 
 // The number entry at rest, focused by a click (typed in, its text selected), and not enabled.
-fn record_number { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_number { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut r = try make_rig{ &heap, dark = true, scale = 1.0 }
     let mut f = make_form{ look = Look::number }
@@ -342,14 +342,14 @@ fn record_number { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, 
     f.enabled = false
     step{ &r, &f }
     try write_frame{ &sink, ui = r.ui, name = "not enabled" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "field-number", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "field-number", actual = ui_rec::get_text{ sink }, scratch })
     // number looks: every frame is clean
     @expect(&t, is_clean_rig{ r })
 }
 
 // The nodes of the looks, the name focused: role, path, rectangle, flags, value (characters) and
 // the text value, a password's its mask.
-fn record_field_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_field_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut r = try make_rig{ &heap, dark = true, scale = 1.0 }
     let mut f = make_form{ look = Look::looks }
@@ -358,7 +358,7 @@ fn record_field_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Ar
     click_index{ &r, &f, path = "name", index = 1 }
     step{ &r, &f }
     try write_text_nodes{ &sink, ui = r.ui, name = "the looks' nodes, the name focused" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "field-nodes", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "field-nodes", actual = ui_rec::get_text{ sink }, scratch })
     let p = ui::find_node{ ui = r.ui, path = "password" } ifnull ui::Node{ .. }
     // nodes: a password's node has its mask and its count, not its text
     @expect(&t, p.role == ui::Role::text_field and is_text{ a = p.text, b = "*******" } and p.value == 7.0)

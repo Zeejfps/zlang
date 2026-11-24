@@ -515,7 +515,7 @@ fn record_scene { mut io: Io, mut t: Test, mut sink: ui_rec::Sink, mut ui: ui::U
 }
 
 #test
-fn shares_grow_room_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn shares_grow_room_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let mut s = try make_scene{ &heap }
     try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_grow,
@@ -523,95 +523,95 @@ fn shares_grow_room_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem
     try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.5, show = show_thirds, title = "three grow children share 100 at scale 1.5" }
     // the flow dump fit its buffer
     @expect(&t, s.sink.lost == 0)
-    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-grow" })
+    @expect(&t, compare_scene{ &io, &fs, &t, s, name = "flow-grow" })
 }
 
 #test
-fn divides_whole_pixels_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn divides_whole_pixels_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let mut s = try make_scene{ &heap }
     try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_remainders,
         title = "whole pixels: 100 among three, 101 with a cap, shrinking by 20 among three, an odd spare centred, take rounds down, 100 among seven" }
     // the flow dump fit its buffer
     @expect(&t, s.sink.lost == 0)
-    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-pixels" })
+    @expect(&t, compare_scene{ &io, &fs, &t, s, name = "flow-pixels" })
 }
 
 #test
-fn takes_parts_of_the_room_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn takes_parts_of_the_room_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let mut s = try make_scene{ &heap }
     try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_take,
         title = "take: beside fix, across the axis, past the whole, with min and max, in a fit parent, placed" }
     // the flow dump fit its buffer
     @expect(&t, s.sink.lost == 0)
-    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-take" })
+    @expect(&t, compare_scene{ &io, &fs, &t, s, name = "flow-take" })
 }
 
 #test
-fn aligns_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn aligns_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let mut s = try make_scene{ &heap }
     try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_align,
         title = "alignment: centre and end on both axes, in a row and in a column; grow leaves nothing to align" }
     // the flow dump fit its buffer
     @expect(&t, s.sink.lost == 0)
-    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-align" })
+    @expect(&t, compare_scene{ &io, &fs, &t, s, name = "flow-align" })
 }
 
 #test
-fn wraps_flow_text_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn wraps_flow_text_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let mut s = try make_scene{ &heap }
     try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_text,
         title = "wrapped text: in a fit panel, in a grow column, with a newline in a fixed width, beside a fixed sibling" }
     // the flow dump fit its buffer
     @expect(&t, s.sink.lost == 0)
-    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-text" })
+    @expect(&t, compare_scene{ &io, &fs, &t, s, name = "flow-text" })
 }
 
 #test
-fn cuts_text_with_dots_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn cuts_text_with_dots_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let mut s = try make_scene{ &heap }
     try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_ellipsis,
         title = "ellipsis: a short row, a row with room, a narrow column, a fixed width, clip, no room for the dots, an exact fit" }
     // the flow dump fit its buffer
     @expect(&t, s.sink.lost == 0)
-    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-ellipsis" })
+    @expect(&t, compare_scene{ &io, &fs, &t, s, name = "flow-ellipsis" })
 }
 
 #test
-fn overflows_from_the_start_edge_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn overflows_from_the_start_edge_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let mut s = try make_scene{ &heap }
     try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_overflow,
         title = "overflow starts at the start edge whatever the alignment, and leaves the parent's size alone" }
     // the flow dump fit its buffer
     @expect(&t, s.sink.lost == 0)
-    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-overflow" })
+    @expect(&t, compare_scene{ &io, &fs, &t, s, name = "flow-overflow" })
 }
 
 #test
-fn places_children_outside_the_flow_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn places_children_outside_the_flow_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let mut s = try make_scene{ &heap }
     try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_placed,
         title = "placed children and paints take no room: a fit parent keeps its size, grow siblings share as if alone" }
     // the flow dump fit its buffer
     @expect(&t, s.sink.lost == 0)
-    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-placed" })
+    @expect(&t, compare_scene{ &io, &fs, &t, s, name = "flow-placed" })
 }
 
 #test
-fn nests_grow_rows_in_a_column_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn nests_grow_rows_in_a_column_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let mut s = try make_scene{ &heap }
     try record_scene{ &io, &t, sink = &s.sink, ui = &s.gui, scale = 1.0, show = show_nested,
         title = "rows inside a column with grow at both levels" }
     // the flow dump fit its buffer
     @expect(&t, s.sink.lost == 0)
-    @expect(&t, compare_scene{ &io, &fs, &proc, s, name = "flow-nested" })
+    @expect(&t, compare_scene{ &io, &fs, &t, s, name = "flow-nested" })
 }
 
 // The frame every repeat check records: grow at two levels, wrapped text and text with dots.

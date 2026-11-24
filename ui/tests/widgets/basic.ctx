@@ -18,94 +18,94 @@
 // The scenes stand at (10, 10) in a column 216 wide, so a slider's track is 200 long.
 
 #test
-fn draws_a_button_in_its_six_looks_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_button_in_its_six_looks_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = Widget::button, dark = true, name = "button", theme = "dark" }
+    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = Widget::button, dark = true, name = "button", theme = "dark" }
 }
 
 #test
-fn draws_a_checkbox_in_its_six_looks_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_checkbox_in_its_six_looks_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = Widget::checkbox, dark = true, name = "checkbox", theme = "dark" }
+    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = Widget::checkbox, dark = true, name = "checkbox", theme = "dark" }
 }
 
 #test
-fn draws_a_radio_button_in_its_six_looks_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_radio_button_in_its_six_looks_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = Widget::radio, dark = true, name = "radio", theme = "dark" }
+    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = Widget::radio, dark = true, name = "radio", theme = "dark" }
 }
 
 #test
-fn draws_a_slider_in_its_six_looks_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_slider_in_its_six_looks_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = Widget::slider, dark = true, name = "slider", theme = "dark" }
+    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = Widget::slider, dark = true, name = "slider", theme = "dark" }
 }
 
 #test
-fn draws_the_static_widgets_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_the_static_widgets_in_the_dark_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_static{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, dark = true, theme = "dark" }
+    try record_static{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, dark = true, theme = "dark" }
 }
 
 #test
-fn draws_a_button_in_its_six_looks_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_button_in_its_six_looks_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = Widget::button, dark = false, name = "button", theme = "light" }
+    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = Widget::button, dark = false, name = "button", theme = "light" }
 }
 
 #test
-fn draws_a_checkbox_in_its_six_looks_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_checkbox_in_its_six_looks_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = Widget::checkbox, dark = false, name = "checkbox", theme = "light" }
+    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = Widget::checkbox, dark = false, name = "checkbox", theme = "light" }
 }
 
 #test
-fn draws_a_radio_button_in_its_six_looks_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_radio_button_in_its_six_looks_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = Widget::radio, dark = false, name = "radio", theme = "light" }
+    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = Widget::radio, dark = false, name = "radio", theme = "light" }
 }
 
 #test
-fn draws_a_slider_in_its_six_looks_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_slider_in_its_six_looks_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = Widget::slider, dark = false, name = "slider", theme = "light" }
+    try record_states{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = Widget::slider, dark = false, name = "slider", theme = "light" }
 }
 
 #test
-fn draws_the_static_widgets_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_the_static_widgets_in_the_light_theme { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_static{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, dark = false, theme = "light" }
+    try record_static{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, dark = false, theme = "light" }
 }
 
 #test
-fn shows_a_tooltip_after_the_delay_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn shows_a_tooltip_after_the_delay_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_tooltip{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_tooltip{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn draws_every_widget_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_every_widget_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_scaled{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_scaled{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn lists_the_widgets_nodes_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn lists_the_widgets_nodes_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_nodes{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_nodes{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
@@ -238,7 +238,7 @@ fn get_path { widget: Widget } -> []u8 {
 // the pointer gone), which draws no ring; focused by keys (Shift+Tab and Tab, which come back to
 // it), which draws the ring; not enabled.
 fn record_states {
-    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
+    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8,
     widget: Widget, dark: bool, name: []u8, theme: []u8,
 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
@@ -282,7 +282,7 @@ fn record_states {
     let off = ui::find_node{ ui = gui, path } ifnull ui::Node{ .. }
     let mut golden: [64]u8
     let n = join_name{ out = golden[..], a = "basic-", b = name, c = theme }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = golden[..n], actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = golden[..n], actual = ui_rec::get_text{ sink }, scratch })
     // states: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
     // states: the hand cursor over a widget that can be used
@@ -309,7 +309,7 @@ fn join_name { out: []mut u8, a: []u8, b: []u8, c: []u8 } -> usize {
 
 // The widgets that take no input, enabled and not.
 fn record_static {
-    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
+    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8,
     dark: bool, theme: []u8,
 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
@@ -324,14 +324,14 @@ fn record_static {
     try write_frame{ &sink, ui = gui, name = "not enabled" }
     let mut golden: [64]u8
     let n = join_name{ out = golden[..], a = "basic-", b = "static", c = theme }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = golden[..n], actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = golden[..n], actual = ui_rec::get_text{ sink }, scratch })
     // static: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
 
 // A button's tooltip: not before the pointer has rested on it for the theme's half second, and
 // below it from then on.
-fn record_tooltip { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_tooltip { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = true }
     let mut d = try make_driver{ &heap, width = 240, height = 120, scale = 1.0 }
@@ -350,7 +350,7 @@ fn record_tooltip { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena,
     let asking = not d.requests.animating and ui_check::has_wake{ requests = d.requests, want = 0.125 }
     ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
     try write_frame{ &sink, ui = gui, name = "the tooltip, half a second after the hover began" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "basic-tooltip", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "basic-tooltip", actual = ui_rec::get_text{ sink }, scratch })
     // tooltip: shown after tip_delay and not before, with a frame asked for at the delay while waiting
     @expect(&t, not early and asking and count_text{ ui = gui } == 2)
     // tooltip: it is a node
@@ -362,7 +362,7 @@ fn record_tooltip { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena,
 // Every widget at scale 1.5, at rest and with the first one focused by Tab. Every border is the
 // same number of pixels on all four sides, and the boxes are the sizes the length rule gives:
 // 28 units is 42 pixels, 16 is 24, a 1-unit border 2, a 2-unit ring 3, 4 units 6, 8 units 12.
-fn record_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = true }
     let mut d = try make_driver{ &heap, width = 360, height = 640, scale = 1.5 }
@@ -380,7 +380,7 @@ fn record_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, 
     try write_frame{ &sink, ui = gui, name = "the button focused by Tab" }
     even = even and has_even_borders{ ui = gui }
     let ring = has_border{ ui = gui, width = 3, color = gui.theme.focus_ring }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "basic-scale", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "basic-scale", actual = ui_rec::get_text{ sink }, scratch })
     // scale 1.5: every border is the same on all four sides
     @expect(&t, even)
     // scale 1.5: controls 42 high, marks 24 square, a track 6 high, a bar 12 high
@@ -429,7 +429,7 @@ fn has_border { ui: ui::Ui, width: i32, color: ui::Color } -> bool {
 }
 
 // The nodes every widget describes, in a scene of all of them with a checkbox ticked.
-fn record_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = true }
     let mut d = try make_driver{ &heap, width = 240, height = 640, scale = 1.0 }
@@ -439,7 +439,7 @@ fn record_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, o
     ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_scene{ &s, _ } }
     try write_nodes{ &sink, ui = gui, name = "every widget's node" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "basic-nodes", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "basic-nodes", actual = ui_rec::get_text{ sink }, scratch })
     // nodes: a named panel and row are nodes
     @expect(&t, ui::find_node{ ui = gui, path = "panel" } != null and ui::find_node{ ui = gui, path = "bar" } != null)
     // nodes: every frame is clean

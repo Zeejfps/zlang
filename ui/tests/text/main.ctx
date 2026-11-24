@@ -3,7 +3,7 @@
 // (7 pixels a byte, one cluster a byte, and "fi" a two-byte ligature of 12).
 //
 //   kotor/tools/ctxc test ui/tests/text                          (from the repository root)
-//   UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/text      rewrite the goldens after an intended change
+//   kotor/tools/ctxc test ui/tests/text -- --update-goldens   (after an intended change: rewrites the goldens)
 
 const GOLDEN_DIR: []u8 = "ui/tests/text/golden"
 
@@ -363,9 +363,8 @@ fn write_carets { mut sink: ui_rec::Sink, mut cache: ui::text::Cache, list: ui::
 }
 
 #test
-fn wraps_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn wraps_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let mut f = try make_fonts{ &heap }
     let mut fake = Fake{ shapes = 0, metrics = 0 }
     let provider = make_provider{ fake = &fake }
@@ -377,7 +376,7 @@ fn wraps_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut 
     try write_wraps{ &sink, cache = &f.cache, list = f.list, font = f.font, outline = f.outline, provider, none }
     // the wrap dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "wrap", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "wrap", actual = ui_rec::get_text{ sink }, scratch })
 
     // Wrapping the same texts again gives the same lines: nothing is kept between calls.
     let mut again = ui_rec::make_sink{ bytes = again_out }
@@ -387,9 +386,8 @@ fn wraps_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut 
 }
 
 #test
-fn fits_ellipses_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn fits_ellipses_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let mut f = try make_fonts{ &heap }
     let mut fake = Fake{ shapes = 0, metrics = 0 }
     let provider = make_provider{ fake = &fake }
@@ -400,13 +398,12 @@ fn fits_ellipses_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: M
     try write_fits{ &sink, cache = &f.cache, list = f.list, font = f.font, outline = f.outline, provider, none }
     // the ellipsis dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "ellipsis", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "ellipsis", actual = ui_rec::get_text{ sink }, scratch })
 }
 
 #test
-fn steps_and_places_the_caret_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn steps_and_places_the_caret_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let mut f = try make_fonts{ &heap }
     let mut fake = Fake{ shapes = 0, metrics = 0 }
     let provider = make_provider{ fake = &fake }
@@ -417,7 +414,7 @@ fn steps_and_places_the_caret_as_the_golden { mut t: Test, mut io: Io, mut fs: F
     try write_carets{ &sink, cache = &f.cache, list = f.list, font = f.font, bytes_font = f.bytes_font, outline = f.outline, provider, none }
     // the caret dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "caret", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "caret", actual = ui_rec::get_text{ sink }, scratch })
 }
 
 // ---- wrapping at its limits
@@ -841,9 +838,8 @@ fn is_moved_exactly { font: ui::FontDef, size: i32, x: i32, y: i32, by: i32, tex
 }
 
 #test
-fn lays_glyphs_on_whole_pixels { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn lays_glyphs_on_whole_pixels { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let def = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
     let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 4096 }
     let scratch = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 4096 }
@@ -857,7 +853,7 @@ fn lays_glyphs_on_whole_pixels { mut t: Test, mut io: Io, mut fs: Fs, mut mem: M
     try dump_glyphs{ &sink, font = def, size = 64, x = 2, y = 2, pen = 0.0, text = "a b" }
     // the glyph dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "glyphs", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "glyphs", actual = ui_rec::get_text{ sink }, scratch })
 
     // Whatever the size and wherever the pen is, every glyph is the same whole number of pixels.
     // Each case is a size and a place in logical units at a scale, as pixels: (16 at 3.3, 7.7) at

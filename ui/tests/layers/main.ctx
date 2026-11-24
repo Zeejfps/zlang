@@ -2,7 +2,7 @@
 // and virtual rows in scroll.ctx.
 //
 //   kotor/tools/ctxc test ui/tests/layers                          (from the repository root)
-//   UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/layers      rewrite the goldens after an intended change
+//   kotor/tools/ctxc test ui/tests/layers -- --update-goldens   (after an intended change: rewrites the goldens)
 //
 // Interaction lags layout by a frame by design, so every scripted check names the frame a result
 // appears on and checks the frames around it. Frames are counted from 1 in each check.
@@ -202,9 +202,8 @@ fn show_order { mut ui: ui::Ui, mut s: Order } {
 }
 
 #test
-fn orders_layers_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn orders_layers_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
     let scratch = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
     let mut sink = ui_rec::make_sink{ bytes = out }
@@ -222,7 +221,7 @@ fn orders_layers_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: M
     s.raise = true
     ui_test::step_frame{ &d, ui = &gui, show = show_order{ &s, _ } }                // 2
     try write_frame{ &sink, ui = gui, name = "the same with no modal, and w2 raised: w1 is drawn before it" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "order", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "order", actual = ui_rec::get_text{ sink }, scratch })
     // the order frames are clean
     @expect(&t, d.unclean == 0)
 }

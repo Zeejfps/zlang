@@ -30,59 +30,59 @@
 // 140 wide; a combo's list rows are 24 high.
 
 #test
-fn draws_a_window_in_the_dark_theme_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_window_in_the_dark_theme_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_window{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, dark = true }
+    try record_window{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, dark = true }
 }
 
 #test
-fn draws_a_window_in_the_light_theme_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_window_in_the_light_theme_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_window{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, dark = false }
+    try record_window{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, dark = false }
 }
 
 #test
-fn draws_an_open_menu_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_an_open_menu_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_menu{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_menu{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn draws_an_open_combo_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_an_open_combo_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_combo{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_combo{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn draws_a_dialog_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_dialog_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_dialog{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_dialog{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn draws_a_drag_ghost_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_drag_ghost_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_ghost{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_ghost{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn draws_a_window_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_window_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_window_scaled{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_window_scaled{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn lists_the_windows_nodes_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn lists_the_windows_nodes_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_window_nodes{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_window_nodes{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
@@ -390,7 +390,7 @@ fn find_shape_at { ui: ui::Ui, r: ui::Rect } -> i32 {
 
 // A window at rest, and with its close button focused by keys (Tab past Behind and the
 // arrow), in one theme.
-fn record_window { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool, dark: bool } -> ! {
+fn record_window { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, dark: bool } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark }
     let mut d = try make_driver{ &heap, width = 320, height = 240, scale = 1.0 }
@@ -408,7 +408,7 @@ fn record_window { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, 
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     try write_frame{ &sink, ui = gui, name = "its close button focused by keys" }
     let focused = has_node_flag{ ui = gui, path = "Tasks/.close", flag = ui::NODE_FOCUSED }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = if dark { "windows-window-dark" } else { "windows-window-light" }, actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = if dark { "windows-window-dark" } else { "windows-window-light" }, actual = ui_rec::get_text{ sink }, scratch })
     // window: 200 by 150 at (40, 40), its title bar inside its 1-pixel border, 28 high
     @expect(&t, is_rect{ r, x = 40, y = 40, w = 200, h = 150 } and is_rect{ r = bar, x = 41, y = 41, w = 198, h = 28 })
     // window: the close button 20 square 4 from the bar's end, the grip 16 by 8 in the corner
@@ -420,7 +420,7 @@ fn record_window { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, 
 }
 
 // The menu bar with File open by a click and its Recent submenu open by the pointer.
-fn record_menu { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_menu { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = true }
     let mut d = try make_driver{ &heap, width = 400, height = 240, scale = 1.0 }
@@ -431,7 +431,7 @@ fn record_menu { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, ou
     _ = hover_node{ &d, ui = &gui, path = "Recent", show = show_desk{ &s, _ } }
     _ = hover_node{ &d, ui = &gui, path = "notes.txt", show = show_desk{ &s, _ } }
     try write_frame{ &sink, ui = gui, name = "File and Recent open, notes.txt lit" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "windows-menu", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-menu", actual = ui_rec::get_text{ sink }, scratch })
     let file = find_rect{ ui = gui, path = "menu bar/File" }
     let open = find_rect{ ui = gui, path = "File/Open" }
     let recent = find_rect{ ui = gui, path = "File/Recent" }
@@ -447,7 +447,7 @@ fn record_menu { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, ou
 }
 
 // The combo's list open on the chosen row (15, Mango) of twenty.
-fn record_combo { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_combo { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = true }
     let mut d = try make_driver{ &heap, width = 320, height = 320, scale = 1.0 }
@@ -457,13 +457,13 @@ fn record_combo { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, o
     _ = ui_test::move_pointer{ ui = &gui, x = 300, y = 10 }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     try write_frame{ &sink, ui = gui, name = "the list open on Mango" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "windows-combo", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-combo", actual = ui_rec::get_text{ sink }, scratch })
     // combo golden: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
 
 // A dialog over a window, the scrim between them.
-fn record_dialog { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_dialog { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = false }
     let mut d = try make_driver{ &heap, width = 400, height = 300, scale = 1.0 }
@@ -472,7 +472,7 @@ fn record_dialog { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, 
     s.dialog = true
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     try write_frame{ &sink, ui = gui, name = "a dialog over a window" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "windows-dialog", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-dialog", actual = ui_rec::get_text{ sink }, scratch })
     let scrim = find_fill{ ui = gui, color = gui.theme.scrim }
     let window = find_shape_at{ ui = gui, r = find_rect{ ui = gui, path = "Tasks" } }
     let card = find_shape_at{ ui = gui, r = find_rect{ ui = gui, path = "Confirm" } }
@@ -483,7 +483,7 @@ fn record_dialog { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, 
 }
 
 // A drag's ghost over a target that takes it.
-fn record_ghost { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_ghost { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = true }
     let mut d = try make_driver{ &heap, width = 320, height = 240, scale = 1.0 }
@@ -496,7 +496,7 @@ fn record_ghost { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, o
     _ = ui_test::move_pointer{ ui = &gui, x = 80, y = 140 }
     ui_test::step_frames{ &d, ui = &gui, show = show_desk{ &s, _ }, count = 2 }
     try write_frame{ &sink, ui = gui, name = "the ghost over the fruit bin" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "windows-ghost", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-ghost", actual = ui_rec::get_text{ sink }, scratch })
     // The ghost is the last thing drawn: its card and its label.
     let n = @as(usize, gui.draw.count)
     let last_text = n > 0 and gui.draw.cmds[n - 1] is text
@@ -511,7 +511,7 @@ fn record_ghost { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, o
 
 // A window and the open File menu at scale 1.5: every border the same on all four sides, the
 // window 300 by 225 pixels at (60, 60), its title bar 42 high, the menu's items 36 high.
-fn record_window_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_window_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = true }
     let mut d = try make_driver{ &heap, width = 480, height = 360, scale = 1.5 }
@@ -528,7 +528,7 @@ fn record_window_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::
     try write_frame{ &sink, ui = gui, name = "the File menu at scale 1.5" }
     even = even and has_even_sides{ ui = gui }
     let item = find_rect{ ui = gui, path = "File/Open" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "windows-scale", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-scale", actual = ui_rec::get_text{ sink }, scratch })
     // scale 1.5: every border of a window and a menu is the same on every side it has
     @expect(&t, even)
     // scale 1.5: the window 300 by 225 at (60, 60), a 2-pixel border, its bar 42 high, menu items 36
@@ -538,7 +538,7 @@ fn record_window_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::
 }
 
 // The nodes of two windows, a menu with its submenu open, and a combo.
-fn record_window_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_window_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = true }
     let mut d = try make_driver{ &heap, width = 400, height = 320, scale = 1.0 }
@@ -551,7 +551,7 @@ fn record_window_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::A
     _ = hover_node{ &d, ui = &gui, path = "Recent", show = show_desk{ s = &m, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_desk{ s = &m, _ } }
     try write_nodes{ &sink, ui = gui, name = "a menu and its submenu" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "windows-nodes", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "windows-nodes", actual = ui_rec::get_text{ sink }, scratch })
     // nodes: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
 }

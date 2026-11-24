@@ -3,7 +3,7 @@
 // flow.ctx, and the properties of whole pixels in pixels.ctx.
 //
 //   kotor/tools/ctxc test ui/tests/layout                          (from the repository root)
-//   UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/layout      rewrite the goldens after an intended change
+//   kotor/tools/ctxc test ui/tests/layout -- --update-goldens   (after an intended change: rewrites the goldens)
 
 const GOLDEN_DIR: []u8 = "ui/tests/layout/golden"
 
@@ -122,8 +122,8 @@ fn make_scene { mut heap: arena::Arena } -> !Scene {
 }
 
 // Whether the scene's frames, in its sink, are the golden `name`; says why not.
-fn compare_scene { mut io: Io, mut fs: Fs, mut proc: Proc, s: Scene, name: []u8 } -> bool {
-    return ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink = s.sink }, scratch = s.scratch, update = ui_check::is_updating{ &proc } }
+fn compare_scene { mut io: Io, mut fs: Fs, mut t: Test, s: Scene, name: []u8 } -> bool {
+    return ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink = s.sink }, scratch = s.scratch }
 }
 
 // ---- ids
@@ -192,9 +192,8 @@ fn makes_ids_from_names_keys_and_scopes { mut t: Test, mut io: Io, mut mem: Mem 
 // ---- the goldens
 
 #test
-fn places_a_panel_of_five_controls_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn places_a_panel_of_five_controls_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let s = try make_scene{ &heap }
     let scratch = s.scratch
     let mut sink = s.sink
@@ -205,7 +204,7 @@ fn places_a_panel_of_five_controls_as_the_golden { mut t: Test, mut io: Io, mut 
     // the panel frame is clean
     @expect(&t, is_clean{ ui = gui })
     try write_frame{ &sink, ui = gui, name = "a panel at the centre of 800 by 600 with five placed controls" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "panel", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "panel", actual = ui_rec::get_text{ sink }, scratch })
     // The panel, its title, the picture and its image, the slider and its two paints, and two
     // buttons with a label each; every one but the picture's own element draws a shape.
     // the panel is 11 elements, 9 shapes and 5 hit regions
@@ -213,9 +212,8 @@ fn places_a_panel_of_five_controls_as_the_golden { mut t: Test, mut io: Io, mut 
 }
 
 #test
-fn anchors_placed_children_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn anchors_placed_children_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let s = try make_scene{ &heap }
     let scratch = s.scratch
     let mut sink = s.sink
@@ -232,13 +230,12 @@ fn anchors_placed_children_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, 
     // the second anchors frame is clean
     @expect(&t, is_clean{ ui = gui })
     try write_frame{ &sink, ui = gui, name = "the same in a parent of 500 by 320" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "anchors", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "anchors", actual = ui_rec::get_text{ sink }, scratch })
 }
 
 #test
-fn nests_plain_and_rounded_clips_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn nests_plain_and_rounded_clips_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let s = try make_scene{ &heap }
     let scratch = s.scratch
     let mut sink = s.sink
@@ -249,13 +246,12 @@ fn nests_plain_and_rounded_clips_as_the_golden { mut t: Test, mut io: Io, mut fs
     // the clips frame is clean
     @expect(&t, is_clean{ ui = gui })
     try write_frame{ &sink, ui = gui, name = "nested clips, plain and rounded" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "clips", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "clips", actual = ui_rec::get_text{ sink }, scratch })
 }
 
 #test
-fn multiplies_opacity_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn multiplies_opacity_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let s = try make_scene{ &heap }
     let scratch = s.scratch
     let mut sink = s.sink
@@ -266,13 +262,12 @@ fn multiplies_opacity_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut m
     // the opacity frame is clean
     @expect(&t, is_clean{ ui = gui })
     try write_frame{ &sink, ui = gui, name = "opacity 0.5, 0.5 inside it, and 0" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "opacity", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "opacity", actual = ui_rec::get_text{ sink }, scratch })
 }
 
 #test
-fn paints_decoration_then_children_in_order_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn paints_decoration_then_children_in_order_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let s = try make_scene{ &heap }
     let scratch = s.scratch
     let mut sink = s.sink
@@ -283,13 +278,12 @@ fn paints_decoration_then_children_in_order_as_the_golden { mut t: Test, mut io:
     // the order frame is clean
     @expect(&t, is_clean{ ui = gui })
     try write_frame{ &sink, ui = gui, name = "decoration, then paints and children as recorded" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "order", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "order", actual = ui_rec::get_text{ sink }, scratch })
 }
 
 #test
-fn draws_around_a_host_slot_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_around_a_host_slot_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let s = try make_scene{ &heap }
     let scratch = s.scratch
     let mut sink = s.sink
@@ -300,15 +294,14 @@ fn draws_around_a_host_slot_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs,
     // the host frame is clean
     @expect(&t, is_clean{ ui = gui })
     try write_frame{ &sink, ui = gui, name = "a host slot with shapes under and over it" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "host", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "host", actual = ui_rec::get_text{ sink }, scratch })
     // the host shape is the third of five: two shapes under it, two over
     @expect(&t, gui.draw.count == 5 and gui.draw.cmds[2] is host)
 }
 
 #test
-fn places_whole_pixels_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn places_whole_pixels_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let s = try make_scene{ &heap }
     let scratch = s.scratch
     let mut sink = s.sink
@@ -319,13 +312,12 @@ fn places_whole_pixels_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut
     // the scaled frame is clean
     @expect(&t, is_clean{ ui = gui })
     try write_frame{ &sink, ui = gui, name = "whole pixels at scale 1.5" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "scaled", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "scaled", actual = ui_rec::get_text{ sink }, scratch })
 }
 
 #test
-fn stacks_flow_children_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn stacks_flow_children_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let s = try make_scene{ &heap }
     let scratch = s.scratch
     let mut sink = s.sink
@@ -336,7 +328,7 @@ fn stacks_flow_children_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut
     // the stack frame is clean
     @expect(&t, is_clean{ ui = gui })
     try write_frame{ &sink, ui = gui, name = "flow children stacked with padding and gap" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "stack", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "stack", actual = ui_rec::get_text{ sink }, scratch })
     // the dumps fit their buffer
     @expect(&t, sink.lost == 0)
 }

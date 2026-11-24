@@ -4,7 +4,7 @@
 // also checked directly on randomly generated lists (a fixed seed).
 //
 //   kotor/tools/ctxc test ui/tests/stage                          (from the repository root)
-//   UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/stage      rewrite the goldens after an intended change
+//   kotor/tools/ctxc test ui/tests/stage -- --update-goldens   (after an intended change: rewrites the goldens)
 //
 // Writes the atlas to ui/out/stage-atlas.png (ignored by git) to look at.
 
@@ -105,22 +105,21 @@ fn add_picture { mut list: ui::DrawList, rect: ui::Rect, image: u32, blend: ui::
         tint = ui::Color{ r = 255, g = 255, b = 255, .. }, quarter = 0, angle = 0.0, radius = ui::Corners{ .. }, blend, clip = 0 }
 }
 
-fn dump { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, staged: *ui_stage::Staged, name: []u8, update: bool } -> ! {
+fn dump { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, staged: *ui_stage::Staged, name: []u8 } -> ! {
     let out = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
     let scratch = try alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 65536 }
     let mut sink = ui_rec::make_sink{ bytes = out }
     try ui_rec::write_staged{ &sink, staged }
     // the staged dump fit its buffer
     @expect(&t, sink.lost == 0)
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch })
 }
 
 // ---- the stage 0 list, every field of every instance
 
 #test
-fn stages_every_field_of_the_stage_0_list { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn stages_every_field_of_the_stage_0_list { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
     let mut list = try make_list{ &heap, font, width = 800, height = 600, cmds = 64 }
     let panel_rect = make_rect{ x = 16, y = 16, w = 400, h = 300 }
@@ -185,7 +184,7 @@ fn stages_every_field_of_the_stage_0_list { mut t: Test, mut io: Io, mut fs: Fs,
     let p = staged.clips[2]
     // a plain clip has no rounded rectangle
     @expect(&t, p.radius == 0.0 and p.round_right == 0.0)
-    try dump{ &io, &fs, &t, &heap, staged = &staged, name = "list", update }
+    try dump{ &io, &fs, &t, &heap, staged = &staged, name = "list" }
 }
 
 // A rectangle at the top left of a 100-high list has canvas y 90; a line's ends flip the same way.
@@ -242,9 +241,8 @@ fn batches_two_hundred_buttons_into_two_draws { mut t: Test, mut io: Io, mut mem
 
 // A rectangle recorded between two texts and overlapping the first forces a third draw.
 #test
-fn breaks_a_batch_where_shapes_overlap { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn breaks_a_batch_where_shapes_overlap { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
     let mut list = try make_list{ &heap, font, width = 200, height = 100, cmds = 16 }
     let mut staged = try make_small{ &heap }
@@ -269,7 +267,7 @@ fn breaks_a_batch_where_shapes_overlap { mut t: Test, mut io: Io, mut fs: Fs, mu
     // panel, then both texts, then the rectangle over the first
     @expect(&t, staged.draws[0].kind == ui_stage::Kind::rect and staged.draws[0].count == 1 and staged.draws[1].kind == ui_stage::Kind::glyph
         and staged.draws[1].count == 4 and staged.draws[2].kind == ui_stage::Kind::rect and staged.draws[2].count == 1)
-    try dump{ &io, &fs, &t, &heap, staged = &staged, name = "overlap", update }
+    try dump{ &io, &fs, &t, &heap, staged = &staged, name = "overlap" }
 }
 
 // The number of draws `order` (a string of '1', '2', 'a': texture 1, texture 2, texture 1 additive)
@@ -370,9 +368,8 @@ fn batches_pictures_by_texture_and_blend { mut t: Test, mut io: Io, mut mem: Mem
 
 // A host slot gives two passes, and no draw spans them.
 #test
-fn splits_passes_at_a_host_slot { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn splits_passes_at_a_host_slot { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
-    let update = ui_check::is_updating{ &proc }
     let font = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
     let mut list = try make_list{ &heap, font, width = 200, height = 100, cmds = 16 }
     let mut staged = try make_small{ &heap }
@@ -390,7 +387,7 @@ fn splits_passes_at_a_host_slot { mut t: Test, mut io: Io, mut fs: Fs, mut mem: 
     @expect(&t, a.host and a.slot == 7 and a.rect.x == 60 and a.rect.w == 80 and not b.host)
     // no draw spans the passes: the rectangles after the slot are a draw of their own
     @expect(&t, a.first == 0 and a.count == 2 and b.first == 2 and b.count == 2 and staged.draw_count == 4)
-    try dump{ &io, &fs, &t, &heap, staged = &staged, name = "host", update }
+    try dump{ &io, &fs, &t, &heap, staged = &staged, name = "host" }
 
     // A list that ends at a host slot ends with an empty pass.
     ui::draw::reset{ &list, width = 200, height = 100 }

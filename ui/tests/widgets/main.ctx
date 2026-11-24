@@ -9,7 +9,7 @@
 //   keys.ctx      shortcuts on menu items and buttons, and the keyboard into the menu bar
 //
 //   kotor/tools/ctxc test ui/tests/widgets                          (from the repository root)
-//   UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/widgets      rewrite the goldens after an intended change
+//   kotor/tools/ctxc test ui/tests/widgets -- --update-goldens   (after an intended change: rewrites the goldens)
 //
 // What this file has is shared by all of them: a Ui on the tests' glyph-table font in either
 // built-in theme, a scripted driver, and the frame as the goldens hold it. Interaction lags layout

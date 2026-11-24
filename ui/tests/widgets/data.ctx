@@ -21,66 +21,66 @@
 // its label's width plus 12 at each end wide; a table cell is padded 4 at each end.
 
 #test
-fn draws_a_list_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_list_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::list, name = "data-list" }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = DataWidget::list, name = "data-list" }
 }
 
 #test
-fn draws_a_tree_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_tree_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::tree, name = "data-tree" }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = DataWidget::tree, name = "data-tree" }
 }
 
 #test
-fn draws_tabs_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_tabs_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::tabs, name = "data-tabs" }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = DataWidget::tabs, name = "data-tabs" }
 }
 
 #test
-fn draws_a_table_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_table_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::table, name = "data-table" }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = DataWidget::table, name = "data-table" }
 }
 
 #test
-fn draws_a_plot_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_plot_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::plot, name = "data-plot" }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = DataWidget::plot, name = "data-plot" }
 }
 
 #test
-fn draws_a_colour_editor_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_a_colour_editor_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::color, name = "data-color" }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, widget = DataWidget::color, name = "data-color" }
 }
 
 #test
-fn draws_the_data_widgets_in_the_light_theme_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_the_data_widgets_in_the_light_theme_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_data_light{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_data_light{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn draws_the_data_widgets_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn draws_the_data_widgets_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_data_scaled{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_data_scaled{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
-fn lists_the_data_widgets_nodes_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+fn lists_the_data_widgets_nodes_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem } -> ! {
     let mut heap = ui_check::make_heap{ &mem }
     let dump = try make_dump{ &heap }
-    try record_data_nodes{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+    try record_data_nodes{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch }
 }
 
 #test
@@ -372,7 +372,7 @@ fn has_data_text { ui: ui::Ui, text: []u8, tail: bool } -> bool {
 // One widget in the dark theme over a few frames: at rest, then after the interactions that show
 // its states (a selection, the focus, the pointer over a part).
 fn record_data_widget {
-    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
+    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8,
     widget: DataWidget, name: []u8,
 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
@@ -407,13 +407,13 @@ fn record_data_widget {
         // data goldens: a click's focus draws no ring, a key's move draws it
         @expect(&t, unringed and has_ring{ ui = gui })
     }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch })
     // data goldens: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
 
 // Every widget in the light theme, at rest.
-fn record_data_light { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_data_light { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = false }
     let mut d = try make_driver{ &heap, width = 340, height = 900, scale = 1.0 }
@@ -423,13 +423,13 @@ fn record_data_light { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Are
     s.table_selected = 1
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     try write_frame{ &sink, ui = gui, name = "every data widget in the light theme" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "data-light", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "data-light", actual = ui_rec::get_text{ sink }, scratch })
     // data light: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
 
 // Every widget at scale 1.5: every border the same on all four sides, a row 36 pixels high.
-fn record_data_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_data_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = true }
     let mut d = try make_driver{ &heap, width = 510, height = 1350, scale = 1.5 }
@@ -439,7 +439,7 @@ fn record_data_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Ar
     s.table_selected = 1
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     try write_frame{ &sink, ui = gui, name = "every data widget at scale 1.5" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "data-scale", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "data-scale", actual = ui_rec::get_text{ sink }, scratch })
     let row = find_data_node{ ui = gui, path = "items/#2" }
     // data scale 1.5: every border, and every side a rule or a tab is drawn on, is 2 pixels
     @expect(&t, has_even_data_borders{ ui = gui, width = 2 })
@@ -450,7 +450,7 @@ fn record_data_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Ar
 }
 
 // The nodes the data widgets describe.
-fn record_data_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
+fn record_data_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8 } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
     let mut gui = try make_ui{ &heap, dark = true }
     let mut d = try make_driver{ &heap, width = 340, height = 900, scale = 1.0 }
@@ -461,7 +461,7 @@ fn record_data_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Are
     s.tab = 1
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     try write_nodes{ &sink, ui = gui, name = "every data widget's nodes" }
-    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "data-nodes", actual = ui_rec::get_text{ sink }, scratch, update })
+    @expect(&t, ui_check::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "data-nodes", actual = ui_rec::get_text{ sink }, scratch })
     // data nodes: every frame is clean
     @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
