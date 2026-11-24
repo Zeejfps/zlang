@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Runs every headless ui test in turn, then kotor/tools/uicompat, and exits non-zero if any failed.
-# Tests that need a window (ui/tests/shots*) are not run here: they take a GPU and write pictures
-# to look at. Run it from anywhere; it works from the repository root.
+# Verifies ui/ in one command, and exits non-zero if anything failed: the shader check, every test
+# package under ui/tests through `ctxc test` (each prints its failures and a summary line), the
+# samples' scripted tours (the only end-to-end checks of the programs), then kotor/tools/uicompat.
+# Tests that need what this machine lacks (a font, an OpenGL window) are left out by their
+# package's `#test_main` with a `skip:` line each; the tours need an OpenGL window. Run it from
+# anywhere; it works from the repository root, where the goldens' paths start.
 #
 #   ui/tools/check
 set -u
@@ -10,31 +13,27 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 cd "$ROOT"
 
 failed=0
-# The embedded shaders match ui/shaders (plan section 2.6), checked where glslc is installed.
-if command -v glslc >/dev/null 2>&1 || [ -x /g/Dev/msys64/mingw64/bin/glslc ]; then
-    echo "== ui/tools/build_shaders --check"
-    if ! ui/tools/build_shaders --check; then
-        echo "FAILED: ui/tools/build_shaders --check"
+# Runs a command under a heading, and counts it when it fails.
+run_step() {
+    echo "== $*"
+    if ! "$@"; then
+        echo "FAILED: $*"
         failed=$((failed + 1))
     fi
+}
+
+# The embedded shaders match ui/shaders (plan section 2.6), checked where glslc is installed.
+if command -v glslc >/dev/null 2>&1 || [ -x /g/Dev/msys64/mingw64/bin/glslc ]; then
+    run_step ui/tools/build_shaders --check
 fi
 for dir in ui/tests/*/; do
     dir="${dir%/}"
-    name="$(basename "$dir")"
     [ -f "$dir/build.ctx" ] || continue
-    case "$name" in shots*) continue ;; esac
-    echo "== $dir"
-    if ! kotor/tools/ctxc run "$dir"; then
-        echo "FAILED: $dir"
-        failed=$((failed + 1))
-    fi
+    run_step kotor/tools/ctxc test "$dir"
 done
-
-echo "== kotor/tools/uicompat"
-if ! kotor/tools/ctxc run kotor/tools/uicompat; then
-    echo "FAILED: kotor/tools/uicompat"
-    failed=$((failed + 1))
-fi
+run_step kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
+run_step kotor/tools/ctxc run ui/samples/tasks -- --headless --script ui/samples/tasks/tour.txt
+run_step kotor/tools/ctxc run kotor/tools/uicompat
 
 if [ "$failed" -ne 0 ]; then
     echo "ui/tools/check: $failed failed"

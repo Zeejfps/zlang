@@ -338,12 +338,15 @@ ui/sdl       namespace ui_sdl     the SDL2 host: its own SDL binding, a window w
                                   Vulkan surface: section 4.4), events -> ui::Event,
                                   requests -> SDL                                       needs: core; links SDL2
 ui/record    namespace ui_rec     draw list, staged draws and node list as text         needs: core, stage
-ui/test      namespace ui_test    tally, golden compare, scripted driver, the test font,
-                                  a PNG writer                                          needs: core, record
+ui/test      namespace ui_test    scripted driver and its script reader, the test font,
+                                  a PNG writer (the samples add it too)                needs: core, record
+ui/tests/support  namespace ui_check  what the `#test` fns share and no program adds:
+                                  golden compare, a test's heap, leaving out what the
+                                  machine lacks                                         needs: core
 ui/samples/gallery   namespace gallery   one UI that shows every widget (no main)       needs: core, widgets
 ui/samples/demo_gl                       program: the gallery on OpenGL (demo_vulkan: section 4.4)
 ui/samples/tasks                         program: a desktop application
-ui/tests/<name>                          programs: one per package (section 6)
+ui/tests/<name>                          `#test` packages run by `ctxc test`, one per area (section 6)
 
 kotor/lib/ui_kotor   namespace ui_kotor  staged passes -> render::Frame, fonts, events      needs: core, stage, kotor render
                                          (kotor's lib/render_gl draws the passes with ui/gl/glsl's shaders)
@@ -1718,9 +1721,17 @@ Excluded from the stock set, each with its reason:
 
 ### 6.1 Strategy
 
-There is no test runner in the language, so tests are programs in kotor's manner (`Tally`, `expect`,
-exit code 1 on any failure) [read: `kotor/tools/basetest/main.ctx`], one per package, under
-`ui/tests/`.
+Tests are the language's `#test` fns, checked with `@expect` and run by `ctxc test` (ctxlang
+spec section 20), each in a process of its own: a failure is one line, `FILE:LINE: fail: NAME:
+TEXT: LEFT OP RIGHT`, at the check. They live in a package per area under `ui/tests/<name>/`, a
+program whose `build.ctx` adds the directories it tests, `ui/test` and `ui/tests/support`, and links
+what they need (SDL2, FreeType, HarfBuzz). They are not beside the code they test: `add_sources`
+adds a directory and everything below it, and a test is checked in every build of a program that
+has its file, so tests and their helpers inside `ui/core` would be compiled into the samples, kotor
+and its tools. One `#test` is one coherent case, named for what it checks; a case run at several
+scales or in both themes is a test for each. The shared helpers that take a `Test` or exist only
+for tests are `ui/tests/support` (namespace `ui_check`), which no program adds; `ui/test` keeps the
+scripted driver, the script reader, the test font and the PNG writer, which the samples use too.
 
 **The test font.** `ui_test::make_test_font` builds a glyph table in code [compiled and run, a4]: 95
 cells of 8 by 16 for the printable ASCII characters, each cell's coverage a frame with the character's
@@ -1736,9 +1747,12 @@ Four kinds of check:
 2. **Golden draw dumps.** A test builds a UI, runs frames, and compares `ui_rec`'s text of the draw
    list with a file under `ui/tests/<name>/golden/`. The staged level is pinned the same way: its dump
    lists the draws, so a change that breaks batching shows as a diff. On a mismatch the test prints the
-   first differing line both ways and writes `<name>.actual.txt` beside the golden (ignored by git).
-   `-- --update` rewrites the goldens after an intended change; the reviewer reads the git diff of the
-   golden files. This pins a widget's look without pixels (ZGF's `StockLookTests`).
+   first differing line both ways and writes `<name>.actual.txt` beside the golden (ignored by git);
+   the check is `@expect(&t, ui_check::compare_golden{ ... })`, so the failure's line is the test's.
+   `UI_UPDATE_GOLDENS=1` in the environment rewrites the goldens after an intended change (`ctxc test`
+   passes a test no arguments, and each test's process inherits the runner's environment); the
+   reviewer reads the git diff of the golden files. This pins a widget's look without pixels (ZGF's
+   `StockLookTests`).
 3. **Scripted interaction** through `ui_test::Driver`, which is a host: it steps frames with a fixed
    `dt`, pushes pointer, key and text events, and addresses widgets by node path
    (`click{ &d, path = "tasks/add" }` finds the node's rectangle from the last frame, then moves,
@@ -1756,6 +1770,13 @@ Four kinds of check:
 
 Every test also asserts, after each frame, that nothing was dropped and no problem was recorded.
 
+**What a machine may lack.** The font tests need a system font and the screenshots an OpenGL window.
+`ctxc test` has no skip, and a test that checks nothing fails, so a package whose tests need either
+declares its own `#test_main` fn, which finds out what is there and runs std's runner through
+`ui_check::run_tests_without`: each test it leaves out gets a line `FILE:LINE: skip: NAME: REASON`,
+and the runner's summary counts it as not selected, never as passed. Only a missing font file or a
+window SDL cannot open leaves a test out; a failure of `ui_gl` or `ui_fonts` is the test's own.
+
 Rules that keep the tooling honest: no Python in any test path (the driver, the script reader and the
 golden compare are ctxlang). The one script that writes ctxlang is the shader embedder, which copies
 bytes into data literals and never reads ctxlang.
@@ -1765,18 +1786,19 @@ bytes into data literals and never reads ctxlang.
 From the repository root, in Git Bash (the wrapper builds the compiler on first use):
 
 ```
-kotor/tools/ctxc run ui/tests/draw                     # stage 0: draw list, recorder, formatting
+kotor/tools/ctxc test ui/tests/draw                    # stage 0: draw list, recorder, formatting
 kotor/tools/ctxc run kotor/tools/uicompat              # stage 0 on: ui's libraries built beside kotor's
-kotor/tools/ctxc run ui/tests/text                     # stage 1
-kotor/tools/ctxc run ui/tests/stage                    # stage 2: instances, atlas, batching
+kotor/tools/ctxc test ui/tests/text                    # stage 1
+kotor/tools/ctxc test ui/tests/stage                   # stage 2: instances, atlas, batching
 ui/tools/build_shaders --check                         # stage 3: generated shader files match ui/shaders
-kotor/tools/ctxc run ui/tests/shots -- --out ui/out    # stage 3 on: ui/out/conformance-gl.png, gallery-*.png
-kotor/tools/ctxc run ui/tests/fonts                    # stage 4: FreeType and HarfBuzz; takes --font PATH
-kotor/tools/ctxc run ui/tests/layout                   # stages 5 and 6
-kotor/tools/ctxc run ui/tests/input                    # stage 7
-kotor/tools/ctxc run ui/tests/layers                   # stage 8
-kotor/tools/ctxc run ui/tests/widgets                  # stages 9 to 12
-kotor/tools/ctxc run ui/tests/widgets -- --update      # rewrite goldens after an intended change
+kotor/tools/ctxc test ui/tests/shots                   # stages 3 and 4: ui/out/conformance-gl.png, text-gl.png (UI_SHOTS_DIR)
+kotor/tools/ctxc test ui/tests/fonts                   # stage 4: FreeType and HarfBuzz (UI_FONT, UI_CJK_FONT)
+kotor/tools/ctxc test ui/tests/layout                  # stages 5 and 6
+kotor/tools/ctxc test ui/tests/input                   # stage 7
+kotor/tools/ctxc test ui/tests/layers                  # stage 8
+kotor/tools/ctxc test ui/tests/widgets                 # stages 9 to 12
+kotor/tools/ctxc test ui/tests/widgets field_          # only the tests whose names contain a filter
+UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/widgets   # rewrite goldens after an intended change
 kotor/tools/ctxc run ui/samples/demo_gl                # the gallery, interactive
 kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
 kotor/tools/ctxc run ui/samples/tasks                  # stage 13: the desktop application
@@ -1784,11 +1806,14 @@ kotor/tools/ctxc run kotor/tools/uispike -- --headless --out kotor/out/uispike.p
 kotor/tools/ctxc run ui/samples/demo_gl -- --headless --shot ui/out/gallery-basic.png
 kotor/tools/ctxc run kotor/tools/uispike -- --headless --font C:/Windows/Fonts/segoeui.ttf --against ui/out/gallery-basic.png   # stage 15: 0 pixels differ
 kotor/tools/ctxc run kotor/tools/uiview -- optgameplay --scale 1.5 --out kotor/out/uiview   # stage 16
-ui/tools/check                                         # every headless ui test in turn; non-zero if one fails
+ui/tools/check                                         # everything: shaders, every package, both tours, uicompat
 ```
 
-`ui/tools/check` is a bash loop over the test directories. Measured on this machine with the probes: a
-small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
+`ui/tools/check` runs the shader check, `ctxc test` on each directory under `ui/tests` with a
+`build.ctx`, the two samples' scripted tours (demo_gl's `tour.txt` and tasks' `tour.txt`, headless),
+and `kotor/tools/uicompat`, and exits non-zero if any of them failed. It neither lexes nor parses
+ctxlang: the tests are found by the compiler. Measured on this machine: the whole check takes about
+12 s cached and 25 s from a clean build, of which the tours are about 5 s.
 
 ---
 
@@ -1830,14 +1855,14 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 - **Scope.** Values, `RectStyle`, `Cmd`, `DrawList` with its clip table, `ui::draw::*`, the libm
   externs, small number helpers (min, max, clamp) and the conversions from logical units to pixels
   (`scale_length`, `scale_position`, `scale_font_size`, the held sums), fixed-point and hex number writing, the
-  recorder's sink and `write_list`, the test tally and golden compare, the agent guide, and a kotor-side
-  build check.
+  recorder's sink and `write_list`, the golden compare the tests check with, the agent guide, and a
+  kotor-side build check.
 - **Files.** `ui/AGENTS.md` (rules, commands, layout: this plan's sections 2.1, 6.2 and conventions),
   `ui/PLAN.md` (this plan), `ui/.gitignore` (`/out/`, `*.actual.txt`), `ui/core/types.ctx`,
   `ui/core/draw.ctx`, `ui/core/num.ctx`, `ui/core/format.ctx`, `ui/record/dump.ctx`,
-  `ui/test/harness.ctx`, `ui/tests/draw/{build.ctx, main.ctx, golden/list.txt}`, `ui/tools/check`,
+  `ui/tests/support/golden.ctx`, `ui/tests/draw/{build.ctx, main.ctx, golden/list.txt}`, `ui/tools/check`,
   `kotor/tools/uicompat/{build.ctx, main.ctx}`.
-- **Acceptance.** `ui/tests/draw` exits 0: a hand-built list with all five shapes and three clips, one
+- **Acceptance.** `ctxc test ui/tests/draw` passes: a hand-built list with all five shapes and three clips, one
   of them rounded, matches its golden; equal clips share a table entry; the overflow of a 4-shape list
   and of a full clip table is counted; fixed-point writing gives `10`, `0.5`, `-3.25`, `100` for the
   values std prints as `1e+01` and `1e+02`; a length of 1 unit is 1, 1, 2, 2 and 2 pixels at scales 1,
@@ -1902,7 +1927,7 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   the script that validates, compiles and embeds them; `ui_gl` (GL subset binding, device, images, the
   four programs, the uniform blocks, `render`, `render_pass`, `read_pixels`); `ui_sdl` (its own SDL
   binding, the window with a GL context, events with the pointer in device pixels, requests, the
-  surface's pixel size and scale); `ui_test`'s PNG writer; the screenshot program with the conformance
+  surface's pixel size and scale); `ui_test`'s PNG writer; the screenshot tests with the conformance
   list, which is written in logical units and converted to pixels by the test at each scale, as a
   widget converts.
 - **Files.** `ui/shaders/canvas_{rect,glyph,image,shape}.{vert,frag}.glsl`, `ui/tools/build_shaders`,
@@ -1928,8 +1953,8 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 - **Files.** `ui/fonts/freetype.ctx`, `ui/fonts/harfbuzz.ctx`, `ui/fonts/library.ctx`,
   `ui/fonts/shape.ctx`, `ui/tests/fonts/{build.ctx, main.ctx}`, `ui/tests/shots/text.ctx` and the two
   lines in stage 3's `ui/tests/shots/{build.ctx, main.ctx}` that add and call it.
-- **Acceptance.** With a system font (`--font`, or the platform's default path; the test prints why and
-  exits 0 when there is none): a face loads and a start-up check of the mirrored FreeType fields passes
+- **Acceptance.** With a system font (UI_FONT, or the platform's default path; with none the package's
+  `#test_main` leaves every test out on a `skip:` line each): a face loads and a start-up check of the mirrored FreeType fields passes
   (units per em and glyph count in range), so wrong offsets fail at once; 'A' rasterises to a non-empty
   bitmap; "AV" is narrower than 'A' plus 'V' in a font with kerning; a second shaping of the same text
   is a cache hit; with a CJK font registered as fallback, a line mixing Latin and CJK comes back as runs
@@ -2378,7 +2403,7 @@ stage reaches into kotor:
 | Frame-arena slices outlive the frame | `take_text` results kept across frames point at reused bytes; the escape check cannot see it. | Documented at the function; nothing in the library keeps one. |
 | Two widget sets drift | Stock widgets and kui both grow. | Both use only the public primitives; kui lives in kotor and has its own parity tool. |
 | Hover-as-focus one frame late | KOTOR's hover sound and highlight follow the pointer a frame behind. | 16 ms at 60 frames a second. Checked by eye in stage 16. |
-| A machine without a system font | Samples and the font tests need a font file. | `--font PATH`; the font test says so and passes without one; the core's tests need no file at all. |
+| A machine without a system font | Samples and the font tests need a font file. | `--font PATH` for a sample, UI_FONT for the tests; without one the font tests are left out by name on `skip:` lines, never passed; the core's tests need no file at all. |
 
 ### 10.2 Language and std gaps
 
@@ -2392,7 +2417,7 @@ fixed in the language on its own branch, as kotor's rules require.
 | The escape check misses a stack slice stored through a call | All text is copied at the call. | **Yes: a compiler fix would turn this class of bug into an error.** It affects every library that keeps slices. |
 | No C `long` type and no way to mirror a C struct from its header | `ui/fonts` computes FreeType's offsets from `target::OS` and checks them at start-up. | A `c::Long` in std would remove the per-platform arithmetic. Small, and other bindings would use it. |
 | No `ctxc check` (front end only) | Builds are fast enough (0.4 s for small programs). | Useful for agents, not needed. |
-| No test runner (`#test`) | Programs with a tally, kotor's convention. | When it lands the tests move; nothing waits for it. |
+| No skip in `ctxc test` (`#test`, `@expect` and the runner landed: spec section 20) | The tests are `#test` fns; a package that needs a font or an OpenGL window has a `#test_main` that leaves out what cannot run, by name, on a `skip:` line, so the summary counts it as not selected (section 6.1). | A skip in the runner would remove the two `#test_main` fns and count skips in the summary. |
 | No sort, no integer min and max | Only tiny insertion sorts (at most 64 layers) and three-line helpers. | No: not worth a std change for this. |
 | No vector or rectangle math in std | `ui::Rect` and four helpers. | No: kotor's and ui's types differ for good reasons (f32 colours versus bytes). |
 | No bare block statement | Closed: ctxlang now has block statements (spec section 11, rule 4). | Done in the language. |

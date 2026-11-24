@@ -89,8 +89,9 @@ What follows from it, and what a reviewer checks:
    test asserts after every frame that nothing was dropped and no problem was recorded.
 5. **No parsing of ctxlang outside the compiler.** Tools and tests never lex or parse ctxlang and
    never mirror the compiler driver; if a tool needs to know something about a program it asks the
-   native `ctxc`. `ui/tools/check` is a plain bash loop that runs test programs. No Python in any test
-   path: the driver, the script reader and the golden compare are ctxlang.
+   native `ctxc`. The tests are `#test` fns, which the compiler finds; `ui/tools/check` is a plain
+   bash script that runs `ctxc test` on each package and the programs. No Python in any test path:
+   the driver, the script reader and the golden compare are ctxlang.
 6. **No "for now", "later" or "v1" in code or docs.** Implement what the stage specifies or say why
    you could not.
 7. **Do not touch `ctxlang/`** (compiler, std). A compiler or std problem: write a minimal
@@ -117,17 +118,19 @@ From the repository root, in **Git Bash** (PowerShell's `bash` is WSL's). The wr
 compiler on first use; a cached rerun of a small program takes about 0.1 s.
 
 ```
-kotor/tools/ctxc run ui/tests/draw                     # stage 0: draw list, recorder, formatting, the unit conversions
-kotor/tools/ctxc run ui/tests/text                     # stage 1: fonts, measuring, wrapping, caret
-kotor/tools/ctxc run ui/tests/stage                    # stage 2: instances, atlas, batching; writes ui/out/stage-atlas.png
-kotor/tools/ctxc run ui/tests/fonts                    # stage 4: FreeType and HarfBuzz; takes --font PATH
-kotor/tools/ctxc run ui/tests/layout                   # stages 5 and 6: the Ui, ids, the tree, layout, emit, the pixel properties
-kotor/tools/ctxc run ui/tests/input                    # stage 7: input, interaction, focus, state, nodes, the driver
-kotor/tools/ctxc run ui/tests/layers                   # stage 8: overlays, windows, modals, popups, tooltips, scroll regions
-kotor/tools/ctxc run ui/tests/widgets                  # stages 9 to 12: the stock widgets (basic.ctx, windows.ctx, data.ctx, keys.ctx)
-kotor/tools/ctxc run ui/tests/sdl                      # the SDL host's conversions, from raw SDL_Event bytes to a Ui (no window)
-kotor/tools/ctxc run ui/tests/shots -- --out ui/out    # stages 3 and 4: pictures from the OpenGL backend (needs a GPU); look at them
-kotor/tools/ctxc run ui/tests/draw -- --update         # rewrite goldens after an intended change (any test takes it)
+kotor/tools/ctxc test ui/tests/draw                    # stage 0: draw list, recorder, formatting, the unit conversions
+kotor/tools/ctxc test ui/tests/text                    # stage 1: fonts, measuring, wrapping, caret
+kotor/tools/ctxc test ui/tests/stage                   # stage 2: instances, atlas, batching; writes ui/out/stage-atlas.png
+kotor/tools/ctxc test ui/tests/fonts                   # stage 4: FreeType and HarfBuzz; UI_FONT, UI_CJK_FONT name the faces
+kotor/tools/ctxc test ui/tests/layout                  # stages 5 and 6: the Ui, ids, the tree, layout, emit, the pixel properties
+kotor/tools/ctxc test ui/tests/input                   # stage 7: input, interaction, focus, state, nodes, the driver
+kotor/tools/ctxc test ui/tests/layers                  # stage 8: overlays, windows, modals, popups, tooltips, scroll regions
+kotor/tools/ctxc test ui/tests/widgets                 # stages 9 to 12: the stock widgets (basic.ctx, windows.ctx, data.ctx, keys.ctx)
+kotor/tools/ctxc test ui/tests/sdl                     # the SDL host's conversions, from raw SDL_Event bytes to a Ui (no window)
+kotor/tools/ctxc test ui/tests/shots                   # stages 3 and 4: pictures from the OpenGL backend in ui/out (UI_SHOTS_DIR); look at them
+kotor/tools/ctxc test ui/tests/widgets slider          # only the tests whose names contain `slider` (any number of filters)
+kotor/tools/ctxc test ui/tests/widgets --list          # the tests, FILE:LINE: NAME, without running them (also -v, --jobs N, --timeout S)
+UI_UPDATE_GOLDENS=1 kotor/tools/ctxc test ui/tests/draw   # rewrite the goldens after an intended change (any package)
 kotor/tools/ctxc run ui/samples/demo_gl                # the gallery in a window
 kotor/tools/ctxc run ui/samples/demo_gl -- --headless --page Windows --theme light --scale 1.5 --shot ui/out/windows.png
 kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
@@ -137,7 +140,7 @@ kotor/tools/ctxc run kotor/tools/uicompat              # ui built beside kotor's
 kotor/tools/ctxc run kotor/tools/uispike -- --headless --out kotor/out/uispike.png     # the gallery through kotor's renderer
 kotor/tools/ctxc run kotor/tools/uispike -- --headless --font C:/Windows/Fonts/segoeui.ttf --against ui/out/gallery-basic.png
                                                        # the same in an outline font, against demo_gl's picture: 0 pixels differ
-ui/tools/check                                         # the shader check, every headless ui test in turn, then uicompat
+ui/tools/check                                         # everything: the shader check, `ctxc test` on every package, both tours, uicompat
 ```
 
 demo_gl's options: `--font PATH` (default the platform's, `C:/Windows/Fonts/segoeui.ttf` on
@@ -157,15 +160,48 @@ tasks takes the same options but `--page` (its `--size` default is 520x620), and
 Windows). It draws only when an event came, its state changed, a frame asked to animate or the time a frame
 asked to be woken at came (`Requests.wake`: a caret blinking draws two frames a second).
 
-Later stages add `ui/tests/<name>` programs (PLAN.md section 6.2 lists them with their stage). A test
-exits 1 when any check fails and prints each failure; `ui/tools/check` exits non-zero if any test does.
+**Tests.** A test is a `#test` fn (ctxlang spec section 20) in a package under `ui/tests/<name>/`,
+run by `ctxc test`, each in a process of its own. The runner prints one line a failure, at the
+check, with both sides of a comparison (`ui/tests/draw/main.ctx:105: fail: counts_what_does_not_fit:
+rect_x_of{ cmd = list.cmds[3] } == 3: 4 == 3`) after what the test printed, and last
+`tests: N run, P passed, F failed, S not selected`; it exits 1 if a test failed or none ran.
+Run a package from the repository root (the goldens' paths start there); filters pick the tests
+whose names contain one, and `--list` names them. `ui/tools/check` exits non-zero if any package,
+tour or uicompat does.
 
-**Golden files.** A test builds something, writes it as text with `ui_rec`, and compares it with
-`ui/tests/<name>/golden/<name>.txt`. On a mismatch it prints the first differing line both ways and
-writes `<name>.actual.txt` beside the golden (git ignores it). A golden is written by hand from what
-the test built, or reviewed line by line against it when `-- --update` produced it: a golden that
-merely records what the code printed proves nothing. The reviewer reads the git diff of goldens.
-Carriage returns are ignored in the compare, so a checkout with Windows line ends still matches.
+Writing one:
+
+- Put it in the package of what it tests (PLAN.md section 6.2 lists them), never beside the code: a
+  program that adds `ui/core` would compile it. A new package is a directory with a `build.ctx` that
+  adds what it tests, `../../test` and `../support`, and links what it needs; `ui/tools/check` finds
+  it by its `build.ctx`.
+- One coherent case a test, named for what it checks with a verb (`clicks_on_the_frame_after_the_release`,
+  `wraps_as_the_golden`); a case run at two scales or in both themes is a test for each, over a
+  helper that takes the scale. A test takes the capabilities it uses, a `Test` among them:
+  `#test fn ... { mut t: Test, mut io: Io, mut mem: Mem } -> ! { let mut heap = ui_check::make_heap{ &mem } ... }`.
+- Check with `@expect(&t, condition)` where the condition is decided, so the failure points there;
+  compare values with `==` and friends so both sides are printed. A comment above the check says what
+  it means. What cannot fail in a passing run (an allocation, a write into a sink) is `try`, and the
+  test returns its error; a check in a helper reports the helper's line, so a helper that checks takes
+  `mut t: Test` and prints what it looked at before its `@expect`.
+- A test that needs what a machine may lack (a font, an OpenGL window) goes in a package whose
+  `#test_main` fn leaves it out with `ui_check::run_tests_without` when that is missing (fonts' and
+  shots' `main.ctx`). The runner has no skip: a test left out has its own `skip:` line and counts as
+  not selected.
+- Helpers that take a `Test` or exist only for tests go in `ui/tests/support` (namespace `ui_check`),
+  which no program adds. `ui/test` is for what the samples use too (the driver, the script reader,
+  the test font, the PNG writer), so nothing there takes a `Test`.
+
+**Golden files.** A test builds something, writes it as text with `ui_rec`, and checks it with
+`@expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name, actual, scratch, update })`
+against `ui/tests/<name>/golden/<name>.txt`. On a mismatch the compare prints the first differing line
+both ways and writes `<name>.actual.txt` beside the golden (git ignores it). `update` is
+`ui_check::is_updating{ &proc }`: run with `UI_UPDATE_GOLDENS=1` to rewrite the goldens after an
+intended change (an environment variable, because `ctxc test` passes a test no arguments and each
+test's process inherits the runner's environment). A golden is written by hand from what the test
+built, or reviewed line by line against it when an update produced it: a golden that merely records
+what the code printed proves nothing. The reviewer reads the git diff of goldens. Carriage returns
+are ignored in the compare, so a checkout with Windows line ends still matches.
 
 ## Layout
 
@@ -248,22 +284,27 @@ ui/
   record/     namespace ui_rec     the recorder: Sink with its own #write fns, write_list, write_quoted
   record_stage/ namespace ui_rec   write_staged, the dump of a Staged: its own directory, because it names ui_stage
                                    and a program that records only draw lists should not have to add ui/stage
-  test/       namespace ui_test    Tally, expect, has_flag, compare_golden, make_test_font, write_png, Driver (the scripted
-                                   host, which speaks device pixels: click, drag, tap_key, ...)
+  test/       namespace ui_test    make_test_font, write_png, Driver (the scripted host, which speaks device pixels:
+                                   click, drag, tap_key, ...); the samples add it too, so nothing here takes a Test
     script.ctx  run_script: the text scripts demo_gl's --script runs (the commands are its top comment)
-  tests/<name>/                    programs: build.ctx, main.ctx, golden/*.txt
-  tests/widgets/                   main.ctx (make_ui, make_driver, write_frame, write_nodes, count_text) and a file
-                                   of checks a stage: basic.ctx (9), field.ctx (10), windows.ctx (11), data.ctx
+  tests/<name>/                    `#test` packages run by `ctxc test`: build.ctx, main.ctx, golden/*.txt
+  tests/support/ namespace ui_check  what the tests share and no program adds: compare_golden, is_updating
+                                   (UI_UPDATE_GOLDENS), make_heap, has_wake (golden.ctx); run_tests_without
+                                   and the system fonts a test may need (skip.ctx)
+  tests/fonts/, tests/shots/       each with a `#test_main` that leaves out what the machine lacks
+  tests/widgets/                   main.ctx (make_ui, make_driver, make_dump, write_frame, write_nodes, count_text)
+                                   and a file of tests a stage: basic.ctx (9), field.ctx (10), windows.ctx (11), data.ctx
                                    (12), with goldens golden/basic-*, field-*, windows-*, data-*
-  tools/check                      the shader check and a bash loop over the headless tests
+  tools/check                      the shader check, `ctxc test` on every package, the samples' tours, uicompat
   out/                             (ignored) screenshots
 ```
 
 `vulkan` and `samples/demo_vulkan` are specified, not built: the owner decided to build OpenGL only
 (PLAN.md sections 1.2 and 4.4). Backends and hosts are siblings of `core`, never children, because
 `add_sources` adds a
-directory and everything below it; a program lists exactly the directories it needs. A test or sample
-(anything with a `fn main`) must not live under a directory another program adds.
+directory and everything below it; a program lists exactly the directories it needs. A sample
+(anything with a `fn main`) or a test (a `#test` fn, which every build of its files checks) must not
+live under a directory another program adds.
 
 **The dump format** (`ui_rec::write_list`): one shape a line after a `frame WxH` line (the surface in
 pixels) and the clip table. Radii run top-left, top-right, bottom-right, bottom-left; border widths and
