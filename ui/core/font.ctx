@@ -3,17 +3,15 @@
 //
 //   bitmap   a glyph table. `glyphs[c - first]` is character `c`. Everything is in font units;
 //            `height` is the line height in font units, so text at `size` pixels is drawn at
-//            `size / height` pixels a font unit. With `snap` that magnification is rounded to a
-//            whole number, at least 1, so one font unit covers whole pixels and each glyph starts
-//            on a pixel. Without it the magnification is exactly size / height (KOTOR's fonts,
-//            drawn at their design size times a quarter-step scale): the glyphs inside a run may
-//            lie between pixels, while the run starts on a pixel and measures a whole width.
+//            `size / height` pixels a font unit. The pen moves by the advances magnified exactly,
+//            and each glyph's quad is put on whole pixels (`ui::lay_glyphs`): a table drawn at a
+//            whole multiple of its height draws texel for pixel, and at any other size each glyph
+//            is stretched to whole pixels rather than left between them.
 //   outline  TrueType or OpenType, served by a `TextProvider` (shaping, line metrics, rasterising)
-//            at `size` rounded to a whole pixel size.
+//            at `size` pixels.
 //
-// A text's `size` is always device pixels, and it is the one text quantity that stays f32, for
-// the glyph table without `snap`. A size written in logical units becomes pixels with
-// `ui::to_font_size`, which gives a whole number.
+// A text's `size` is always a whole number of device pixels (i32). A size written in logical units
+// becomes one with `ui::to_font_size` when its element is recorded.
 //
 // A Glyph's `left` is the distance from the pen to the left edge of its box, and `top` the distance
 // from the top of the line box DOWN to the top of its box, both in font units: y runs down in the
@@ -99,14 +97,11 @@ namespace ui {
     }
 
     // Pixels per font unit for a glyph table drawn at `size` (the line height wanted, in pixels):
-    // size / height, and with `snap` that rounded to a whole number, at least 1. 0 when the font
-    // or the size has no height. Never more than 100000.
-    fn get_font_scale { font: FontDef, size: f32 } -> f32 {
-        if not (font.height > 0.0) or not (size > 0.0) { return 0.0 }
-        let k = pick_min_f32{ a = size / font.height, b = 100000.0 }
-        if not (k == k) { return 0.0 }
-        if not font.snap { return k }
-        return pick_max_f32{ a = 1.0, b = round_f32{ x = k } }
+    // size / height. 0 when the font or the size has no height. Never more than 100000.
+    fn get_font_scale { font: FontDef, size: i32 } -> f32 {
+        if not (font.height > 0.0) or size < 1 { return 0.0 }
+        let k = pick_min_f32{ a = @as(f32, size) / font.height, b = 100000.0 }
+        return if k == k { k } else { 0.0 }
     }
 
     namespace draw {
@@ -134,7 +129,7 @@ namespace ui {
         // add_text for a font that must be registered. Text in a font that never was is not drawn:
         // the shape is dropped and counted in `list.dropped`, which the tests assert is 0 after every
         // frame. The Ui records the misuse as a problem by asking `has_font` first.
-        fn add_known_text { mut list: DrawList, font: Font, size: f32, x: i32, y: i32, text: []u8, color: Color, clip: u16 } {
+        fn add_known_text { mut list: DrawList, font: Font, size: i32, x: i32, y: i32, text: []u8, color: Color, clip: u16 } {
             if not has_font{ list, font } {
                 list.dropped = list.dropped + 1
                 return

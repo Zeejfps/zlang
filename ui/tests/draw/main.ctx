@@ -74,8 +74,8 @@ fn check_list { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::
         fill = ui::Color{ r = 0x4A, g = 0x90, b = 0xE2, .. }, radius = ui::round{ radius = 12.0 }, .. } }
     ui::draw::add_rect{ &list, rect = make_rect{ x = 240, y = 40, w = 24, h = 24 }, clip = rounded, style = ui::RectStyle{
         radius = ui::round{ radius = 12.0 }, border = ui::stroke{ width = 2 }, border_color = ui::color_sides{ color = ink }, .. } }
-    ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16.0, x = 24, y = 22, text = "Add", color = ink, clip = rounded }
-    ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 12.5, x = 24, y = 60, text = "Say \"hi\"", color = ui::Color{ r = 0x4A, g = 0x90, b = 0xE2, .. }, clip = plain }
+    ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 16, x = 24, y = 22, text = "Add", color = ink, clip = rounded }
+    ui::draw::add_text{ &list, font = ui::Font{ index = 0 }, size = 13, x = 24, y = 60, text = "Say \"hi\"", color = ui::Color{ r = 0x4A, g = 0x90, b = 0xE2, .. }, clip = plain }
     ui::draw::add_image{ &list, rect = make_rect{ x = 10, y = 10, w = 32, h = 32 }, region = ui::Region{ image = ui::Image{ id = 3, width = 32, height = 32 }, width = 32, height = 32, .. },
         tint = ui::Color{ r = 255, g = 255, b = 255, .. }, quarter = 1, angle = 0.0, radius = ui::Corners{ .. }, blend = ui::Blend::alpha, clip = 0 }
     ui::draw::add_image{ &list, rect = make_rect{ x = 100, y = 120, w = 64, h = 48 },
@@ -138,9 +138,9 @@ fn check_overflow { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
     ui_test::expect{ &io, &t, ok = list.count == 0 and list.dropped == 2, what = "a shape with an unknown clip index is dropped and counted" }
 
     // Text is copied into the arena (8 bytes here); one that does not fit is dropped whole.
-    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8.0, x = 0, y = 0, text = "12345", color = ui::Color{ .. }, clip = 0 }
-    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8.0, x = 0, y = 0, text = "6789", color = ui::Color{ .. }, clip = 0 }
-    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8.0, x = 0, y = 0, text = "678", color = ui::Color{ .. }, clip = 0 }
+    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8, x = 0, y = 0, text = "12345", color = ui::Color{ .. }, clip = 0 }
+    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8, x = 0, y = 0, text = "6789", color = ui::Color{ .. }, clip = 0 }
+    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 8, x = 0, y = 0, text = "678", color = ui::Color{ .. }, clip = 0 }
     ui_test::expect{ &io, &t, ok = list.count == 2 and list.text_len == 8 and list.dropped == 3, what = "text past the arena is dropped whole" }
     check_text_span{ &io, &t, list = &list }
 }

@@ -512,7 +512,7 @@ fn check_frames { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::frame_not_open }, what = "end_frame before any begin_frame is reported" }
     let s = ui::begin_element{ ui = &gui, id = ui::make_id{ ui = gui, name = "early" }, axis = ui::Axis::row, box = ui::Box{ .. } }
     ui::paint_rect{ ui = &gui, rect = ui::Rect{ w = 5, h = 5, .. }, style = fill_with{ color = WHITE } }
-    ui::paint_text{ ui = &gui, font = gui.theme.font, size = 16.0, x = 0, y = 0, text = "early", color = WHITE }
+    ui::paint_text{ ui = &gui, font = gui.theme.font, size = 16, x = 0, y = 0, text = "early", color = WHITE }
     ui::add_text{ ui = &gui, text = "early", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::add_host_slot{ ui = &gui, slot = 1, box = ui::Box{ .. } }
     let p = ui::push_id{ ui = &gui, name = "early" }
@@ -652,7 +652,7 @@ fn check_full_clips { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
         box.fill = PANEL
         let el = ui::begin_element{ ui = &gui, id = ui::make_id{ ui = gui, name = if i == 3 { "last" } else { "" } }, axis = ui::Axis::row, box }
         ui::paint_rect{ ui = &gui, rect = ui::Rect{ w = 500, h = 500, .. }, style = fill_with{ color = WHITE } }
-        ui::paint_text{ ui = &gui, font = gui.theme.font, size = 16.0, x = 0, y = 0, text = "in", color = WHITE }
+        ui::paint_text{ ui = &gui, font = gui.theme.font, size = 16, x = 0, y = 0, text = "in", color = WHITE }
         ui::end{ ui = &gui, scope = el }
         i = i + 1
     }
@@ -734,7 +734,7 @@ fn check_full_tables { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     start_frame{ ui = &gui, scale = 1.0 }
     ui::add_text{ ui = &gui, text = "0123456789", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::add_text{ ui = &gui, text = "0123456789", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
-    ui::paint_text{ ui = &gui, font = gui.theme.font, size = 16.0, x = 0, y = 0, text = "0123456789", color = WHITE }
+    ui::paint_text{ ui = &gui, font = gui.theme.font, size = 16, x = 0, y = 0, text = "0123456789", color = WHITE }
     _ = @fmt(&gui, "{}", "0123456789")
     let cut = ui::take_text{ ui = &gui }
     ui::end_frame{ ui = &gui }
@@ -803,8 +803,8 @@ fn check_fonts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let mut gui = make_ui{ &heap, cap = get_small{} } iferr { return }
     let known = gui.theme.font
     start_frame{ ui = &gui, scale = 1.0 }
-    ui_test::expect{ &io, &t, ok = ui::measure_text{ ui = &gui, font = known, size = 16.0, text = "Hello" } == 40, what = "\"Hello\" in the test font measures 40 through the Ui" }
-    ui_test::expect{ &io, &t, ok = ui::measure_text{ ui = &gui, font = known, size = 32.0, text = "Hello" } == 80, what = "and 80 at size 32" }
+    ui_test::expect{ &io, &t, ok = ui::measure_text{ ui = &gui, font = known, size = 16, text = "Hello" } == 40, what = "\"Hello\" in the test font measures 40 through the Ui" }
+    ui_test::expect{ &io, &t, ok = ui::measure_text{ ui = &gui, font = known, size = 32, text = "Hello" } == 80, what = "and 80 at size 32" }
     ui::end_frame{ ui = &gui }
     ui_test::expect{ &io, &t, ok = is_clean{ ui = gui }, what = "measuring in a registered font is no problem" }
 
@@ -813,7 +813,7 @@ fn check_fonts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     start_frame{ ui = &gui, scale = 1.0 }
     let scope = ui::push_id{ ui = &gui, name = "page" }
     ui::add_text{ ui = &gui, text = "lost", style = ui::TextStyle{ font = unknown, .. }, box = ui::Box{ .. } }
-    ui::paint_text{ ui = &gui, font = unknown, size = 16.0, x = 0, y = 20, text = "lost", color = WHITE }
+    ui::paint_text{ ui = &gui, font = unknown, size = 16, x = 0, y = 20, text = "lost", color = WHITE }
     ui::add_text{ ui = &gui, text = "kept", style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
     ui::end{ ui = &gui, scope }
     ui::end_frame{ ui = &gui }
@@ -823,13 +823,13 @@ fn check_fonts { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
 
     // Measuring alone in such a font is reported too, once, at end_frame.
     start_frame{ ui = &gui, scale = 1.0 }
-    ui_test::expect{ &io, &t, ok = ui::measure_text{ ui = &gui, font = unknown, size = 16.0, text = "Hello" } == 0, what = "text in an unregistered font has no width" }
-    _ = ui::measure_text{ ui = &gui, font = unknown, size = 16.0, text = "again" }
+    ui_test::expect{ &io, &t, ok = ui::measure_text{ ui = &gui, font = unknown, size = 16, text = "Hello" } == 0, what = "text in an unregistered font has no width" }
+    _ = ui::measure_text{ ui = &gui, font = unknown, size = 16, text = "again" }
     ui::end_frame{ ui = &gui }
     ui_test::expect{ &io, &t, ok = gui.stats.problems == 1 and has_kept{ ui = gui, kind = ui::ProblemKind::unknown_font }, what = "measuring in an unregistered font is one problem a frame" }
 
     // An outline font with no provider measures nothing and is reported; with one it measures.
-    let outline_def = ui::FontDef{ kind = ui::FontKind::outline{ handle = 5 }, encoding = ui::Encoding::utf8, height = 0.0, ascent = 0.0, snap = false }
+    let outline_def = ui::FontDef{ kind = ui::FontKind::outline{ handle = 5 }, encoding = ui::Encoding::utf8, height = 0.0, ascent = 0.0 }
     let outline = ui::add_font{ ui = &gui, font = outline_def } ifnull {
         ui_test::expect{ &io, &t, ok = false, what = "the font table has room for a second font" }
         return
@@ -881,8 +881,8 @@ fn check_odd_values { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui::paint_image{ ui = &gui, rect = ui::Rect{ x = most, y = most, w = most, h = most }, image = PICTURE, uv = ui::Uv{ .. }, tint = WHITE, quarter = 255, angle = nan, blend = ui::Blend::alpha }
     ui::paint_image{ ui = &gui, rect = ui::Rect{ x = least, y = least, w = most, h = most }, image = PICTURE, uv = ui::Uv{ .. }, tint = WHITE, quarter = 1, angle = 0.4, blend = ui::Blend::alpha }
     ui::paint_line{ ui = &gui, x0 = nan, y0 = huge, x1 = -huge, y1 = nan, width = nan, color = WHITE, cap = ui::Cap::square }
-    ui::paint_text{ ui = &gui, font = gui.theme.font, size = nan, x = most, y = least, text = "odd", color = WHITE }
-    ui::paint_text{ ui = &gui, font = gui.theme.font, size = huge, x = least, y = most, text = "odd", color = WHITE }
+    ui::paint_text{ ui = &gui, font = gui.theme.font, size = least, x = most, y = least, text = "odd", color = WHITE }
+    ui::paint_text{ ui = &gui, font = gui.theme.font, size = most, x = least, y = most, text = "odd", color = WHITE }
     ui::add_text{ ui = &gui, text = "odd", style = ui::TextStyle{ size = -4.0, .. }, box = ui::Box{ width = ui::Size{ kind = ui::SizeKind::part, value = nan, min = huge, max = -1.0, .. }, .. } }
     ui::add_text{ ui = &gui, text = "odd odd odd", style = ui::TextStyle{ size = nan, wrap = true, .. }, box = ui::Box{ .. } }
     ui::add_host_slot{ ui = &gui, slot = 4294967295, box = ui::Box{ width = ui::GROW, height = ui::take{ part = huge }, .. } }
@@ -905,7 +905,7 @@ fn check_odd_values { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     // Every length of a frame at scale 1.5 that is not a number: the conversions answer 0.
     start_frame{ ui = &gui, scale = 1.5 }
     ui_test::expect{ &io, &t, ok = ui::to_pixels{ ui = gui, length = nan } == 0 and ui::to_pixel_position{ ui = gui, position = nan } == 0 and ui::to_pixels_f32{ ui = gui, length = nan } == 0.0
-        and ui::to_font_size{ ui = gui, size = nan } == 1.0 and ui::to_font_size{ ui = gui, size = -3.0 } == 1.0 and ui::to_font_size{ ui = gui, size = 0.0 } == 1.0,
+        and ui::to_font_size{ ui = gui, size = nan } == 1 and ui::to_font_size{ ui = gui, size = -3.0 } == 1 and ui::to_font_size{ ui = gui, size = 0.0 } == 1,
         what = "a length that is not a number converts to 0, and a font size is a pixel at least" }
     ui_test::expect{ &io, &t, ok = ui::to_pixels{ ui = gui, length = huge } == ui::MAX_PIXELS and ui::to_pixels{ ui = gui, length = -huge } == -ui::MAX_PIXELS and ui::to_pixel_position{ ui = gui, position = huge } == ui::MAX_PIXELS,
         what = "a huge length is held at MAX_PIXELS" }

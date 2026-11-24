@@ -4,9 +4,10 @@
 // The unit is the device pixel, y down, origin top left (plan section 2.0, "Units"). A rectangle,
 // a clip, a text's position and a border's widths are whole pixels (i32), so a fractional value
 // cannot reach them: ints and floats never mix without an `@as`. What a program writes in logical
-// units (a theme metric, a `Box`) is converted once, when its element is recorded (`ui::to_pixels`).
-// What stays f32 is what is really fractional: a line's end points and width, corner radii, angles,
-// a text's size (a glyph table without `snap` is drawn at exactly size / height), uv coordinates.
+// units (a theme metric, a `Box`, a font size) is converted once, when its element is recorded
+// (`ui::to_pixels`, `ui::to_font_size`). A text's size is a whole number of pixels too. What stays
+// f32 is what is really fractional: a line's end points and width, corner radii, angles, uv
+// coordinates.
 // Colours are sRGB with straight alpha.
 namespace ui {
     struct Rect { x: i32 = 0, y: i32 = 0, w: i32 = 0, h: i32 = 0 }      // device pixels
@@ -45,7 +46,7 @@ namespace ui {
     union Cmd {
         rect{ rect: Rect, style: RectStyle, clip: u16 },
         image{ rect: Rect, image: Image, uv: Uv, tint: Color, quarter: u8, angle: f32, radius: Corners, blend: Blend, clip: u16 },
-        text{ font: Font, size: f32, x: i32, y: i32, text: Span, color: Color, clip: u16 },
+        text{ font: Font, size: i32, x: i32, y: i32, text: Span, color: Color, clip: u16 },
         line{ x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap, clip: u16 },
         host{ slot: u32, rect: Rect },
     }
@@ -63,7 +64,7 @@ namespace ui {
         bitmap{ image: Image, glyphs: []Glyph, first: u32, pixels: []u8, pixels_width: u32, pixels_height: u32 },
         outline{ handle: u32 },
     }
-    struct FontDef { kind: FontKind, encoding: Encoding, height: f32, ascent: f32, snap: bool }
+    struct FontDef { kind: FontKind, encoding: Encoding, height: f32, ascent: f32 }
 
     struct DrawList {
         cmds: []mut Cmd, count: u32,          // in paint order: a later shape draws over an earlier one

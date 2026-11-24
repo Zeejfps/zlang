@@ -114,6 +114,14 @@ namespace ui {
         return if v > -1.0 { -1 } else { hold_whole{ v } }
     }
 
+    // A font size in logical units as a whole number of device pixels at `scale`: a length by
+    // `scale_length` (the nearest pixel), and at least 1, so a size that is 0, negative or not a
+    // number is 1. Text is drawn, measured and shaped at this one size.
+    fn scale_font_size { size: f32, scale: f32 } -> i32 {
+        let v = scale_length{ length = size, scale }
+        return if v < 1 { 1 } else { v }
+    }
+
     // A position in logical units (a placed element's offset) as a whole device pixel at `scale`:
     // the nearest one, a half rounding up, which is floor(v * scale + 0.5), kotor's `snap`. Unlike
     // a length, a position near 0 may be 0.

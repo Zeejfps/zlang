@@ -309,13 +309,13 @@ namespace ui {
     // The width of one line of `text` at `size` pixels, in whole pixels, rounded up: a box this
     // wide holds the line. `size` is pixels, as everything about drawing is: a size written in
     // logical units goes through `to_font_size` first.
-    fn measure_text { mut ui: Ui, font: Font, size: f32, text: []u8 } -> i32 {
+    fn measure_text { mut ui: Ui, font: Font, size: i32, text: []u8 } -> i32 {
         return text::measure_text{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font, size, text }
     }
 
     // The height of a line in `font` at `size` pixels and where its baseline lies below the line's
     // top, in whole pixels.
-    fn measure_line { mut ui: Ui, font: Font, size: f32 } -> LineBox {
+    fn measure_line { mut ui: Ui, font: Font, size: i32 } -> LineBox {
         return text::get_line_metrics{ cache = &ui.cache, list = ui.draw, provider = ui.provider, font, size }
     }
 
@@ -350,10 +350,10 @@ namespace ui {
     }
 
     // A font size in logical units as the pixel size text calls take: a whole number of pixels
-    // (the nearest), at least 1. The rule `TextStyle.size` and `Theme.font_size` are converted by.
-    fn to_font_size { ui: Ui, size: f32 } -> f32 {
-        let v = scale_length{ length = size, scale = ui.scale }
-        return if v < 1 { 1.0 } else { @as(f32, v) }
+    // (the nearest), at least 1 (`scale_font_size`). The rule `TextStyle.size` and
+    // `Theme.font_size` are converted by.
+    fn to_font_size { ui: Ui, size: f32 } -> i32 {
+        return scale_font_size{ size, scale = ui.scale }
     }
 
     // Insets in logical units as whole pixels on each side, each by `to_pixels`. A side that is

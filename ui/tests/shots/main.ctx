@@ -192,8 +192,7 @@ fn scale_corners { s: f32, c: ui::Corners } -> ui::Corners {
 
 // One line of text: its size a whole pixel size, its position the nearest pixel.
 fn add_label { mut list: ui::DrawList, s: f32, font: ui::Font, size: f32, x: f32, y: f32, text: []u8, color: ui::Color, clip: u16 } {
-    let pixels = ui::scale_length{ length = size, scale = s }
-    ui::draw::add_text{ &list, font, size = @as(f32, if pixels < 1 { 1 } else { pixels }), x = ui::scale_position{ position = x, scale = s }, y = ui::scale_position{ position = y, scale = s }, text, color, clip }
+    ui::draw::add_text{ &list, font, size = ui::scale_font_size{ size, scale = s }, x = ui::scale_position{ position = x, scale = s }, y = ui::scale_position{ position = y, scale = s }, text, color, clip }
 }
 
 // A line: its end points and its width scaled, and left between pixels where they fall there.
@@ -258,7 +257,7 @@ fn build_conformance { mut list: ui::DrawList, images: Images, s: f32 } {
     // nested clips: a panel, a clip inside it, and a clip that reaches out of it, cut to it.
     let font = ui::Font{ index = 0 }
     add_label{ &list, s, font, size = 16.0, x = 16.0, y = 160.0, text = "Hello, 0123", color = INK, clip = 0 }
-    add_label{ &list, s, font, size = 12.0, x = 16.0, y = 182.0, text = "size 12 snaps", color = INK, clip = 0 }
+    add_label{ &list, s, font, size = 12.0, x = 16.0, y = 182.0, text = "size 12 = 3/4", color = INK, clip = 0 }
     add_label{ &list, s, font, size = 32.0, x = 16.0, y = 198.0, text = "Big", color = ui::Color{ r = 240, g = 200, b = 80, .. }, clip = 0 }
     add_label{ &list, s, font, size = 64.0, x = 160.0, y = 160.0, text = "Ag", color = INK, clip = 0 }
     ui::draw::add_rect{ &list, rect = make_rect{ s, x = 240.0, y = 160.0, w = 224.0, h = 72.0 }, clip = 0, style = ui::RectStyle{ fill = PANEL, .. } }

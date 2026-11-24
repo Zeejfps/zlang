@@ -23,8 +23,8 @@ and the code was converted. There is one rule and it has two halves:
   recorded, at the frame's one scale (`FrameInfo.scale`, device pixels a logical unit).
 - **Drawing, and everything the core answers, is device pixels.** The `paint_*` calls, `ui::draw`,
   `get_rect`, `measure_text`, `measure_line`, `get_pointer`, `Interaction.drag_x`, a node's rectangle,
-  hit regions, scroll offsets, `Requests.text_rect`. Rectangles, positions and border widths are `i32`;
-  a line's end points and width, corner radii, angles, uv and a text's pixel size are `f32`.
+  hit regions, scroll offsets, `Requests.text_rect`. Rectangles, positions, border widths and a text's
+  size are `i32`; a line's end points and width, corner radii, angles and uv are `f32`.
 
 The conversions, which are the same ones the core uses, so a widget that converts a length itself gets
 the pixels an element declared with that length gets:
@@ -33,7 +33,7 @@ the pixels an element declared with that length gets:
 |---|---|---|
 | `ui::to_pixels{ ui, length } -> i32` | a size, padding, gap, border width | the nearest pixel, a half away from zero; never 0 unless the length is 0 (1 unit is 1, 1, 2, 2, 2 pixels at scales 1, 1.25, 1.5, 1.75, 2) |
 | `ui::to_pixel_position{ ui, position } -> i32` | an offset | the nearest pixel, a half up: `floor(v * scale + 0.5)` |
-| `ui::to_font_size{ ui, size } -> f32` | a text size | a whole pixel size, at least 1 |
+| `ui::to_font_size{ ui, size } -> i32` | a text size | a whole pixel size, the nearest, at least 1 (13 units is 13, 16, 20, 23, 26 pixels at scales 1, 1.25, 1.5, 1.75, 2); `ui::scale_font_size{ size, scale }` is the same rule where there is no `Ui` |
 | `ui::to_pixels_f32{ ui, length } -> f32` | a radius, a line | scaled, not rounded |
 | `ui::place_pixels{ rect }`, `ui::fix_pixels{ size }` | a placement or a size already in pixels | taken as given |
 
@@ -43,8 +43,13 @@ What follows from it, and what a reviewer checks:
   logical units. If you find yourself writing `/ scale`, stop: the one place a widget divides by the
   scale is to turn a pixel drag into a change of a logical value it stores.
 - Ints and floats never mix implicitly, so most unit mistakes do not compile. The ones that do are
-  the `f32` quantities (a text size, a radius, a line): record a golden or a screenshot at scale 1.5
-  as well as at 1, where logical units and pixels are the same numbers and hide the mistake.
+  the `f32` quantities (a radius, a line): record a golden or a screenshot at scale 1.5 as well as at
+  1, where logical units and pixels are the same numbers and hide the mistake.
+- Text has one rule and no flag: a text's size is whole pixels, an outline font is shaped at it, a
+  glyph table is magnified by size / height with every glyph put on whole pixels (`ui::lay_glyphs`),
+  and only the pen inside a run is fractional. KOTOR text drawn through the framework does not
+  reproduce `lib/gui`'s fractional sizes (the owner's decision, PLAN.md section 2.7): do not add a
+  path that keeps a text size or a glyph between pixels.
 - A size never depends on a position. Where pixels are divided, say who gets the remainder (the first
   children when sharing, rounded down when centring), as the comment at the top of
   `ui/core/layout.ctx` does for the layout.
@@ -133,7 +138,7 @@ ui/
     draw.ctx    ui::draw: make, reset, add, add_clip, add_rect, add_image, add_line, add_text, add_host
     num.ctx     libm externs (floor_f32 ...), pick_min/max, clamp_f32, clamp_i32; the pixel helpers: MAX_PIXELS,
                 hold_pixels, add_pixels, sub_pixels, floor_pixels, ceil_pixels, round_pixels, hold_scale,
-                scale_length, scale_position, take_fraction
+                scale_length, scale_font_size, scale_position, take_fraction
     format.ctx  format_fixed, format_hex, format_color: into a caller's buffer, no std float printing
     font.ctx    the provider hook types, decode_char, get_font_scale; ui::draw: add_font, has_font, get_font, add_known_text
     text.ctx    lay_glyphs, LineBox; ui::text: Cache, measure_text (i32, rounded up), sum_text, get_line_metrics,
@@ -177,9 +182,9 @@ directory and everything below it; a program lists exactly the directories it ne
 **The dump format** (`ui_rec::write_list`): one shape a line after a `frame WxH` line (the surface in
 pixels) and the clip table. Radii run top-left, top-right, bottom-right, bottom-left; border widths and
 colours run top, right, bottom, left; colours are `RRGGBBAA`. What the list holds as whole pixels
-(rectangles, text positions, border widths, the frame's size) is written as an integer and cannot
-print a fraction; what it holds as a float (radii, a text's size, a line's end points and width, uv,
-angles) has up to four digits after the point with trailing zeros dropped. Entry 0 of the clip table
+(rectangles, text positions and sizes, border widths, the frame's size) is written as an integer and
+cannot print a fraction; what it holds as a float (radii, a line's end points and width, uv, angles)
+has up to four digits after the point with trailing zeros dropped. Entry 0 of the clip table
 (the whole surface) is not listed. A list that dropped shapes ends with a `dropped N` line. The exact
 format is the comment at the top of `ui/record/dump.ctx`. A scene recorded at scale 1.5 is in pixels:
 a box declared 100 units wide is `150` in its golden.

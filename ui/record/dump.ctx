@@ -15,8 +15,8 @@
 //
 // Everything is device pixels. What the list holds as whole pixels is written as an integer and
 // cannot print a fraction: the frame's size, every rectangle (a rect's, an image's, a clip's, a
-// host's), a text's position, border widths. What the list holds as a float is written with up to
-// four digits after the point: radii, a text's size, a line's end points and width, uv, angles.
+// host's), a text's position and size, border widths. What the list holds as a float is written
+// with up to four digits after the point: radii, a line's end points and width, uv, angles.
 // Radii run top-left, top-right, bottom-right, bottom-left; border widths and colours run top,
 // right, bottom, left; colours are RRGGBBAA. Entry 0 of the clip table is the whole surface and
 // is not listed.
@@ -195,7 +195,7 @@ namespace ui_rec {
             }
             text{ font, size, x, y, text, color, clip } => {
                 try @fmt(&sink, "text {},{} font={} size={} {} clip={} {}\n", x, y, font.index,
-                    write_number{ v = size, _ }, write_color{ color, _ }, clip, write_quoted{ s = ui::draw::get_text{ list = list.*, span = text }, _ })
+                    size, write_color{ color, _ }, clip, write_quoted{ s = ui::draw::get_text{ list = list.*, span = text }, _ })
             }
             line{ x0, y0, x1, y1, width, color, cap, clip } => {
                 try @fmt(&sink, "line {},{} {},{} width={} cap={} {} clip={}\n", write_number{ v = x0, _ }, write_number{ v = y0, _ },

@@ -136,9 +136,8 @@ fn scale_text_length { s: f32, length: f32 } -> i32 {
 }
 
 // A font size in logical units as the whole pixel size text is drawn at.
-fn scale_text_size { s: f32, size: f32 } -> f32 {
-    let pixels = ui::scale_length{ length = size, scale = s }
-    return if pixels < 1 { 1.0 } else { @as(f32, pixels) }
+fn scale_text_size { s: f32, size: f32 } -> i32 {
+    return ui::scale_font_size{ size, scale = s }
 }
 
 // One line of text at `size` logical units with its top left at the pixel (`x`, `y`), and a guide

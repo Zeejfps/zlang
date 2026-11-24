@@ -185,7 +185,7 @@ namespace ui {
 
     // One line of text at `size` pixels with its line box's top left at the pixel (`x`, `y`). The
     // text is copied. Text in a font that is not registered is reported and not drawn.
-    fn paint_text { mut ui: Ui, font: Font, size: f32, x: i32, y: i32, text: []u8, color: Color } {
+    fn paint_text { mut ui: Ui, font: Font, size: i32, x: i32, y: i32, text: []u8, color: Color } {
         if not tree::can_record{ &ui } { return }
         if not draw::has_font{ list = ui.draw, font } {
             report_problem{ &ui, kind = ProblemKind::unknown_font, id = NO_ID }
@@ -236,7 +236,7 @@ namespace ui {
             hit_outset: Sides = Sides{ .. },
             style: RectStyle = RectStyle{ .. },         // its own decoration
             // kind text
-            font: Font = Font{ .. }, text_size: f32 = 0.0, color: Color = Color{ .. },
+            font: Font = Font{ .. }, text_size: i32 = 0, color: Color = Color{ .. },
             text: Span = Span{ .. },
             wrap: bool = false, overflow: Overflow = Overflow::clip, text_align: Align = Align::start,
             line_height: i32 = 0,

@@ -13,14 +13,14 @@ draw 1 glyph first=0 count=11
   glyph 24,562 8x16 uv=0.015625,0.015625,0.125,0.25 color=FFE4E7ED clip=1 angle=0
   glyph 32,562 8x16 uv=0.171875,0.015625,0.125,0.25 color=FFE4E7ED clip=1 angle=0
   glyph 40,562 8x16 uv=0.171875,0.015625,0.125,0.25 color=FFE4E7ED clip=1 angle=0
-  glyph 24,524 8x16 uv=0.328125,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 32,524 8x16 uv=0.484375,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 40,524 8x16 uv=0.640625,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 48,524 8x16 uv=0.796875,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 56,524 8x16 uv=0.015625,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 64,524 8x16 uv=0.171875,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 72,524 8x16 uv=0.328125,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
-  glyph 80,524 8x16 uv=0.015625,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 24,527 7x13 uv=0.328125,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 31,527 7x13 uv=0.484375,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 37,527 7x13 uv=0.640625,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 44,527 7x13 uv=0.796875,0.015625,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 50,527 7x13 uv=0.015625,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 57,527 7x13 uv=0.171875,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 63,527 7x13 uv=0.328125,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
+  glyph 70,527 7x13 uv=0.015625,0.296875,0.125,0.25 color=FF4A90E2 clip=2 angle=0
 draw 2 image first=0 count=1 img=3 blend=alpha
   image 10,558 32x32 uv=0,1,1,-1 tint=FFFFFFFF clip=0 angle=1.5708 radius=0,0,0,0
 draw 3 image first=1 count=1 img=7 blend=additive

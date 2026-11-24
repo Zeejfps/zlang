@@ -267,7 +267,7 @@ namespace ui {
                     let faded = fade_color{ c = color, opacity = level.opacity }
                     let px = add_pixels{ a = ox, b = x }
                     let py = add_pixels{ a = oy, b = y }
-                    if faded.a > 0 and text.len > 0 and is_text_shown{ clip = level.rect, x = px, y = py, height = ceil_pixels{ v = size } } {
+                    if faded.a > 0 and text.len > 0 and is_text_shown{ clip = level.rect, x = px, y = py, height = size } {
                         put_shape{ &ui, level, cmd = Cmd::text{ font, size, x = px, y = py, text, color = faded, clip = level.clip } }
                     }
                 }

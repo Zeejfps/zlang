@@ -11,7 +11,7 @@ fn main { mut io: Io, mut mem: Mem } -> i32 {
     ui::draw::reset{ &list, width = 640, height = 480 }
     let clip = ui::draw::add_clip{ &list, clip = ui::Clip{ rect = ui::Rect{ x = 8, y = 8, w = 100, h = 40 }, .. } } ifnull { return 1 }
     ui::draw::add_rect{ &list, rect = ui::Rect{ x = 10, y = 10, w = 50, h = 20 }, style = ui::RectStyle{ fill = ui::Color{ r = 255, .. }, .. }, clip }
-    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 16.0, x = 12, y = 12, text = "kotor", color = ui::Color{ .. }, clip }
+    ui::draw::add_text{ &list, font = ui::Font{ .. }, size = 16, x = 12, y = 12, text = "kotor", color = ui::Color{ .. }, clip }
 
     let mut store: [1024]u8
     let mut sink = ui_rec::make_sink{ bytes = store[..] }

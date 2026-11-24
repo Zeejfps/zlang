@@ -20,9 +20,10 @@
 //
 // The canvas is the list's surface: `width` by `height` device pixels (at least 1 by 1), one canvas
 // unit a pixel, its top edge the list's top edge. The list is whole pixels, so the flip to y up is
-// exact: a rectangle, a clip and a text's glyphs in a snapped or outline font land on whole pixels
-// as floats, and nothing is scaled or rounded here but the pen inside a text run, which the provider
-// and a glyph table without `snap` leave between pixels.
+// exact: a rectangle, a clip and every glyph of a text land on whole pixels as floats. Nothing is
+// scaled or rounded here but where an outline glyph is put: the pen inside a shaped run moves by
+// the provider's fractional advances, and each glyph is put on the pixel grid from it
+// (`stage_outline_glyph`). A glyph table's glyphs come from `ui::lay_glyphs` already whole.
 //
 // A frame whose instances, clip table and passes are the same bytes as the last frame's keeps the
 // last frame's draws and its revision: the batching is skipped, and so is a backend's upload.
@@ -208,8 +209,8 @@ namespace ui_stage {
         return if i == 0 { c.top_left } else if i == 1 { c.top_right } else if i == 2 { c.bottom_right } else { c.bottom_left }
     }
 
-    // A picture over the quad (x, y, w, h), y down, in pixels: whole numbers for an image shape,
-    // possibly between pixels for a glyph of a glyph table without `snap`. With no turn the instance
+    // A picture over the quad (x, y, w, h), y down, in whole pixels (an image shape, or a glyph of a
+    // glyph table on a backend image). With no turn the instance
     // is that quad flipped, to the bit; with an odd number of quarter turns it is the quad
     // transposed about its centre, which lies on a half pixel when w + h is odd.
     fn add_image { mut out: Staged, x: f32, y: f32, w: f32, h: f32, image: u32, uv: ui::Uv, tint: ui::Color, quarter: u8, angle: f32, radius: ui::Corners, blend: ui::Blend, clip: u16 } {
@@ -288,7 +289,7 @@ namespace ui_stage {
 
     // ---- text
 
-    fn stage_text { mut out: Staged, list: *ui::DrawList, provider: ?ui::TextProvider, font: ui::Font, size: f32, x: i32, y: i32, span: ui::Span, color: ui::Color, clip: u16 } {
+    fn stage_text { mut out: Staged, list: *ui::DrawList, provider: ?ui::TextProvider, font: ui::Font, size: i32, x: i32, y: i32, span: ui::Span, color: ui::Color, clip: u16 } {
         let def = ui::draw::get_font{ list = list.*, font } ifnull {
             out.dropped = out.dropped + 1
             return
@@ -337,17 +338,16 @@ namespace ui_stage {
 
     // Text in a glyph table, laid out by ui::lay_glyphs a piece at a time. The run starts on the
     // whole pixel (x, y); the pen moves on from piece to piece exactly as lay_glyphs moves it, so
-    // the pieces join as one call would lay them out.
-    fn stage_table_text { mut out: Staged, list: *ui::DrawList, def: ui::FontDef, size: f32, x: i32, y: i32, text: []u8, color: ui::Color, clip: u16 } {
+    // the pieces join as one call would lay them out. Every glyph lands on whole pixels.
+    fn stage_table_text { mut out: Staged, list: *ui::DrawList, def: ui::FontDef, size: i32, x: i32, y: i32, text: []u8, color: ui::Color, clip: u16 } {
         let kx = ui::get_font_scale{ font = def, size }
         if not (kx > 0.0) { return }
-        let mut pen = @as(f32, x)
-        let top = @as(f32, y)
+        let mut pen: f32 = 0.0
         let mut at: usize = 0
         while at < text.len {
             let end = find_piece_end{ text, at, encoding = def.encoding }
             let piece = text[at..end]
-            let n = ui::lay_glyphs{ font = def, size, x = pen, y = top, text = piece, out = out.placed }
+            let n = ui::lay_glyphs{ font = def, size, x, y, pen, text = piece, out = out.placed }
             let mut k: usize = 0
             while k < n {
                 let placed = out.placed[k]
@@ -365,10 +365,15 @@ namespace ui_stage {
     }
 
     fn stage_table_glyph { mut out: Staged, def: ui::FontDef, placed: ui::Placed, color: ui::Color, clip: u16 } {
+        let r = placed.rect
+        let x = @as(f32, r.x)
+        let y = @as(f32, r.y)
+        let w = @as(f32, r.w)
+        let h = @as(f32, r.h)
         match def.kind {
             bitmap{ image, pixels, pixels_width, pixels_height } => {
                 if image.id != 0 {
-                    add_image{ &out, x = placed.x, y = placed.y, w = placed.w, h = placed.h, image = image.id, uv = placed.uv, tint = color, quarter = 0, angle = 0.0,
+                    add_image{ &out, x, y, w, h, image = image.id, uv = placed.uv, tint = color, quarter = 0, angle = 0.0,
                         radius = ui::Corners{ .. }, blend = ui::Blend::alpha, clip }
                     return
                 }
@@ -379,7 +384,7 @@ namespace ui_stage {
                 let y1 = to_texel{ v = ui::pick_max_f32{ a = uv.v0, b = uv.v1 }, limit = pixels_height }
                 if x1 <= x0 or y1 <= y0 { return }
                 let g = get_table_glyph{ &out, pixels, pitch = pixels_width, x0, y0, x1, y1 } ifnull { return }
-                add_glyph{ &out, x = placed.x, y = placed.y, w = placed.w, h = placed.h, u = g.x, v = g.y, uw = g.w, vh = g.h, color = pack_color{ color }, clip }
+                add_glyph{ &out, x, y, w, h, u = g.x, v = g.y, uw = g.w, vh = g.h, color = pack_color{ color }, clip }
             }
             outline => {}
         }
@@ -392,7 +397,7 @@ namespace ui_stage {
     // face's ascent below it, rounded to a pixel as the core rounds it (`ui::text::round_metrics`),
     // so every glyph's bitmap lands texel for pixel. The pen itself moves by the shaped advances,
     // which are fractional, and is never rounded as it goes: only where a glyph is put.
-    fn stage_outline_text { mut out: Staged, list: *ui::DrawList, provider: ui::TextProvider, handle: u32, size: f32, x: i32, y: i32, text: []u8, color: u32, clip: u16 } {
+    fn stage_outline_text { mut out: Staged, list: *ui::DrawList, provider: ui::TextProvider, handle: u32, size: i32, x: i32, y: i32, text: []u8, color: u32, clip: u16 } {
         let pixels = ui::text::get_pixel_size{ size }
         let metrics = ui::text::round_metrics{ m = provider.metrics{ state = provider.state, handle, pixels } }
         let baseline = @as(f32, ui::add_pixels{ a = y, b = metrics.ascent })

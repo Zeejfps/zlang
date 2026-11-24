@@ -9,11 +9,10 @@
 //   rect    its rectangle, exactly. A rectangle comes from the list's whole pixels, so its edges
 //           are on the pixel grid and the shader's growth of an off-grid edge never happens.
 //   glyph   its quad (the box of its turn when it is rotated). The glyph shader grows nothing.
-//   image   its quad, or the box of its turn; an unrotated quad that lies between pixels is
-//           widened by the pixel the image shader grows such a quad by. An image shape's
-//           rectangle is whole pixels and is never widened; the quads that are between pixels are
-//           the glyphs of a glyph table without `snap` that lives on a backend image (KOTOR's
-//           fonts), which are placed inside a text run.
+//   image   its quad, or the box of its turn. The image shader grows an unrotated quad that lies
+//           between pixels by a pixel, but no unrotated image instance does: an image shape's
+//           rectangle and a glyph of a glyph table on a backend image are whole pixels, and a
+//           quad that a quarter turn puts on half pixels is turned.
 //   shape   its padded box, which a line's instance already carries; a line is antialiased where
 //           it lies and is not on the grid.
 //
@@ -26,27 +25,6 @@ namespace ui_stage {
     const FAR: f32 = 3.0e38
 
     struct Box { min_x: f32, min_y: f32, max_x: f32, max_y: f32 }
-
-    // Whether `v` (canvas pixels) is between pixels, by the image shader's rule.
-    fn is_off_grid { v: f32 } -> bool {
-        return ui::abs_f32{ x = v - ui::round_f32{ x = v } } >= 1.0 / 256.0
-    }
-
-    // `b` widened by one pixel on each axis that has an edge between pixels, as the image vertex
-    // shader grows an unrotated quad that lies so. Only a quad with area grows.
-    fn widen_off_grid { b: Box } -> Box {
-        if not (b.max_x > b.min_x and b.max_y > b.min_y) { return b }
-        let mut r = b
-        if is_off_grid{ v = b.min_x } or is_off_grid{ v = b.max_x } {
-            r.min_x = r.min_x - 1.0
-            r.max_x = r.max_x + 1.0
-        }
-        if is_off_grid{ v = b.min_y } or is_off_grid{ v = b.max_y } {
-            r.min_y = r.min_y - 1.0
-            r.max_y = r.max_y + 1.0
-        }
-        return r
-    }
 
     // The box a rectangle turned by `angle` about its centre covers. A turn by a whole number of
     // quarter turns is exact: the sine or cosine float noise leaves is taken as 0.
@@ -82,7 +60,6 @@ namespace ui_stage {
             image => {
                 let m = paint.images[i]
                 b = turn_box{ x = m.x, y = m.y, w = m.w, h = m.h, angle = m.angle }
-                if m.angle == 0.0 { b = widen_off_grid{ b } }
                 clip = m.clip
             }
             shape => {

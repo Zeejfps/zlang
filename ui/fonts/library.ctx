@@ -456,7 +456,7 @@ namespace ui_fonts {
     // its `height` and `ascent` are 0. Null when `face` is not alive.
     fn describe_face { lib: Library, face: Face } -> ?ui::FontDef {
         if find_face{ lib, id = face.id } == null { return null }
-        return ui::FontDef{ kind = ui::FontKind::outline{ handle = face.id }, encoding = ui::Encoding::utf8, height = 0.0, ascent = 0.0, snap = false }
+        return ui::FontDef{ kind = ui::FontKind::outline{ handle = face.id }, encoding = ui::Encoding::utf8, height = 0.0, ascent = 0.0 }
     }
 
     // Registers `face` with the core as an outline font. Null when it is not alive or the font

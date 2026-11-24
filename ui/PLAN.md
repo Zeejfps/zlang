@@ -117,10 +117,10 @@ The rule that replaces it (Dear ImGui's: positions and sizes are whole pixels at
 metrics are scaled once):
 
 1. **The unit is the device pixel.** Element rectangles, clips, hit regions, host slots, node rectangles
-   and the draw list's rectangle, image and text positions are `i32`. Nothing is snapped when the frame
-   is emitted and nothing is converted back to logical units anywhere. Ints and floats never mix
-   implicitly in ctxlang, so a fractional value reaching layout is a compile error: that is the point of
-   `i32` over whole-valued `f32`.
+   and the draw list's rectangle, image and text positions and text sizes are `i32`. Nothing is snapped
+   when the frame is emitted and nothing is converted back to logical units anywhere. Ints and floats
+   never mix implicitly in ctxlang, so a fractional value reaching layout is a compile error: that is
+   the point of `i32` over whole-valued `f32`.
 2. **One scale, applied at the input edge.** The host passes the surface's size in pixels and one scale
    (device pixels a logical unit) in `FrameInfo`. What an application declares (theme metrics, `Box`
    sizes, padding, gap, fixed sizes, placed offsets, font sizes, border widths, radii) is written in
@@ -130,7 +130,7 @@ metrics are scaled once):
    |---|---|---|
    | a length (size, `min`, `max`, padding, gap, border width, hit outset) | the nearest pixel, a half away from zero, and never 0 unless it is 0: a border of 1 unit is 1 pixel at scales 1 and 1.25 and 2 at 1.5, 1.75 and 2 | `ui::to_pixels{ ui, length } -> i32` |
    | a position (a placed offset) | the nearest pixel, a half up: `floor(v * scale + 0.5)`, which is kotor's `snap`; it may be 0 | `ui::to_pixel_position{ ui, position } -> i32` |
-   | a font size | a whole pixel size (the nearest), at least 1 | `ui::to_font_size{ ui, size } -> f32` |
+   | a font size | a whole pixel size (the nearest), at least 1: 13 units is 13, 16, 20, 23 and 26 pixels at scales 1, 1.25, 1.5, 1.75 and 2 | `ui::to_font_size{ ui, size } -> i32` |
    | a corner radius, a line's width and end points | scaled, not rounded | `ui::to_pixels_f32{ ui, length } -> f32` |
 
    A size never depends on a position: the two are converted separately, and the layout works out every
@@ -147,13 +147,15 @@ metrics are scaled once):
 5. **Integer layout.** Section 2.4: grow shares spare room in whole pixels with the pixels left over
    going one each to the first children; `take` and anchors round down; centring rounds down; `min` and
    `max` hold in pixels.
-6. **Text.** A measured width, a line's height and ascent, and a caret offset are whole pixels; a line
-   starts on a pixel; inside a shaped run advances stay fractional (section 2.7).
+6. **Text.** A text's size is a whole number of pixels, converted once at record like any other
+   length; there is no fractional text size anywhere. A measured width, a line's height and ascent, and
+   a caret offset are whole pixels; a line starts on a pixel, and so does every glyph; inside a run the
+   pen moves by fractional advances (section 2.7).
 7. **What stays `f32`**, because it really is fractional: a line's end points and width, corner radii,
    rotation angles, opacity, colour maths, `animate` values, scroll velocity (an applied scroll offset is
-   `i32`), slider-like values in `Values`, uv coordinates, a text's pixel size (a glyph table without
-   `snap` is drawn at exactly size / height), glyph positions inside a run, the staged instances (GPU
-   data, built from the `i32` values exactly) and `dt`. Border widths are `i32` a side.
+   `i32`), slider-like values in `Values`, uv coordinates, the advances and the pen inside a text run,
+   the staged instances (GPU data, built from the `i32` values exactly) and `dt`. Border widths are
+   `i32` a side.
 8. **Pointer input is device pixels.** The host converts its window system's coordinates (`ui_sdl`
    does); the scripted test driver speaks pixels.
 9. **The draw list carries the surface's size in pixels and no scale.** Nothing downstream of the core
@@ -196,7 +198,7 @@ The plan keeps that structure, ports the shaders, and cuts the set where a cut h
 | `DrawBezier`, `DrawCubicBezier`, dashes, line gradients | not exposed | The code comes with the ported shape shader, but no widget draws them. |
 | `PushClip` as a table index, with the rounded clip | **both kept** | The ported shaders already test both in every kind; the rounded clip costs two more rows in the uniform block. ZGF's rule is kept too: one rounded level at a time. |
 | `PushOpacity` | **kept in the core** | Baked into colours at emit, as ZGF bakes it at staging. |
-| `PushTranslation`, `PushScale` | dropped | The core has no transforms. The shaders' edge-fading path for off-grid edges stays in the port; a rectangle and an image shape are whole pixels and never trigger it. The one thing that does is a glyph of a glyph table without `snap` that lives on a backend image (KOTOR's fonts), which is an image instance placed inside a text run. |
+| `PushTranslation`, `PushScale` | dropped | The core has no transforms. The shaders' edge-fading path for off-grid edges stays in the port, but nothing the core draws triggers it: rectangles, image shapes and every glyph of a glyph table (KOTOR's fonts included) are whole pixels, and the path is for unrotated quads only. |
 | Z index and sort | dropped | The core emits in paint order, layer by layer. |
 | Overlap-aware batching, idle-frame skip | **kept** | The point of the level. |
 | Five instance kinds | **four** | `RectInstance`, `GlyphInstance`, `ImageInstance`, `ShapeInstance`, each with ZGF's fields in the order its shader reads them. |
@@ -564,8 +566,8 @@ the probe [compiled, a4].
 
 #### The shape list
 
-Everything in the list is device pixels. Rectangles, text positions and border widths are whole
-(`i32`); a line's end points and width, corner radii, angles, uv and a text's size are `f32`.
+Everything in the list is device pixels. Rectangles, text positions, text sizes and border widths are
+whole (`i32`); a line's end points and width, corner radii, angles and uv are `f32`.
 
 ```
 namespace ui {
@@ -599,7 +601,7 @@ namespace ui {
     union Cmd {
         rect{ rect: Rect, style: RectStyle, clip: u16 },
         image{ rect: Rect, image: Image, uv: Uv, tint: Color, quarter: u8, angle: f32, radius: Corners, blend: Blend, clip: u16 },
-        text{ font: Font, size: f32, x: i32, y: i32, text: Span, color: Color, clip: u16 },
+        text{ font: Font, size: i32, x: i32, y: i32, text: Span, color: Color, clip: u16 },
         line{ x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap, clip: u16 },
         host{ slot: u32, rect: Rect },
     }
@@ -623,7 +625,7 @@ namespace ui {
 |---|---|
 | `rect` | `rect` filled with `fill` (alpha 0: no fill), each corner rounded by its own radius, each side with its own border width and colour, drawn inside the edge. A disc or ring is a square with every radius `w / 2`. |
 | `image` | The part `uv` of `image` over `rect`, multiplied by `tint`, corners rounded by `radius`. `uv` (0, 0) is the picture's top left. `rect` is where the picture ends up after `quarter` counterclockwise quarter turns; `angle` (radians, counterclockwise) then turns it about the rectangle's centre. `blend` is alpha or additive. |
-| `text` | One line of `text` in `font` at `size` (the line height wanted, in pixels) with the line box's top left at the pixel (`x`, `y`). Wrapping and alignment are already done. `size` is the one text quantity that is `f32`: an outline font rounds it to a whole pixel size and a glyph table with `snap` to a whole magnification, and a glyph table without `snap` is drawn at exactly `size / height` (section 2.7). |
+| `text` | One line of `text` in `font` at `size` (the line height wanted, a whole number of pixels) with the line box's top left at the pixel (`x`, `y`). Wrapping and alignment are already done. An outline font is shaped and rasterised at `size`; a glyph table is magnified by `size / height` with each glyph put on whole pixels (section 2.7). |
 | `line` | A straight segment `width` thick with the given cap, antialiased at any angle. |
 | `host` | A rectangle the host draws itself, in order: shapes before it are under it, shapes after are over it. |
 
@@ -742,10 +744,10 @@ the end of the frame so the next frame refills it.
 
 **Batching** is ZGF's rule: walking instances in paint order, each joins the most recent draw of its
 kind (and, for images, its texture and blend) that it can reach without passing a draw of another kind
-whose bounds (clipped, and widened for a rotation) it overlaps. A rectangle's and an image shape's
-bounds are exactly their whole-pixel rectangles, so two that touch never overlap; the bounds that are
-widened by a pixel are those of an unrotated quad between pixels, which only a glyph of a glyph table
-without `snap` on a backend image is, and a line's padded box is what its instance carries. Instances
+whose bounds (clipped, and widened for a rotation) it overlaps. A rectangle's, an image shape's and a
+glyph's bounds are exactly their whole-pixel quads, so two that touch never overlap (no unrotated quad
+lies between pixels, so the image shader never grows one), and a line's padded box is what its
+instance carries. Instances
 are then laid out per kind in draw order. A tool UI is a few draws; a KOTOR panel is one draw per
 texture it uses.
 
@@ -811,7 +813,7 @@ namespace ui {
         bitmap{ image: Image, glyphs: []Glyph, first: u32, pixels: []u8, pixels_width: u32, pixels_height: u32 },
         outline{ handle: u32 },
     }
-    struct FontDef { kind: FontKind, encoding: Encoding, height: f32, ascent: f32, snap: bool }
+    struct FontDef { kind: FontKind, encoding: Encoding, height: f32, ascent: f32 }
     fn add_font { mut ui: Ui, font: FontDef } -> ?Font            // null when the font table is full
 
     // What serves outline fonts (TrueType, OpenType): line metrics, shaping, and one glyph's coverage.
@@ -825,13 +827,14 @@ namespace ui {
     struct TextProvider { state: *mut Opaque, metrics: MetricsFn, shape: ShapeFn, rasterize: RasterFn }
     fn set_provider { mut ui: Ui, provider: TextProvider }
 
-    // A glyph of a glyph table as it is laid out: a quad in pixels, inside a run, so f32.
-    struct Placed { x: f32, y: f32, w: f32, h: f32, uv: Uv }
-    fn lay_glyphs { font: FontDef, size: f32, x: f32, y: f32, text: []u8, out: []mut Placed } -> usize
+    // A glyph of a glyph table as it is laid out: its quad in whole pixels. `pen` is how far into
+    // the run the text starts (0 for a whole text; a text laid out in pieces goes on from there).
+    struct Placed { rect: Rect, uv: Uv }
+    fn lay_glyphs { font: FontDef, size: i32, x: i32, y: i32, pen: f32, text: []u8, out: []mut Placed } -> usize
     // A line's height and where its baseline lies below its top, in whole pixels.
     struct LineBox { height: i32 = 0, ascent: i32 = 0 }
-    fn measure_text { mut ui: Ui, font: Font, size: f32, text: []u8 } -> i32      // rounded up
-    fn measure_line { mut ui: Ui, font: Font, size: f32 } -> LineBox
+    fn measure_text { mut ui: Ui, font: Font, size: i32, text: []u8 } -> i32      // rounded up
+    fn measure_line { mut ui: Ui, font: Font, size: i32 } -> LineBox
 }
 ```
 
@@ -839,15 +842,15 @@ namespace ui {
 fallback), its offsets and advance in device pixels, and the byte offset of its cluster in the text
 [read: `ShapedGlyph.cs`].
 
-**Text in whole pixels.** A text's `size` is always device pixels; a size written in logical units
-becomes a whole pixel size with `ui::to_font_size`.
+**Text in whole pixels.** A text's `size` is always a whole number of device pixels (`i32`); a size
+written in logical units becomes one with `ui::to_font_size` when its element is recorded (the
+nearest pixel, at least 1). There is one rule for every font and every scale, and no flag.
 
 | | Rule |
 |---|---|
-| inside a shaped run | advances and offsets are fractional (`f32`), as the provider and the glyph table give them: that is what the staged level places glyphs from, and adding rounded advances would drift |
-| an outline font's size | `size` rounded to a whole pixel size, at least 1; the provider shapes and rasterises at it, and nothing is divided by a scale |
-| a glyph table with `snap` | a whole magnification, `round(size / height)`, at least 1, and every glyph edge on a pixel |
-| a glyph table without `snap` | exactly `size / height`: the glyphs inside the run may lie between pixels, the run starts on a pixel and measures a whole width |
+| inside a run | advances and offsets are fractional (`f32`), as the provider and the glyph table give them: the pen moves by them exactly, because adding rounded advances would drift |
+| an outline font | shaped and rasterised at `size` pixels by the provider; nothing is divided by a scale. The staged level puts each glyph's bitmap on the pixel the pen rounds to |
+| a glyph table | magnified by exactly `size / height`. Each glyph is put on whole pixels: its left edge at the pen plus its bearing and its top at its offset, each the nearest pixel, and its width and height its own magnified to the nearest pixel, at least 1. So a glyph is the same size wherever it stands, a table drawn at a whole multiple of its height draws texel for pixel, and the same text a pixel over is the same quads a pixel over |
 | a measured width, a line's width | the sum of the advances rounded up, so a box as wide as the measure holds the text; a line fits a limit when its rounded-up width is no more than it |
 | a line's height and ascent | whole: the height rounded up, the ascent to the nearest pixel, so every baseline is a pixel row |
 | a line's position | a whole pixel (`Cmd::text` has `i32` `x`, `y`); a centred line's spare room is halved and rounded down |
@@ -903,13 +906,15 @@ namespace ui_fonts {
 
 - `glyphs[c - first]` is the glyph of character `c`: its box in the picture, its size in font units, its
   offset from the pen, its advance. `height` is the line height in font units, so a text shape at `size`
-  pixels draws at `size / height` pixels a font unit. With `snap`, that magnification is rounded to a
-  whole number, at least 1, so one font pixel covers whole device pixels and each glyph starts on one.
-  Without it the magnification is exact, fractional when the size asks for it.
+  pixels draws at `size / height` pixels a font unit, fractional when the size is not a multiple of the
+  height, with every glyph on whole pixels (the rule above). A pixel font drawn at a multiple of its
+  height is crisp; at any other size each glyph is stretched to whole pixels, which is what a pixel
+  font at a scale of 1.25 can be. There is no option to round the magnification instead: it would draw
+  text larger or smaller than the size the layout measured it at.
 - The picture is either a backend image (KOTOR's TPC textures), or 8-bit coverage in `pixels` with
   `image.id` 0, which the staged level packs into its atlas.
 - **KOTOR fonts.** `ui_kotor::from_font` turns a `render::Font` into a glyph table with
-  `Encoding::bytes`, `snap` false and `advance` equal to the glyph width (the original zeroes spacing
+  `Encoding::bytes` and `advance` equal to the glyph width (the original zeroes spacing
   when drawing [read: report 2.6]). kui keeps the original's wrapping, integer line widths and alignment
   rules and calls `ui::paint_text` once per line, so the general wrapping code never has to match the
   original engine. kotor's developer overlay uses the game's own console font this way, as `fxhud` does
@@ -920,17 +925,17 @@ namespace ui_fonts {
   GUI pixels; the UI pass then scales GUI pixels to the window by the quarter-step scale. Borders are
   snapped to device pixels piece by piece (`snap`, `put_piece`); text is not snapped at all. So at a
   fractional scale a line that starts at an odd GUI pixel starts half a device pixel in, and a glyph 7
-  GUI pixels wide covers 10.5 device pixels. What that decided here:
-  - The size of a text shape stays `f32`, because the magnification must be exactly the quarter-step
-    scale: a font 13 high at scale 1.25 is drawn at size 16.25, and rounding that to 16 would make
-    every line 1.5 % narrower than the original's.
-  - A run's origin is a whole device pixel all the same (the owner's rule, and the sharper choice).
-    kui places a line at the pixel the original's snap formula gives its GUI coordinate. At scales 1
-    and 2 that is where `lib/gui` draws it; at 1.25, 1.5 and 1.75 a line whose GUI coordinate is not
-    a multiple of the scale's denominator lands up to half a device pixel from where `lib/gui`, which
-    does not snap text, puts it. That is a known, explained difference for stage 16's pixel
-    comparison, not one to chase; removing it would mean snapping text in `lib/gui` too, which is the
-    owner's call.
+  GUI pixels wide covers 10.5 device pixels. Text drawn through the framework is not made to match
+  that. The owner's decision: "It's ok if it's not exact. I'd rather not add a special case if it's not
+  good." So KOTOR's fonts follow the one rule above:
+  - kui draws a font at its design height times the scale converted to a whole pixel size
+    (`ui::scale_font_size`): a font 13 high is 13, 16, 20, 23 and 26 pixels at scales 1, 1.25, 1.5,
+    1.75 and 2, where `lib/gui` draws 13, 16.25, 19.5, 22.75 and 26. At 1.25 a line is about 1.5 %
+    narrower than the original's, at 1.5 about 2.5 % wider.
+  - kui places a line at the pixel the original's snap formula gives its GUI coordinate, and each glyph
+    lands on whole pixels, where `lib/gui` leaves glyphs between pixels at fractional scales.
+  - So KOTOR text drawn through the framework need not match `lib/gui` pixel for pixel; its borders,
+    fills and pictures still must (stage 16).
 - **The test font** is a glyph table built in code (section 6.1).
 
 **Where a sample gets a font file.** A sample takes `--font PATH` and otherwise tries a system path for
@@ -1316,9 +1321,9 @@ namespace kui {
         let el = ui::begin_element{ &ui, id, axis = ui::Axis::row, box = ui::place_pixels{ rect = place } }
         let g = Grid{ scale = skin.scale, x = in_panel.x + c.x, y = in_panel.y + c.y }
         paint_border{ &ui, skin, g, b = if lit { c.hilight } else { c.border }, w = c.w, h = c.h }
-        // The font is drawn at its design height times the scale exactly (a text's size is f32 for
-        // this), and the line starts on a whole pixel: its measured width and height are pixels.
-        let size = c.font_height * skin.scale
+        // The font is drawn at its design height times the scale as a whole pixel size, and the
+        // line starts on a whole pixel: its measured width and height are pixels.
+        let size = ui::scale_font_size{ size = c.font_height, scale = skin.scale }
         let tw = ui::measure_text{ &ui, font = c.font, size, text }
         let line = ui::measure_line{ &ui, font = c.font, size }
         let color = if lit { mul_alpha{ c = skin.lit_text, a = skin.pulse } } else { c.text_color }
@@ -1424,7 +1429,8 @@ fn get_scale { ui: Ui } -> f32                                  // device pixels
 fn to_pixels { ui: Ui, length: f32 } -> i32                     // a length: nearest pixel, never 0 unless 0
 fn to_pixel_position { ui: Ui, position: f32 } -> i32           // a position: nearest pixel
 fn to_pixels_f32 { ui: Ui, length: f32 } -> f32                 // a radius, a line: scaled, not rounded
-fn to_font_size { ui: Ui, size: f32 } -> f32                    // a whole pixel size, at least 1
+fn to_font_size { ui: Ui, size: f32 } -> i32                    // a whole pixel size, at least 1
+fn scale_font_size { size: f32, scale: f32 } -> i32             // the same rule at a scale, for code with no Ui (kui)
 fn to_pixel_sides { ui: Ui, insets: Insets } -> Sides
 fn to_pixel_corners { ui: Ui, corners: Corners } -> Corners
 ```
@@ -1445,7 +1451,7 @@ fn paint_rect { mut ui: Ui, rect: Rect, style: RectStyle }                      
 fn paint_image { mut ui: Ui, rect: Rect, image: Image, uv: Uv, tint: Color, quarter: u8, angle: f32, blend: Blend }
 fn paint_region { mut ui: Ui, rect: Rect, region: Region, tint: Color }            // a sprite or an atlas entry
 fn paint_rounded_image { mut ui: Ui, rect: Rect, region: Region, tint: Color, radius: Corners }
-fn paint_text { mut ui: Ui, font: Font, size: f32, x: i32, y: i32, text: []u8, color: Color }   // a pixel size, a whole position
+fn paint_text { mut ui: Ui, font: Font, size: i32, x: i32, y: i32, text: []u8, color: Color }   // a whole pixel size and position
 fn paint_line { mut ui: Ui, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Color, cap: Cap }   // pixels, may be fractional
 enum Icon: u8 { check, cross, arrow_right, arrow_down, arrow_up, arrow_left }
 fn paint_icon { mut ui: Ui, icon: Icon, rect: Rect, color: Color }                 // a stock mark, drawn as lines
@@ -1468,8 +1474,8 @@ fn get_pointer { ui: Ui } -> Point                                              
 fn get_time { ui: Ui } -> f32
 fn get_hover_time { ui: Ui, id: Id } -> f32
 fn get_rect { ui: Ui, id: Id } -> ?Rect                                            // last frame's, in device pixels
-fn measure_text { mut ui: Ui, font: Font, size: f32, text: []u8 } -> i32           // at a pixel size; whole pixels, rounded up
-fn measure_line { mut ui: Ui, font: Font, size: f32 } -> LineBox                   // a line's height and ascent, whole pixels
+fn measure_text { mut ui: Ui, font: Font, size: i32, text: []u8 } -> i32           // at a pixel size; whole pixels, rounded up
+fn measure_line { mut ui: Ui, font: Font, size: i32 } -> LineBox                   // a line's height and ascent, whole pixels
 fn begin_overlay { mut ui: Ui, front: bool } -> Scope
 fn begin_modal { mut ui: Ui, id: []u8, opts: Opts } -> Scope
 fn describe { mut ui: Ui, id: Id, role: Role, label: []u8, value: f32, flags: u8 }
@@ -1524,8 +1530,8 @@ Writes a draw list as text, one shape a line, into its own byte sink (with its o
 so numbers are fixed-point and stable), then the clip table and the node list as an indented tree. From
 stage 2 it also writes a `Staged`: the draws with their kinds, counts, images and blends, which is how
 batching is pinned by golden files. It has no device. The format, in device pixels: what the list holds
-as whole pixels is written as an integer (the frame's size, rectangles, text positions, border widths)
-and cannot print a fraction; radii, a text's size, a line's end points and width, uv and angles are
+as whole pixels is written as an integer (the frame's size, rectangles, text positions and sizes,
+border widths) and cannot print a fraction; radii, a line's end points and width, uv and angles are
 floats with up to four digits.
 
 ```
@@ -1791,7 +1797,7 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 
 - **Scope.** Values, `RectStyle`, `Cmd`, `DrawList` with its clip table, `ui::draw::*`, the libm
   externs, small number helpers (min, max, clamp) and the conversions from logical units to pixels
-  (`scale_length`, `scale_position`, the held sums), fixed-point and hex number writing, the
+  (`scale_length`, `scale_position`, `scale_font_size`, the held sums), fixed-point and hex number writing, the
   recorder's sink and `write_list`, the test tally and golden compare, the agent guide, and a kotor-side
   build check.
 - **Files.** `ui/AGENTS.md` (rules, commands, layout: this plan's sections 2.1, 6.2 and conventions),
@@ -1812,8 +1818,8 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 ### Stage 1: text
 
 - **Scope.** The font table and `add_font`, the provider hook, measuring (glyph tables directly,
-  outline fonts through `shape`, with the frame cache), `lay_glyphs` (whole magnification and whole
-  glyph edges with `snap`, exact fractional quads without), whole-pixel widths, line metrics and caret
+  outline fonts through `shape`, with the frame cache), `lay_glyphs` (exact magnification, every glyph
+  on whole pixels), whole-pixel widths, line metrics and caret
   offsets, UTF-8 and byte stepping, wrapping into line ranges, ellipsis, the index under a pixel (from
   glyph advances or from clusters), and the test font.
 - **Files.** `ui/core/font.ctx`, `ui/core/text.ctx`, `ui/test/font.ctx`,
@@ -1821,9 +1827,11 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 - **Acceptance.** In the test font "Hello" measures 40 at size 16 and 80 at size 32; wrap goldens for
   spaces, hyphens, a word longer than the width and explicit newlines; ellipsis; a byte-encoded and a
   UTF-8 glyph table give different caret steps for `é`; the test font's glyphs at size 24 (16 units at
-  scale 1.5) are whole pixels on whole pixels, the same size at every pen position; a table without
-  `snap` is magnified exactly, its advances of 17.5 measure 18, its caret offsets are the nearest
-  pixels, and a line of 20.5 fits 21 pixels and not 20. A fake provider (7 pixels a byte, one cluster
+  scale 1.5) are 12 by 24 pixels at every pen position; a table with fractional metrics is magnified
+  exactly and its glyphs put on the nearest pixels, its advances of 17.5 measure 18, its caret offsets
+  are the nearest pixels, and a line of 20.5 fits 21 pixels and not 20; 13 units at scales 1, 1.25,
+  1.5, 1.75 and 2 is a whole pixel size, and at each a text at eight places a pixel apart is the same
+  glyph quads moved by exactly the offset. A fake provider (7 pixels a byte, one cluster
   a byte, and a two-byte ligature) measures an outline font, wraps with its widths, gives caret offsets
   that step over the ligature as one, and its line of 21.25 pixels is 22 high. Drawing in a font that
   was never registered is reported, not drawn.
@@ -1846,8 +1854,8 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   host slot gives two passes and no draw spans them. An odd quarter turn gives a transposed rectangle
   and the right rotation, on half pixels when its sides differ by an odd number, with bounds that are
   still exactly its rectangle. A rectangle's bounds are its rectangle (rectangles and pictures that
-  only touch share draws); a glyph of a table without `snap` on a backend image that lies between
-  pixels widens its bounds by the pixel the image shader grows it by. On random lists (rectangles,
+  only touch share draws); a glyph of a table with fractional metrics on a backend image is whole
+  pixels, so its runs that only touch a picture share a draw. On random lists (rectangles,
   pictures, text in both kinds of table, lines on half pixels, turned pictures) every pair of
   overlapping instances is drawn in paint order. The same list twice gives the same revision; one
   changed colour, or another surface size, gives a new one. A glyph drawn twice is rasterised once; releasing its font frees its atlas space after four
@@ -2141,16 +2149,17 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   (section 3.2): it applies the original's per-edge snap, `floor(v * scale + 0.5)` with the size the
   difference of the snapped edges, to each control's and each border piece's design coordinates and
   hands the pixels to `ui::place_pixels` and the `paint_*` calls, which take them as they are. Text is
-  painted a line at a time at a pixel size of the font's design height times the scale (not rounded),
-  with its origin on the pixel the snap gives.
+  painted a line at a time at the whole pixel size the font's design height times the scale comes to
+  (`ui::scale_font_size`), with its origin on the pixel the snap gives.
 - **Files.** `kotor/lib/kui/{skin.ctx, border.ctx, text.ctx, controls.ctx, list.ctx, panel.ctx}`,
   `kotor/tools/uiview/{build.ctx, main.ctx}`.
 - **Acceptance.** `uiview optgameplay` writes the panel drawn by `lib/gui` and by kui and the count of
-  differing pixels: 0 at scale 1.0 and at 1.5, or each difference explained. Borders, fills and
-  pictures must be 0 at both: they are the same pixels by the same formula. Text is 0 at scale 1.0;
-  at 1.5 `lib/gui` draws a line that starts on an odd design pixel half a device pixel in, because it
-  does not snap text, and kui starts it on a whole pixel (section 2.7): that difference is expected,
-  is confined to the glyphs' edge pixels, and is reported as such. A scripted run addresses
+  differing pixels, counted apart for text and for everything else. Borders, fills and pictures must
+  be 0 at scale 1.0 and at 1.5: they are the same pixels by the same formula. Text need not match
+  `lib/gui` pixel for pixel: the owner decided that KOTOR text drawn through the framework follows the
+  framework's one text rule (a whole pixel size, every glyph on whole pixels) rather than reproduce
+  `lib/gui`'s unsnapped text with a special case (section 2.7). Its differing pixels are reported, not
+  required to be 0, and a line must still wrap where `lib/gui` wraps it. A scripted run addresses
   `CB_AUTOSAVE` by tag, clicks it, and the setting flips; arrow keys follow `MOVETO`; hover lights a
   button and plays through `Interaction.entered`. A sweep over all `.gui` files prints how many panels
   already match, as the measure of the remaining work.
@@ -2296,8 +2305,8 @@ library, Vulkan, verb names, and the unit (whole device pixels, section 2.0).
 | FreeType's struct layouts | The binding mirrors three C structs whose offsets depend on the platform's `long`. A wrong offset reads garbage. | Offsets chosen by `target::OS`; a start-up check of mirrored fields on every face; the probe's offsets came from a C program against the installed headers. |
 | Vulkan without validation | A backend that works on one driver and breaks on another. | Stage 14 requires the validation layer and a clean run with it on; it is not installed today. |
 | Vulkan's size | It is the largest single backend (binding, swapchain, pipelines). | Its own stage with the strongest model, after OpenGL has fixed what a backend does; nothing else depends on it. |
-| Pixel parity with `lib/gui` | The proof screen must match the original's borders, wrap and snapping. | The core does not snap at all: kui applies kotor's own formula to its design coordinates and the core takes the resulting pixels as given (`ui::place_pixels`, the `paint_*` calls), so borders and pictures are the same integers; kui keeps kotor's wrap; text differs by at most half a pixel at fractional scales, where `lib/gui` does not snap it (section 2.7); `uiview` counts differing pixels and sweeps every `.gui`. |
-| A value in the wrong unit | A logical length passed where pixels are taken, or the reverse, draws at the wrong size at any scale but 1, where the two are the same numbers and tests pass. | Most such mistakes do not compile: declarations are `f32` and pixels are `i32`, and the language converts neither way. The ones that do (a font size, a radius, a line, all `f32` in both worlds) are caught by recording goldens and screenshots at scale 1.5 as well as 1, which every widget stage must. |
+| Pixel parity with `lib/gui` | The proof screen must match the original's borders, wrap and snapping. | The core does not snap at all: kui applies kotor's own formula to its design coordinates and the core takes the resulting pixels as given (`ui::place_pixels`, the `paint_*` calls), so borders and pictures are the same integers; kui keeps kotor's wrap; text is not required to match: it is drawn at a whole pixel size with every glyph on whole pixels, where `lib/gui` draws fractional sizes between pixels (the owner's decision, section 2.7); `uiview` counts differing pixels and sweeps every `.gui`. |
+| A value in the wrong unit | A logical length passed where pixels are taken, or the reverse, draws at the wrong size at any scale but 1, where the two are the same numbers and tests pass. | Most such mistakes do not compile: declarations are `f32` and pixels, text sizes included, are `i32`, and the language converts neither way. The ones that do (a radius, a line, `f32` in both worlds) are caught by recording goldens and screenshots at scale 1.5 as well as 1, which every widget stage must. |
 | Stock widgets look plainer inside kotor | `render` has no rounded or antialiased primitive. | Stated in section 8.1, with the alternative priced (decision 2). KOTOR's own art is unaffected. |
 | Two SDL bindings in the repository | kotor's and `ui/sdl`'s can diverge. | They serve different programs and may even share one [compiled, a9]; `ui/sdl` is small and only what a UI host needs. |
 | `..` forwarding binds any same-named local | `ui::add_label{ .. }` picks up a stray local called `text`. | Library code never uses it; the guide says to keep widget field names out of local names in functions that use it. |

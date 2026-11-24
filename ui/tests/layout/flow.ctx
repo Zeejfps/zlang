@@ -1179,12 +1179,12 @@ fn check_text { mut io: Io, ui: ui::Ui, seed: u32, at: usize, mut faults: Faults
     let e = ui.tree.elements[at]
     let padding = @as(i64, e.padding.left) + @as(i64, e.padding.right)
     let inner: i32 = if @as(i64, e.w) > padding { ui::hold_pixels{ v = @as(i64, e.w) - padding } } else { 0 }
-    // The test font at this text's pixel size: its magnification is a whole number, so a
-    // character is 8 times it wide and a line 16 times it high.
-    let mut scale: i32 = 1
-    if let def = ui::draw::get_font{ list = ui.draw, font = e.font } { scale = ui::round_pixels{ v = ui::get_font_scale{ font = def, size = e.text_size } } }
-    let wide = 8 * scale
-    let high = 16 * scale
+    // The test font at this text's pixel size: it is magnified by size / 16, so a character
+    // advances 8 times that (a fraction of a pixel, at some sizes) and a line is the size high.
+    let mut advance: f32 = 8.0
+    if let def = ui::draw::get_font{ list = ui.draw, font = e.font } { advance = 8.0 * ui::get_font_scale{ font = def, size = e.text_size } }
+    let wide = ui::ceil_pixels{ v = advance }
+    let high = e.text_size
     let first = @as(usize, e.first_line)
     let count = @as(usize, e.line_count)
     let mut ok = count >= 1 and first + count <= @as(usize, ui.layout.line_count) and e.line_height == high
@@ -1202,12 +1202,13 @@ fn check_text { mut io: Io, ui: ui::Ui, seed: u32, at: usize, mut faults: Faults
                     ok = false
                     break
                 }
-                let mut hung: i32 = 0
+                let mut spaces: u32 = 0
                 let mut end = @as(usize, line.end)
                 while end > @as(usize, line.start) and text[end - 1] == ' ' {
-                    hung = hung + wide
+                    spaces = spaces + 1
                     end = end - 1
                 }
+                let hung = ui::ceil_pixels{ v = advance * @as(f32, spaces) }
                 if line.width > ui::pick_max_i32{ a = inner, b = wide } + hung { ok = false }
                 if k > 0 and line.start < lines[k - 1].end { ok = false }
             }
@@ -1221,7 +1222,7 @@ fn check_text { mut io: Io, ui: ui::Ui, seed: u32, at: usize, mut faults: Faults
                 ok = ok and e.overflow == ui::Overflow::ellipsis and lines[0].end < e.text.len and lines[0].width <= inner
             } else if lines[0].end != e.text.len {
                 // Cut to nothing: only when not even the dots fit.
-                ok = ok and e.overflow == ui::Overflow::ellipsis and lines[0].end == 0 and inner < 3 * wide
+                ok = ok and e.overflow == ui::Overflow::ellipsis and lines[0].end == 0 and inner < ui::ceil_pixels{ v = 3.0 * advance }
             } else {
                 // Whole: it was not to be cut, or it is no wider than its room, to the pixel.
                 ok = ok and (e.overflow == ui::Overflow::clip or e.content_w <= inner)

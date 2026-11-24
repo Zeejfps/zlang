@@ -3,14 +3,15 @@
 // table), the font provider if the program has one, a `Cache`, and the font and size to work in.
 // The Ui's own `measure_text` and the layout call these.
 //
-// Everything is device pixels, and `size` is the line height wanted in pixels. A glyph table's
-// advances are its own times size / height (see `ui::get_font_scale`); an outline font is shaped by
-// the provider at `size` rounded to a whole pixel size, and its advances are used as they come.
+// Everything is device pixels, and `size` is the line height wanted, a whole number of pixels. A
+// glyph table's advances are its own times size / height (see `ui::get_font_scale`); an outline
+// font is shaped by the provider at `size`, and its advances are used as they come.
 //
 // What is whole and what is not:
 //
-//  - Inside a run, advances are fractional (f32): a kerned outline face and a glyph table without
-//    `snap` put glyphs between pixels, and adding rounded advances would drift.
+//  - Inside a run, advances are fractional (f32): a kerned outline face and a glyph table drawn at
+//    a size that is not a multiple of its height advance by fractions, and adding rounded advances
+//    would drift. Where a glyph is drawn it is put on whole pixels; the pen never is.
 //  - What leaves a run is whole pixels (i32): a measured width and a line's width are the sum of
 //    the advances rounded UP, so a box as wide as the measure holds the text; a line's height and
 //    ascent are whole (the height rounded up, the ascent to the nearest pixel); a caret offset is
@@ -28,55 +29,59 @@
 // `cache.unknown_font`; an outline font with no provider the same in `cache.no_provider` (its
 // characters still step one at a time, with no width).
 namespace ui {
-    // Where a glyph of a glyph table is laid out: a quad in device pixels and the part of the
-    // picture it shows. A quad is a glyph inside a run, so it is f32: whole numbers in a font with
-    // `snap`, possibly between pixels in one without.
-    struct Placed { x: f32, y: f32, w: f32, h: f32, uv: Uv }
+    // Where a glyph of a glyph table is laid out: its quad in whole device pixels and the part of
+    // the picture it shows.
+    struct Placed { rect: Rect, uv: Uv }
 
     // The height of a line and where its baseline lies below the line's top, in whole pixels.
     struct LineBox { height: i32 = 0, ascent: i32 = 0 }
 
-    // The quads of the glyphs of `text` in a glyph table drawn at `size` pixels with the pen at
-    // (`x`, `y`), the line box's top left. A run starts on a whole pixel (a text shape's position
-    // is i32); `x` is a float so that a long text laid out in pieces can go on where the last piece
-    // left the pen. The count written to `out` is the glyphs that have ink: a character the table
-    // lacks, and a glyph with no width or height, takes no entry (the pen still moves by the advance
-    // of the ones that exist). `out` needs a place for each character, at most `text.len`; when it
-    // is shorter the rest of the text is not laid out. An outline font lays out nothing here: the
-    // provider shapes it.
+    // A glyph's extent in font units magnified by `k`, as whole pixels: the nearest, at least 1, so
+    // a glyph with ink never vanishes.
+    fn scale_glyph_extent { v: f32, k: f32 } -> i32 {
+        let p = round_pixels{ v = v * k }
+        return if p < 1 { 1 } else { p }
+    }
+
+    // The quads of the glyphs of `text` in a glyph table drawn at `size` pixels, its line box's top
+    // left at the pixel (`x`, `y`) and the pen `pen` pixels right of `x` (0 for a whole text; a long
+    // text laid out in pieces goes on where the last piece left the pen). The count written to `out`
+    // is the glyphs that have ink: a character the table lacks, and a glyph with no width or
+    // height, takes no entry (the pen still moves by the advance of the ones that exist). `out`
+    // needs a place for each character, at most `text.len`; when it is shorter the rest of the text
+    // is not laid out. An outline font lays out nothing here: the provider shapes it.
     //
-    // With `font.snap` the magnification is a whole number and every edge of every quad is put on
-    // a whole pixel (the nearest, a half up), so a table whose own metrics are whole draws texel
-    // for pixel. Without it the quads are exactly where the font says.
-    fn lay_glyphs { font: FontDef, size: f32, x: f32, y: f32, text: []u8, out: []mut Placed } -> usize {
+    // The pen moves by the advances magnified exactly and is never rounded. Each glyph is put on
+    // whole pixels: its left edge where the pen plus its bearing is, its top where its offset is,
+    // each the nearest pixel (a half up), and its width and height its own magnified to the nearest
+    // pixel, at least 1. So a glyph is the same size wherever it stands, a table drawn at a whole
+    // multiple of its height draws texel for pixel, and the run is worked out from (0, 0) and moved
+    // to (`x`, `y`) last: the same text a pixel over has the same quads a pixel over.
+    fn lay_glyphs { font: FontDef, size: i32, x: i32, y: i32, pen: f32, text: []u8, out: []mut Placed } -> usize {
         match font.kind {
             bitmap{ glyphs, first } => {
                 let k = get_font_scale{ font, size }
                 if not (k > 0.0) { return 0 }
                 let mut n: usize = 0
-                let mut pen: f32 = x
+                let mut at_x = pen
                 let mut at: usize = 0
                 while at < text.len and n < out.len {
                     let d = decode_char{ text, at, encoding = font.encoding }
                     at = at + @as(usize, d.len)
                     let g = find_glyph{ glyphs, first, code = d.code } ifnull { continue }
-                    let left = pen + g.left * k
-                    let top = y + g.top * k
-                    let mut x0 = left
-                    let mut x1 = left + g.width * k
-                    let mut y0 = top
-                    let mut y1 = top + g.height * k
-                    if font.snap {
-                        x0 = floor_f32{ x = x0 + 0.5 }
-                        x1 = floor_f32{ x = x1 + 0.5 }
-                        y0 = floor_f32{ x = y0 + 0.5 }
-                        y1 = floor_f32{ x = y1 + 0.5 }
-                    }
-                    pen = pen + g.advance * k
                     if g.width > 0.0 and g.height > 0.0 {
-                        out[n] = Placed{ x = x0, y = y0, w = x1 - x0, h = y1 - y0, uv = g.uv }
+                        let left = round_pixels{ v = at_x + g.left * k }
+                        let top = round_pixels{ v = g.top * k }
+                        out[n] = Placed{
+                            rect = Rect{
+                                x = add_pixels{ a = x, b = left }, y = add_pixels{ a = y, b = top },
+                                w = scale_glyph_extent{ v = g.width, k }, h = scale_glyph_extent{ v = g.height, k },
+                            },
+                            uv = g.uv,
+                        }
                         n = n + 1
                     }
+                    at_x = at_x + g.advance * k
                 }
                 return n
             }
@@ -150,18 +155,17 @@ namespace ui {
             base: usize, group_start: usize, chunk_end: usize,          // where that chunk lies in the text
         }
 
-        // The whole pixel size a face is sized to for text at `size`: the nearest, at least 1 and
-        // at most 100000 (a size that is not a number is 1).
-        fn get_pixel_size { size: f32 } -> u32 {
-            let r = round_f32{ x = size }
-            if not (r >= 1.0) { return 1 }
-            if r > 100000.0 { return 100000 }
-            return @as(u32, r)
+        // The pixel size a face is sized to for text at `size`: `size` itself, at least 1 and at
+        // most 100000.
+        fn get_pixel_size { size: i32 } -> u32 {
+            if size < 1 { return 1 }
+            if size > 100000 { return 100000 }
+            return @as(u32, size)
         }
 
         // The units of `text` in `font` at `size`. An unknown font, or an outline font with no
         // provider, gives units one character wide with no advance.
-        fn start_units { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8 } -> Units {
+        fn start_units { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: i32, text: []u8 } -> Units {
             let mut it = Units{
                 source = Source::table, text, pos = 0,
                 encoding = Encoding::utf8, glyphs = [], first = 0, kx = 0.0,
@@ -299,7 +303,7 @@ namespace ui {
 
         // The width of one line of `text` in whole pixels: the sum of its advances rounded up, so a
         // box this wide holds the line.
-        fn measure_text { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8 } -> i32 {
+        fn measure_text { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: i32, text: []u8 } -> i32 {
             return ceil_width{ v = sum_text{ &cache, list, provider, font, size, text } }
         }
 
@@ -309,7 +313,7 @@ namespace ui {
         // provider once for the measure. The remembered sum is found by a 64-bit hash of the font,
         // pixel size and bytes; the bytes themselves are not kept, so two texts with one hash would
         // share a width.
-        fn sum_text { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8 } -> f32 {
+        fn sum_text { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: i32, text: []u8 } -> f32 {
             let mut it = start_units{ &cache, list, provider, font, size, text }
             if it.source == Source::table { return sum_units{ &it } }
             let key = hash_text{ font, pixels = it.pixels, text }
@@ -343,8 +347,8 @@ namespace ui {
         // in whole pixels (`round_metrics`: the height rounded up, the ascent to the nearest). A
         // glyph table scales its own metrics; an outline font asks the provider for the face at the
         // pixel size. With no font or no provider the line is `size` high.
-        fn get_line_metrics { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32 } -> LineBox {
-            let fallback = round_metrics{ m = LineMetrics{ height = size, ascent = size } }
+        fn get_line_metrics { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: i32 } -> LineBox {
+            let fallback = round_metrics{ m = LineMetrics{ height = @as(f32, size), ascent = @as(f32, size) } }
             let def = ui::draw::get_font{ list, font } ifnull {
                 cache.unknown_font = cache.unknown_font + 1
                 return fallback
@@ -385,7 +389,7 @@ namespace ui {
         enum Prev: u8 { none, space, hyphen, other }
 
         // One paragraph (no newline in it), as lines appended to `lines`. False when `lines` is full.
-        fn wrap_paragraph { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, from: usize, to: usize,
+        fn wrap_paragraph { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: i32, text: []u8, from: usize, to: usize,
                             limit: f32, lines: []mut Line, mut out: Wrapped } -> bool {
             let para = text[from..to]
             let mut it = start_units{ &cache, list, provider, font, size, text = para }
@@ -469,7 +473,7 @@ namespace ui {
         // A negative width is 0. A line fits when its rounded-up width is no more than `width`, so no
         // line that could break is wider than `width`. When `lines` is full the text from `rest` on
         // is not laid out.
-        fn wrap_text { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, width: i32, lines: []mut Line } -> Wrapped {
+        fn wrap_text { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: i32, text: []u8, width: i32, lines: []mut Line } -> Wrapped {
             let mut out = Wrapped{ lines = 0, rest = 0, width = 0 }
             let limit: f32 = if width > 0 { @as(f32, width) } else { 0.0 }
             let mut from: usize = 0
@@ -498,7 +502,7 @@ namespace ui {
         // Cuts one line of text to `width` pixels: all of it when its measured width fits, otherwise
         // the longest start of it with its trailing spaces dropped that leaves room for "...". When
         // not even the dots fit the result keeps nothing and has no dots.
-        fn fit_ellipsis { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, width: i32 } -> Fit {
+        fn fit_ellipsis { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: i32, text: []u8, width: i32 } -> Fit {
             let total = measure_text{ &cache, list, provider, font, size, text }
             let whole = if width > 0 { width } else { 0 }
             if total <= whole { return Fit{ len = @as(u32, text.len), width = total, dots = false } }
@@ -550,7 +554,7 @@ namespace ui {
 
         // The next place the caret can stand after `index` (`forward`) or before it. At the ends of
         // the text it stays.
-        fn step_caret { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, index: usize, forward: bool } -> usize {
+        fn step_caret { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: i32, text: []u8, index: usize, forward: bool } -> usize {
             let at = if index < text.len { index } else { text.len }
             if not forward and at == 0 { return 0 }
             let mut it = start_units{ &cache, list, provider, font, size, text }
@@ -570,7 +574,7 @@ namespace ui {
         // How many pixels from the line's left edge the caret stands at byte `index`: the sum of the
         // advances before it, to the nearest pixel. Offsets never decrease along the line, and the
         // one at the end is the measured width or one pixel less (the width is rounded up).
-        fn locate_caret { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, index: usize } -> i32 {
+        fn locate_caret { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: i32, text: []u8, index: usize } -> i32 {
             let mut it = start_units{ &cache, list, provider, font, size, text }
             let mut x: f32 = 0.0
             while true {
@@ -585,7 +589,7 @@ namespace ui {
         // The byte index of the caret place nearest the pixel `x` (counted from the line's left
         // edge): the start of a unit when `x` is before its middle, otherwise its end. 0 for an `x`
         // left of the line, the length for one right of it.
-        fn pick_index { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: f32, text: []u8, x: i32 } -> usize {
+        fn pick_index { mut cache: Cache, list: DrawList, provider: ?TextProvider, font: Font, size: i32, text: []u8, x: i32 } -> usize {
             let mut it = start_units{ &cache, list, provider, font, size, text }
             let at = @as(f32, x)
             let mut pos: f32 = 0.0

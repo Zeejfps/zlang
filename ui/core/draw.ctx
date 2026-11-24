@@ -1,6 +1,7 @@
 // ui::draw: the draw list on its own, for a surface with no widgets (kotor's minimap pass into a
 // render target) and as what the core's emit step writes into. Coordinates are absolute device
-// pixels: rectangles and text positions whole (i32), a line's end points and width fractional.
+// pixels: rectangles, text positions and text sizes whole (i32), a line's end points and width
+// fractional.
 //
 // Nothing here fails: a shape that does not fit, a clip table that is full, or a clip index that
 // names no entry drops the shape and adds one to `list.dropped`. A shape is never drawn unclipped
@@ -103,7 +104,7 @@ namespace ui {
         // One line of `text` at `size` (the line height wanted, in pixels) with its line box's top
         // left at the pixel (`x`, `y`). Copies `text` into the list's text arena, so the caller's
         // bytes need not outlive the call. A text that does not fit in the arena drops the whole shape.
-        fn add_text { mut list: DrawList, font: Font, size: f32, x: i32, y: i32, text: []u8, color: Color, clip: u16 } {
+        fn add_text { mut list: DrawList, font: Font, size: i32, x: i32, y: i32, text: []u8, color: Color, clip: u16 } {
             let start = @as(usize, list.text_len)
             if not has_clip{ list, clip } or text.len > list.text.len - start or text.len > 4294967295 {
                 list.dropped = list.dropped + 1
