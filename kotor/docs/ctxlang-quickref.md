@@ -118,11 +118,15 @@ for x at i in xs { }                              // with its index (usize); `fo
 while i < n { i = i + 1 }                         // any other loop; `label:`, break/continue on both
 match value { int{ v } => { ... } text{ s } => { ... } none => {} }      // exhaustive
 match kind { byte | char => { ... } else => { ... } }                     // enums too
+let s = match kind { byte => "byte", char => "char", else => return null }   // arms without braces
 if r is int{ v } { use{ v } }                     // test one variant and bind (§8 Is)
 let n = map::get{ m, key } ifnull { return null } // ?T: default or leave
 let x = parse{ ... } iferr err{ error } { return 1 }   // !T: handle the error
 let ok{ value = d } = r else err{ error } { return error }
 defer list::free{ list = &xs }                    // runs at block exit
+defer if c { f{} }                                // any statement but let/return/break/continue
+{ let tmp = load{ ... }; use{ tmp } }             // a block of its own: a scope, with its defers
+let x = try parse{ ... }.x                        // (try parse{ ... }).x
 ```
 
 - **Write a `for`, not a counter** (§11, For): a `while` that forgets `i = i + 1` hangs. The

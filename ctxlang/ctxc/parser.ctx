@@ -41,6 +41,9 @@ namespace parser {
         cond_break: usize,
         cond_mark:  diag::Mark,
         cond_items: bool,
+        // In a match arm without braces: the `-` that begins the next line and the next arm's
+        // pattern, where the arm's expression ends (arm_end). 0 for none.
+        arm_end: usize,
     }
 
     // Whether the expression null_expr returned is a handler's, `l ifnull r`, `l iferr r` or
@@ -54,7 +57,7 @@ namespace parser {
             text, file, toks = tokens, i = 0, heap = &heap, diags = &diags, ids = 0,
             in_cond = false, depth = 0, bad = false, errored = false, err_at = 0,
             hand = Handler{ bare = false, block = false, first = tokens[0], last = tokens[0], left_end = 0, right_start = 0 },
-            cond_break = 0, cond_mark = diag::mark{ diags }, cond_items = false,
+            cond_break = 0, cond_mark = diag::mark{ diags }, cond_items = false, arm_end = 0,
         }
         let decls = decl_list{ &p, top = true }
         return syntax::File{ decls, ids = p.ids }
@@ -584,14 +587,24 @@ namespace parser {
         } else if k == tok::Kind::kw_continue {
             skip{ &p }
             s = syntax::StmtKind::cont{ label = jump_label{ &p } }
+        } else if k == tok::Kind::lbrace {
+            // A block of its own (§11, rule 4): a call's or a literal's `{` is on its
+            // expression's line, so one that begins a statement is this.
+            s = syntax::StmtKind::scope{ body = block{ &p } }
         } else if k == tok::Kind::kw_defer {
             skip{ &p }
             if next_is{ p, k = tok::Kind::lbrace } {
                 s = syntax::StmtKind::deferred{ body = block{ &p } }
             } else {
+                // Any statement that can run later by itself (§11, Defer, rule 1).
                 let inner = stmt{ &p }
-                let ok = inner.k is eval | discard | assign
-                if not ok { fail_at{ &p, msg = "`defer` takes a call, an assignment, `_ = e` or a block", t } }
+                if inner.k is local | let_else {
+                    fail_at{ &p, msg = "`defer let` declares a local that nothing could use: put the `let` and what uses it in a block, `defer { ... }`", t }
+                } else if inner.k is ret | brk | cont {
+                    fail_at{ &p, msg = "a deferred body can't leave: `defer` takes a call, an assignment, `_ = e`, an `if`, a `match`, a loop or a block", t }
+                } else if not (inner.k is eval | discard | assign | cond | choose | loop | each) {
+                    fail_at{ &p, msg = "`defer` takes a call, an assignment, `_ = e`, an `if`, a `match`, a loop or a block", t }
+                }
                 s = syntax::StmtKind::deferred{ body = one{ &p, s = inner } }
             }
         } else if k == tok::Kind::kw_return {
@@ -1114,9 +1127,14 @@ namespace parser {
                 while accept{ &p, k = tok::Kind::pipe } { try! list::push{ list = &pats, item = pattern{ &p, test = false } } }
             }
             expect{ &p, k = tok::Kind::fat_arrow }
-            let body = block{ &p }
+            let braces = next_is{ p, k = tok::Kind::lbrace }
+            let body = if braces { block{ &p } } else { arm_stmt{ &p } }
             try! list::push{ list = &arms, item = syntax::Arm{ span = span_from{ p, start }, pats = list::items{ list = pats }, body } }
-            _ = accept{ &p, k = tok::Kind::comma }
+            // An arm without braces ends as a statement does, or at a `,` or the match's `}`.
+            if not accept{ &p, k = tok::Kind::comma } and not braces and not p.bad
+               and not (nl{ p } or next_is{ p, k = tok::Kind::semi } or next_is{ p, k = tok::Kind::rbrace }) {
+                expected{ &p, what = "',' or a newline after a match arm" }
+            }
             if p.bad {
                 sync{ &p, start, in_block = true, top = false }
                 if at_decl{ p } or next_is{ p, k = tok::Kind::eof } { break }
@@ -1125,6 +1143,52 @@ namespace parser {
         }
         expect{ &p, k = tok::Kind::rbrace }
         return syntax::Match{ scrut, arms = list::items{ list = arms }, is_ifnull = false, is_iferr = false, is_iflet = false }
+    }
+
+    // A match arm without braces (§8, Match, rule 11): one statement, a block of it alone, as
+    // `a => "A"`, `a => return 1` and `a => n = n + 1` are. A `let` and a `defer` would do
+    // nothing there.
+    fn arm_stmt { mut p: Parser } -> syntax::Block {
+        let t = p.toks[p.i]
+        let outer = p.arm_end
+        p.arm_end = arm_end{ p }
+        let s = stmt{ &p }
+        p.arm_end = outer
+        if s.k is local | let_else | deferred {
+            fail_at{ &p, msg = "a match arm without braces is an expression or one statement, and not a `let` or a `defer`, which need a block: write `=> { ... }`", t }
+        }
+        return one{ &p, s }
+    }
+
+    // Where the expression of the arm that begins here ends, though a line that starts with
+    // `-` would go on with it: at a `-` that begins a line and the next arm's pattern, `-1 =>`,
+    // `-1 | 0 =>` or `-8..=-1 =>`, which no expression goes on to. 0 if there is none before
+    // the arm ends.
+    fn arm_end { p: Parser } -> usize {
+        let mut depth: u32 = 0
+        let mut k = p.i
+        while p.toks[k].kind != tok::Kind::eof {
+            let t = p.toks[k]
+            let x = t.kind
+            if depth == 0 {
+                if x == tok::Kind::fat_arrow or x == tok::Kind::comma or x == tok::Kind::semi or x == tok::Kind::rbrace { return 0 }
+                if k > p.i and t.nl and x == tok::Kind::minus and k + 2 < p.toks.len {
+                    let a = p.toks[k + 1].kind
+                    let b = p.toks[k + 2].kind
+                    if (a == tok::Kind::int or a == tok::Kind::char)
+                       and (b == tok::Kind::fat_arrow or b == tok::Kind::pipe or b == tok::Kind::dots) {
+                        return k
+                    }
+                }
+            }
+            if x == tok::Kind::lbrace or x == tok::Kind::lparen or x == tok::Kind::lbracket {
+                depth = depth + 1
+            } else if (x == tok::Kind::rbrace or x == tok::Kind::rparen or x == tok::Kind::rbracket) and depth > 0 {
+                depth = depth - 1
+            }
+            k = k + 1
+        }
+        return 0
     }
 
     // ---- expressions
@@ -1433,7 +1497,7 @@ namespace parser {
         if level == LEVELS { return prefix{ &p } }
         let start = p.i
         let mut e = bin_expr{ &p, level = level + 1 }
-        while in_level{ k = kind{ p, ahead = 0 }, level } {
+        while in_level{ k = kind{ p, ahead = 0 }, level } and p.i != p.arm_end {
             let op = take{ &p }
             let b = bin_expr{ &p, level = level + 1 }
             e = binary{ &p, start, op, a = e, b }
@@ -1492,8 +1556,19 @@ namespace parser {
         if k == tok::Kind::kw_try {
             skip{ &p }
             let panics = accept{ &p, k = tok::Kind::bang }       // `try!`: `!` never starts an expression
-            let e = box{ &p, value = prefix{ &p } }
-            return expr_from{ &p, start, k = syntax::ExprKind::trye{ e, panics } }
+            // Its operand goes up to the end of its first call: `try f{}.x` is `(try f{}).x`,
+            // and `try a.b{}` tries the call (§8, Errors, rule 7). Without a call it is the
+            // whole postfix expression, and after a prefix operator that operator's.
+            let x = kind{ p, ahead = 0 }
+            if x == tok::Kind::amp or x == tok::Kind::minus or x == tok::Kind::kw_not or x == tok::Kind::tilde or x == tok::Kind::kw_try {
+                let e = box{ &p, value = prefix{ &p } }
+                return expr_from{ &p, start, k = syntax::ExprKind::trye{ e, panics } }
+            }
+            let operand = postfix_to{ &p, to_call = true }
+            let called = operand.k is braced
+            let e = expr_from{ &p, start, k = syntax::ExprKind::trye{ e = box{ &p, value = operand }, panics } }
+            if not called { return e }
+            return postfix_ops{ &p, start, from = e, to_call = false }
         }
         return postfix{ &p }
     }
@@ -1504,6 +1579,12 @@ namespace parser {
     }
 
     fn postfix { mut p: Parser } -> syntax::Expr {
+        return postfix_to{ &p, to_call = false }
+    }
+
+    // A postfix expression. With to_call it ends at the `}` of its first call or literal, if
+    // it has one: `try`'s operand.
+    fn postfix_to { mut p: Parser, to_call: bool } -> syntax::Expr {
         let start = p.i
         let paren = next_is{ p, k = tok::Kind::lparen }
         let mut e = primary{ &p }
@@ -1512,6 +1593,12 @@ namespace parser {
             path{ segs } => { e = path_tail{ &p, start, e, segs } }
             else => {}
         }
+        return postfix_ops{ &p, start, from = e, to_call }
+    }
+
+    // The postfix operators after `from`, which began at token `start`.
+    fn postfix_ops { mut p: Parser, start: usize, from: syntax::Expr, to_call: bool } -> syntax::Expr {
+        let mut e = from
         while true {
             let t = p.toks[p.i]
             let k = kind{ p, ahead = 0 }
@@ -1543,6 +1630,7 @@ namespace parser {
             } else if k == tok::Kind::lbrace and not t.nl {
                 if p.in_cond and not brace_is_call{ &p } { return e }
                 e = braced{ &p, start, callee = e }
+                if to_call { return e }
             } else {
                 return e
             }

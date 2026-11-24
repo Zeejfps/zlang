@@ -943,6 +943,213 @@ fn main { mut io: Io } {
     io::println_i64{ &io, n = v }""", 'after\nparens\n-3\n')
 
 
+class SmallSyntax(Base):
+    """A block as a statement (§11, rule 4), `defer` with any statement that can run later (§11,
+    Defer, rule 1), a match arm without braces (§8, Match, rule 11), and `try`'s operand (§8,
+    Errors, rule 7)."""
+
+    DECLS = r"""
+error bad
+struct P { x: i32, y: i32 }
+struct R { r: !i32 }
+union K { a, b, c }
+fn say { mut io: Io, s: utf8::String } { io::println{ &io, s } }
+fn mk { n: i32 } -> !P { if n < 0 { return bad }; return P{ x = n, y = n * 2 } }
+fn rr { n: i32 } -> R { let r: !i32 = n; return R{ r } }
+"""
+    RUN = DECLS + ('fn run { mut io: Io, n: i32, k: K } -> !i32 {\n    %s\n    return 0\n}\n'
+                   'fn main { mut io: Io } { _ = @fmt(&io, "{}\\n", run{ &io, n = 1, k = K::a } iferr -1) }\n')
+
+    def assertErrors(self, cases):
+        for body, msg, line, col in cases:
+            with self.subTest(body=body):
+                with self.assertRaises(CompileError) as cm:
+                    run(self.RUN % body)
+                self.assertEqual((cm.exception.msg, cm.exception.pos[:2]), (msg, (line, col)), body)
+
+    def test_a_block_is_a_statement(self):
+        self.assertOutput(self.DECLS + r"""
+fn first { xs: []i32 } -> i32 {
+    for x in xs {
+        { if x > 1 { return x } }                   // leaves the function from inside the block
+        {
+            if x < 0 { break }                      // and the loop
+        }
+    }
+    return 0
+}
+fn main { mut io: Io } {
+    let mut total = 0
+    let late: i32
+    {
+        let a = 5
+        defer say{ &io, s = "the block ends" }      // at the block's `}`, not the function's
+        defer total = total * 2
+        total = total + a
+        late = a + 1                                // assigns a `let` of the block around it
+        say{ &io, s = "in the block" }
+    }
+    let a = 7                                       // the block's `a` is gone
+    { total = total + a }; { }
+    {
+        let a = 100                                 // shadows the outer one in here
+        { total = total + a }
+    }
+    _ = @fmt(&io, "{} {} {} {}\n", total, late, first{ xs = [1, 2, 3] }, first{ xs = [1, -1, 3] })
+}
+""", 'in the block\nthe block ends\n117 6 2 0\n')
+
+    def test_a_block_is_a_scope_and_no_value(self):
+        self.assertErrors([
+            ('{ let a = 1 }\n    return a', 'unknown name `a`', 11, 12),
+            ('let mut p: *i32 = &n\n    { let a = 1; p = &a }\n    return p.*',
+             '`p` outlives local `a` whose address it would hold', 11, 18),
+            ('let v = if n > 0 { { let a = 1 } } else { 2 }',
+             'this branch must end in a value, or leave with `return`, `break`, `continue` or `@panic()`', 10, 22),
+            # A call's or a literal's `{` is on its expression's line: on the next it is a block.
+            ('let p = P\n    { x = 1, y = 2 }', "expected a newline or ';' after statement, found ','", 11, 12),
+        ])
+
+    def test_defer_takes_a_statement(self):
+        self.assertOutput(self.DECLS + r"""
+fn main { mut io: Io } {
+    let k = K::b
+    let mut c = false
+    defer if c { say{ &io, s = "if" } }             // tested when it runs: c is true by then
+    defer if let v = (mk{ n = 3 } iferr null) { io::println_i64{ &io, n = v.y } }
+    defer match k { b => say{ &io, s = "match" }, else => {} }
+    defer for i in 0..2 { io::println_u64{ &io, n = i } }
+    defer while c { c = false; say{ &io, s = "while" } }
+    c = true
+    say{ &io, s = "body" }
+}
+""", 'body\nwhile\n0\n1\nmatch\n6\n')
+        general = '`defer` takes a call, an assignment, `_ = e`, an `if`, a `match`, a loop or a block'
+        self.assertErrors([
+            ('defer let x = 1', '`defer let` declares a local that nothing could use: put the `let` and what uses it '
+             'in a block, `defer { ... }`', 10, 5),
+            ('defer return 1', "a deferred body can't leave: " + general, 10, 5),
+            ('while n > 0 { defer break }', "a deferred body can't leave: " + general, 10, 19),
+            ('defer defer say{ &io, s = "x" }', general, 10, 5),
+            ('defer if n > 0 { return 1 }', 'cannot `return` from a defer', 10, 22),
+            ('defer if try mk{ n }.x > 0 { }', 'cannot `try` in a defer: it may return', 10, 14),
+        ])
+
+    def test_an_arm_without_braces(self):
+        self.assertOutput(self.DECLS + r"""
+fn name { k: K } -> utf8::String {
+    return match k {
+        a => "A"                                    // ends with its line,
+        b => "B",                                   // at a comma,
+        c => { "C" }                                // or is a block, as before
+    }
+}
+fn sign { n: i32 } -> i32 {
+    match n {
+        0 => return 0
+        -1 => return -1                             // a `-` and a literal begin the next arm
+        1 | 2 => return 1
+        else => {}
+    }
+    let v = match n {
+        3 => n
+            - 1                                     // an operator goes on with the arm's value
+        -8..=-2 => 0 - n
+        -9 | -10 => 99
+        else => if n > 100 { 100 } else { n * 2 }
+    }
+    return v
+}
+fn main { mut io: Io } {
+    let mut total = 0
+    for k in [K::a, K::b, K::c] {
+        match k {
+            a => total = total + 1                  // an assignment
+            b => continue
+            c => say{ &io, s = name{ k } }          // a call
+        }
+        say{ &io, s = name{ k } }
+    }
+    let one = match K::b { a => 1, b => 2, c => 3, }
+    _ = @fmt(&io, "{} {}", total, one)
+    for n in [0, -1, 2, 3, -5, -9, 6, 500] { _ = @fmt(&io, " {}", sign{ n }) }
+    io::println{ &io, s = "" }
+}
+""", 'A\nC\nC\n1 2 0 -1 1 2 5 99 12 100\n')
+        needs_block = ('a match arm without braces is an expression or one statement, and not a `let` or a `defer`, '
+                       'which need a block: write `=> { ... }`')
+        self.assertErrors([
+            ('let v = match k { a => 1 b => 2, c => 3 }', "expected ',' or a newline after a match arm, found 'b'", 10, 30),
+            ('let v = match k { a => let x = 1, else => 2 }', needs_block, 10, 28),
+            ('match k { a => defer say{ &io, s = "x" }, else => {} }', needs_block, 10, 20),
+            ('let v = match k { a => 1, else => }', "expected an expression, found '}'", 10, 39),
+        ])
+
+    def test_try_takes_its_first_call(self):
+        self.assertOutput(self.DECLS + r"""
+struct Maker { make: fn{ n: i32 } -> !P }
+fn sum { n: i32 } -> !i32 {
+    let m = Maker{ make = mk }
+    let x = try mk{ n }.x                           // (try mk{ n }).x
+    let y = try! mk{ n }.y + try m.make{ n }.y      // the callee's path is before the call
+    let r = rr{ n }
+    return x + y + try r.r + try (rr{ n }.r)        // no call: the whole of `r.r`
+}
+fn main { mut io: Io } {
+    _ = @fmt(&io, "{} {}\n", sum{ n = 2 } iferr -1, sum{ n = -2 } iferr -1)
+    if try! mk{ n = 1 }.x == 1 { io::println{ &io, s = "cond" } }
+}
+""", '14 -1\ncond\n')
+        further = ("`try` needs a `!T` value, got R: `try` takes `rr{ n }` alone, and what comes after the call's `}` applies "
+                   'to its value; for a `!T` further on, put the whole expression in parentheses after `try`')
+        self.assertErrors([
+            ('return try rr{ n }.r', further, 10, 18),
+            ('return try rr{ n }', '`try` needs a `!T` value, got R', 10, 18),
+            ('try mk{ n }.x', 'an expression statement must be a call', 10, 16),
+        ])
+
+    PROGRAM = DECLS + r"""
+fn run { mut io: Io, k: K, n: i32 } -> !i32 {
+    {
+        let a = try mk{ n }.x
+        defer if a > 0 { say{ &io, s = "defer" } }
+        { say{ &io, s = "block" } }
+    }
+    let v = match k {
+        a => 1
+        -1 => 2,
+        else => return 0
+    }
+    return v
+}
+fn main { mut io: Io } { _ = run{ &io, k = K::a, n = 1 } iferr 0 }
+"""
+
+    def test_dumps_and_recovery(self):
+        # `ctxc syntax`, `ctxc decls` and the recovery test (ctxc/recover.ctx) take each form.
+        import subprocess
+        import toolchain
+        d, _ = toolchain.write_program([(self.PROGRAM.replace('-1 => 2,', 'b => 2,'), 'main.ctx')])
+        ctxc = toolchain.native_ctxc()
+        r = subprocess.run([ctxc, 'recover', 'main.ctx', '0', '100000'], cwd=d, capture_output=True)
+        self.assertEqual((r.returncode, r.stdout.decode().split()[0]), (0, 'done'), r.stdout.decode())
+        tree = subprocess.run([ctxc, 'syntax', 'main.ctx'], cwd=d, capture_output=True).stdout.decode()
+        lines = [x.strip() for x in tree.splitlines()]
+        at = lines.index('11:5 scope')
+        self.assertEqual(lines[at:at + 9], [
+            '11:5 scope', '11:5 block', '12:9 let a', '-', '12:28 dot x', '12:17 try', '12:23 braced',
+            '12:21 path', '12:21 seg mk'])
+        self.assertIn('13:9 defer', lines)
+        self.assertEqual(lines[lines.index('13:9 defer') + 2], '13:15 if')
+        arm = lines.index('17:9 arm')
+        self.assertEqual(lines[arm:arm + 5], ['17:9 arm', '17:9 pat a', '17:14 block', '17:14 do', '17:14 int 1'])
+        std = [os.path.join(toolchain.ROOT, f) for f in toolchain.std_files()]
+        r = subprocess.run([ctxc, 'decls', *std, '--', 'main.ctx'], cwd=d, capture_output=True)
+        out = r.stdout.decode()
+        self.assertIn('\n  scope\n    let a: i32\n      field x i32\n        try P\n', out)
+        self.assertIn('live a i32 main.ctx:12:30-15:6\n', out)      # to the end of its block
+
+
 class ListExample(Base):
     def test_runs(self):
         self.assertOutput(LIST_SRC, '10\n20\n30\n40\n100\n10\n')
@@ -1973,7 +2180,7 @@ class Parser(Base):
             ('let x = 1 let y = 2', "expected a newline or ';' after statement, found 'let'", 2, 15),
             ('let _ = 1', '`_` is not a name: `_ = e` discards a value without declaring anything', 2, 5),
             ('let x', '`let x` needs a type or an initializer', 2, 5),
-            ('defer let x = 1', '`defer` takes a call, an assignment, `_ = e` or a block', 2, 5),
+            ('defer let x = 1', '`defer let` declares a local that nothing could use: put the `let` and what uses it in a block, `defer { ... }`', 2, 5),
             ('outer: if true {}', "only a `while` or a `for` can be labeled, found 'if'", 2, 12),
             ('for a, b in xs {}', 'a `for` names one element: write `for x at i in xs` for each element `x` and its index `i`', 2, 10),
             ('for x of xs {}', "expected `in` after a `for`'s name, as in `for x in xs` or `for i in 0..n`, found 'of'", 2, 11),
@@ -10210,9 +10417,12 @@ fn main { mut io: Io } {
 }
 """, '`x` may be read before it is assigned')
 
-    def test_takes_call_assignment_or_block(self):
+    def test_takes_a_statement_that_can_run_later(self):
+        # Rule 1; each kind runs in class SmallSyntax.
         self.assertCompileError('fn main { mut io: Io } { defer let x = 1 }',
-                                '`defer` takes a call, an assignment, `_ = e` or a block')
+                                '`defer let` declares a local that nothing could use')
+        self.assertCompileError('fn main { mut io: Io } { defer defer io::println{ &io, s = "x" } }',
+                                '`defer` takes a call, an assignment, `_ = e`, an `if`, a `match`, a loop or a block')
 
 
 # An allocator that counts the bytes live, over an arena: frees must give back exactly what

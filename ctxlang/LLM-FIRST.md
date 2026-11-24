@@ -289,11 +289,40 @@ What a model writes by default should compile, or fail with the exact fix.
     parentheses. No file of the corpus has one. A postfix `(`, `[` or `{` stays on its
     expression's line (rule 3, as before).
 
-- [ ] **3.6 Small syntax.**
+- [x] **3.6 Small syntax.**
   A bare `{ ... }` block as a statement; `defer if c { ... }`; a one-expression match arm without
   braces (`a => "A"`); `try f{}.x` parsing as the spec's own example says.
   - Details: F#11; [spec §11, Defer](spec.md#defer), [§8, Errors, rule 7](spec.md#errors).
   - *Done when:* each of the four compiles, or the spec drops it.
+  - *Done:* all four compile.
+    - A block is a statement ([spec §11, rule 4](spec.md#11-statements-and-control-flow)): a
+      scope whose locals end and whose defers run at its `}`, and no value. It can't be taken
+      for a call's or a literal's braces, which are on their expression's line, where a
+      statement can't begin. Its own statement kind in the tree and in every pass of the
+      checker (flow, borrow summaries, argument order, tasks, `match &p`'s scan), both dumps
+      and the recovery test; lowering writes an `if true` of it, so the IR, the C backend and
+      the interpreter are unchanged.
+    - `defer` takes any statement that can run later by itself
+      ([spec §11, Defer, rule 1](spec.md#defer)): also an `if` or `if let`, a `match`, a
+      `while` and a `for`. `defer s` was already a block of `s`, so only the parser changed.
+      A `let` (``put the `let` and what uses it in a block``), a `return`, `break` or
+      `continue` (``a deferred body can't leave``) and another `defer` have their own errors.
+    - A match arm takes one statement without braces
+      ([spec §8, Match, rule 11](spec.md#match)): an expression, its value, or a call, an
+      assignment, a `return`, `break`, `continue` or `if`; not a `let` or a `defer`. It ends
+      with its line, at a `,` or at the match's `}`, and a `,` may follow any arm; two arms on
+      one line without a comma are ``expected ',' or a newline after a match arm``. A line
+      that starts with `-`, an integer literal and `=>`, `|` or `..=` is the next arm's
+      pattern rather than more of the value, the one place a line's first token could be
+      either. Arms with braces are as before.
+    - `try`'s operand ends at the `}` of its first call
+      ([spec §8, Errors, rule 7](spec.md#errors)), so `try f{}.x` is `(try f{}).x`, as the
+      spec said, and `try a.b{ ... }` still tries the call. This is the one change to
+      programs that compiled: `try f{}.x` for an `f` that returns a struct with a `!T` field
+      was `try (f{}.x)`, and is now an error that says so (``put the whole expression in
+      parentheses after `try` ``); the two readings never both type-check. No file of
+      ctxc, std, the examples or KOTOR has one (their syntax dumps are unchanged); one of
+      the suite's programs did, and is now `try (mk{ p = &x }.r)`.
 
 - [ ] **3.7 `is` doesn't break names.**
   `let is = ...` and `fn is{}` are "expected a name, found 'is'", far from the cause. Make `is`
@@ -384,9 +413,9 @@ What a model writes by default should compile, or fail with the exact fix.
   - *Done when:* it lives in ctxlang, kotor's AGENTS.md points to it, and it's current with this checklist's changes.
 
 - [ ] **7.2 Every code block in the spec and the reference compiles.**
-  The spec has drifted: `try f{}.x` (F#11) contradicts the parser, hex literals work but aren't in
-  §11 (F#16), and §14's folded consts aren't what the folder takes (F#37). A test extracts each
-  block (marked as a whole program, a fragment, or an expected error) and checks it with ctxc.
+  The spec has drifted: hex literals work but aren't in §11 (F#16), and §14's folded consts
+  aren't what the folder takes (F#37). A test extracts each block (marked as a whole program,
+  a fragment, or an expected error) and checks it with ctxc.
   - *Done when:* the test runs in the suite and every block passes or is marked as an error example.
 
 ## 8. Next tier

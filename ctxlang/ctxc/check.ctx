@@ -4750,6 +4750,7 @@ namespace check {
                 }
                 restore{ &c, s = s0 }
             }
+            scope{ body } => { block{ &c, b = body } }
         }
     }
 
@@ -7011,6 +7012,7 @@ namespace check {
                     borrow_block{ &c, &b, block = body }
                 }
                 deferred{ body } => { borrow_block{ &c, &b, block = body } }
+                scope{ body } => { borrow_block{ &c, &b, block = body } }
                 else => {}
             }
             i = i + 1
@@ -8740,6 +8742,7 @@ namespace check {
                 if let e = value { ord_expr{ &c, e, part, &us } }
             }
             deferred{ body } => { ord_block{ &c, b = body, part, &us } }
+            scope{ body } => { ord_block{ &c, b = body, part, &us } }
             else => {}
         }
     }
@@ -9210,6 +9213,7 @@ namespace check {
                 _ = tw_block{ &c, b = body, st }
                 return st
             }
+            scope{ body } => { return tw_block{ &c, b = body, st } }
             error => {}
         }
         return st
@@ -9707,6 +9711,7 @@ namespace check {
             choose{ x } => { scan_match{ &c, sc, x } }
             ret{ value } => { if value != null { scan{ &c, sc, e = value } } }
             deferred{ body } => { scan_stmts{ &c, sc, xs = body.stmts } }
+            scope{ body } => { scan_stmts{ &c, sc, xs = body.stmts } }
             else => {}
         }
     }
@@ -10519,6 +10524,14 @@ namespace check {
         }
     }
 
+    // Whether a postfix operator follows e in the source, on its line: a `.` or a `[`.
+    fn postfix_follows { c: Checker, e: syntax::Expr } -> bool {
+        let text = c.files[e.span.file].text
+        let mut i: usize = e.span.end
+        while i < text.len and (text[i] == ' ' or text[i] == '\t') { i = i + 1 }
+        return i < text.len and (text[i] == '.' or text[i] == '[')
+    }
+
     // `try x` (§8, Errors): x's value, or x's error returned from the function, whose set gains
     // x's errors. x is a `!T`, in a function returning `!U`. `try! x` panics instead, in any
     // function.
@@ -10526,7 +10539,13 @@ namespace check {
         let t = typed{ &c, e = x }
         if t == types::ERROR { return types::ERROR }
         let res{ ok, errs } = types::get{ s = c.ty, id = t } else {
-            errorf{ &c, at = expr_at{ e = x }, msg = @fmt("`{}` needs a `!T` value, got {}", str{ s = if panics { "try!" } else { "try" } }, tstr{ c, t }) }
+            let word = str{ s = if panics { "try!" } else { "try" } }
+            if x.k is braced and postfix_follows{ c, e } {
+                // `try f{}.x` is `(try f{}).x` (§8, Errors, rule 7): the `!T` may be further on.
+                errorf{ &c, at = expr_at{ e = x }, msg = @fmt("`{}` needs a `!T` value, got {}: `{}` takes `{}` alone, and what comes after the call's `}}` applies to its value; for a `!T` further on, put the whole expression in parentheses after `{}`", word, tstr{ c, t }, word, str{ s = source_text{ c, span = x.span } }, word) }
+            } else {
+                errorf{ &c, at = expr_at{ e = x }, msg = @fmt("`{}` needs a `!T` value, got {}", word, tstr{ c, t }) }
+            }
             return types::ERROR
         }
         if panics { return ok }

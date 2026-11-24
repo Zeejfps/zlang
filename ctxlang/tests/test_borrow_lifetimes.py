@@ -231,7 +231,7 @@ review_cases={
 'direct_projection':"""error bad{ p: *i32 }
 struct Last { r: !*i32 }
 fn mk { p: *i32 } -> Last { return Last{ r = bad{ p } } }
-fn leak {} -> ! { let x: i32 = 1; _ = try mk{ p = &x }.r }
+fn leak {} -> ! { let x: i32 = 1; _ = try (mk{ p = &x }.r) }
 fn main {} { _ = leak{} }
 """,
 'relay_projection':"""error bad{ p: *i32 }

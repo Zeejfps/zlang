@@ -623,6 +623,12 @@ namespace tree {
                 block{ &d, b = body }
                 d.depth = d.depth - 1
             }
+            scope{ body } => {
+                line{ &d, at, s = "scope" }
+                d.depth = d.depth + 1
+                block{ &d, b = body }
+                d.depth = d.depth - 1
+            }
         }
     }
 
@@ -1181,6 +1187,10 @@ namespace decls {
             cont{ label } => { labeled{ &out, depth, word = "continue", label } }
             deferred{ body } => {
                 line{ &out, depth, s = "defer" }
+                stmts{ &out, c, xs = body.stmts, depth = d }
+            }
+            scope{ body } => {
+                line{ &out, depth, s = "scope" }
                 stmts{ &out, c, xs = body.stmts, depth = d }
             }
         }

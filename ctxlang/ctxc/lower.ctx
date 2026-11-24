@@ -1065,6 +1065,12 @@ namespace lower {
                 return ir::Stmt::ret{ value = conv{ &l, e = value, to = l.ret } }
             }
             deferred{ body } => { return ir::Stmt::deferred{ body = block{ &l, b = body } } }
+            // A block of its own is an `if true` of it: the IR has blocks only as parts of
+            // statements, and a block's defers run where the `if`'s do.
+            scope{ body } => {
+                let c = mk{ ty = tid{ &l, t = types::BOOL }, k = ir::ExprKind::boolean{ value = true } }
+                return ir::Stmt::cond{ c, then = block{ &l, b = body }, els = null }
+            }
             choose{ x } => { return match_stmt{ &l, x, t = types::NO_TYPE, leaving = false } }
             error => { @panic("lower: a statement that didn't parse") }
         }

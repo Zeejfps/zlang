@@ -200,6 +200,7 @@ match e {
     a{ x = n } | b{ y = n }   => { ... }
     else                      => { ... }
 }
+let name = match k { a => "A", b => "B" }       // arms without braces
 ```
 
 1. The scrutinee is a union, a `?T`, an enum (§12, Enums) or an integer (below). The arms must be exhaustive. `else` matches every variant not listed, and must come last. `else` is an error if every variant is already listed.
@@ -212,6 +213,7 @@ match e {
 8. `match` is a statement, and can also be an expression (§11, If and match expressions).
 9. To take one variant apart and leave on any other, use `let` with a pattern (§11, Let-else). To test for one, use `is` (§8, Is).
 10. A union's zero value is its first variant, with every payload field zero, if those fields all have zero values (§11, Initialization).
+11. An arm's body is a block, or one statement without braces, which is a block of that statement alone: an expression, the arm's value (`a => "A"`), or a call, an assignment, a `return`, `break` or `continue`, an `if`, or any other statement but a `let` and a `defer`, which would do nothing there and need the block. An arm without braces ends where its statement does, at the end of its line, or at a `,` or the match's `}`; a `,` may follow any arm. Its expression goes on to the next line as any does (§11, rule 3), except to a line that starts with `-` and an integer literal before `=>`, `|` or `..=`: that is the next arm's pattern, as in `0 => "zero"` followed by `-1 => "minus one"`.
 
 ### Match on integers
 
@@ -326,7 +328,7 @@ match pair{ a, b } {
 4. `!T` is a T or an error. `!` alone is `!T` without a value: a function returning it returns nothing or fails. In such a function, `return` without a value and reaching the end of the body return its `ok`.
 5. A function's result `!T` fails with its **error set**, inferred: the errors its body returns, plus the sets of the calls whose errors it returns or passes up with `try`, repeated through recursion until no set grows. ctxc compiles the whole program, so every direct call has a body to infer from. `!T` written anywhere else, as a function type's result, a field or a local's type, may hold any error. A function, or a function type, may declare its set instead (rule 14).
 6. A T converts implicitly to `!T`, as its value (§11, Widening). An error, or a `!T`, converts to an error type, or a `!U` of the same `T`, that holds its errors: the result of the function being checked, whose set gains them, or any error. A set never takes another function's errors: `r = g{}` for a local `r` of `f{}`'s type is an error.
-7. `try e`, for `e` of type `!T` in a function that returns `!U`: `e`'s value, or, if `e` is an error, `return e` (deferred bodies run first). The function's set gains `e`'s errors. It is a prefix operator, at the level of `not`: `try f{}.x` takes `.x` of `f{}`'s value. `try` is an error in a `defer`, and as a statement its operand must be a call. `try! e` is `e`'s value, or, if `e` is an error, a panic, as `@panic` (§13), at the `try!` whose reason names the error without its payload: for an error the function can't handle, such as running out of memory where that is fatal. It needs no `!U` result, adds nothing to the function's set, and is allowed in a `defer`; as a statement its operand must be a call, as with `try`.
+7. `try e`, for `e` of type `!T` in a function that returns `!U`: `e`'s value, or, if `e` is an error, `return e` (deferred bodies run first). The function's set gains `e`'s errors. It is a prefix operator, at the level of `not`, and its operand ends at the `}` of its first call: `try f{}.x` is `(try f{}).x`, the field of `f{}`'s value, and `try a.b{ ... }` tries the call of `a.b`. An operand without a call is the whole postfix expression, as `try r.x` is for a field `x` that is a `!T`; for a `!T` that a call's result holds, write `try (f{}.x)`, which the error says where `f{}` isn't a `!T`. `try` is an error in a `defer`, and as a statement its operand must be a call. `try! e` is `e`'s value, or, if `e` is an error, a panic, as `@panic` (§13), at the `try!` whose reason names the error without its payload: for an error the function can't handle, such as running out of memory where that is fatal. It needs no `!U` result, adds nothing to the function's set, and is allowed in a `defer`; as a statement its operand must be a call, as with `try`.
 8. `e iferr x`, for `e` of type `!T`, is `e`'s value if it isn't an error, and otherwise `x`, as `ifnull` is for `?T` (§8, Optional, rule 7): `x` is an expression, or a block that gives a value or leaves. `e iferr err{ error } { ... }` binds the error in the block, as `let ... else` does. For a bare `!` it has no value, and is a statement: `close{ &fs, file } iferr { return 1 }`. A discard's `x` may give no value, whatever `T` is (§11, rule 6): `_ = f{} iferr { log{} }`. A handler after a block's `}` takes the whole expression before it, so a `!?T` is taken apart in one expression, its error first: `let v = f{} iferr { return } ifnull { return }` (§11, Expressions, rule 7).
 9. A `match` on a `!T` has the arms `ok{ value }` (`ok` for a bare `!`) and `err{ error }`, where `error` has the `!T`'s error type. `let ok{ value } = e else err{ error } { ... }` takes one apart (§11, Let-else). The arms may instead list errors next to `ok`: then `ok` must be listed, and a last `err{ error }`, or `else`, takes the errors not listed. A `match` on an error lists errors, with `else` for the rest. An arm doesn't mix `ok` or `err` with errors.
 10. A listed error must be one the value can be, and without `else` or `err` every one it can be must be listed: adding an error to a function breaks the matches that listed all of its errors. With `else` or `err`, at least one must be left for it. These are checked once the sets are inferred. A value of `error`, or of a function type's `!T` that declares no set, may be any error of the program, so a match on one needs `else` or `err` (rule 15).
@@ -400,8 +402,9 @@ continue   continue label
 match e { ... }
 return e
 return
-defer f{ ... }      defer x = e      defer _ = e      defer { }
+defer f{ ... }      defer x = e      defer if e { }      defer { }
 f{ ... }
+{ ... }
 ```
 
 1. Conditions and match scrutinees need no parentheses: the block's `{` ends them. Parentheses are allowed, as around any expression.
@@ -418,7 +421,7 @@ f{ ... }
    ```
 
    `-` and `&` begin an expression too (`-1`, `&x`). A line that starts with one goes on with the expression before it, as the binary operator (`a`, then `- b`, is `a - b`), but for one place: after a `}` in a condition, which may have ended the condition's block, it begins a statement, as it did before lines continued: `if c { f{} }` with `-1` on the next line is an `if` and its block's value. There the `{` begins the block (rule 2), and if the condition was meant to go on, the error is at that line's `-`: ``a condition can't go on with a line that starts with `-`, which may begin a statement: end the line before with the `-`, or put the condition in parentheses``. It is the error where the line isn't a statement or the braces aren't a block of statements, and also where both readings parse, the braces as a call's items and the line ending in braces that could be the block (`if f{ n }`, then `- 1 > 0 { i = 1 }`), which only the types would tell apart: a value of its own there goes in parentheses, `(-g{ n })`. Braces that hold a match's arms are never a call's, so an operator on the line after a `match` expression applies to its value. A postfix `{`, `[` or `(` must be on the same line as the expression before it, and a `return`'s value begins on its line.
-4. Every block is a scope. A `let` is visible from its declaration to the end of its block.
+4. Every block is a scope. A `let` is visible from its declaration to the end of its block. A block may stand as a statement of its own, `{ ... }`: a scope whose locals end, and whose deferred bodies run (§11, Defer), at its `}`. It gives no value, so a branch can't end in one for its value. Its `{` begins the statement: a `{` on an expression's line is that expression's call or literal (rule 3).
 5. In `x = e`, `x` must be a mutable place.
 6. An expression statement must be a call or a builtin call that returns nothing, `try` of such a call, or `iferr` on a bare `!` (§8, Errors). A call that returns a value is an error as a statement, a `!T` or `!` included: use the value, or discard it explicitly with `_ = e`. `_ = e` evaluates any expression `e` that has a value, and drops it; `_` is not a name and can't be declared. In `_ = e ifnull x` and `_ = e iferr x`, `x` may also give no value, since the value is dropped either way: a block that ends without one, a trailing `if` or `match` among them, or a call that returns nothing. It runs for its effects (`_ = f{} iferr { log{} }`), and the `ifnull` or `iferr` then has no value, as one on a bare `!` has none. An `x` that is itself an `ifnull` or `iferr` may end so too. So `_ = f{} iferr { ... }` is right whatever `f` returns. The exception is the last statement of a branch of an `if` or `match` expression, which gives the branch its value (below).
 7. `return` without a value is only allowed in a function with no `-> R`. In a function with `-> R`, every path must end in `return e` or `@panic()`. In a function with no `-> R`, or whose result is a bare `!` (§8, Errors, rule 4), `return e` may also take an `e` without a value: a call that returns nothing, `try` of one that returns a bare `!`, or an `iferr` on one. It is `e`, then `return`: `return try close{ &fs, file }`.
@@ -497,7 +500,7 @@ let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
 defer list::free{ list = &xs }
 ```
 
-1. `defer` takes a call, an assignment, a discard (`_ = e`) or a block. Its body runs when the enclosing block exits: at its end, or through `return`, `break`, `continue`, or a branch of an `if` or `match` expression leaving (§11, If and match expressions).
+1. `defer` takes a statement that can run later by itself: a call, an assignment, a discard (`_ = e`), an `if` or `if let`, a `match`, a `while` or a `for`, or a block. `defer s` is `defer { s }`, so `defer if c { f{} }` tests `c` when it runs. A `let` isn't one, since nothing could use its local: put it in a block with what does. Neither is a `return`, `break` or `continue` (rule 7), nor another `defer`. Its body runs when the enclosing block exits: at its end, or through `return`, `break`, `continue`, or a branch of an `if` or `match` expression leaving (§11, If and match expressions).
 2. A block's deferred bodies run in reverse order of their `defer` statements. Only `defer` statements that were reached run.
 3. The body is evaluated when it runs, not at the `defer`: `defer say{ n = i }` sees the value `i` has at exit. A `return e` evaluates `e` before deferred bodies run.
 4. A `defer` inside a loop body runs at the end of each iteration that reached it.
@@ -517,7 +520,7 @@ let v = match parse{ s } {
 
 1. `if` and `match` are statements at the start of a statement, and expressions everywhere else.
 2. An `if` expression must have an `else`.
-3. Each branch is a block whose last statement is an expression: the branch's value. `{ let y = f{}; y + 1 }` has the value `y + 1`.
+3. Each branch is a block whose last statement is an expression: the branch's value. `{ let y = f{}; y + 1 }` has the value `y + 1`. A match arm without braces is the block of its one statement (§8, Match, rule 11): `a => "A"` has the value `"A"`.
 4. Instead of ending in a value, a branch may leave: it ends a path (§11.7, 8, 9) through `return`, `break`, `continue` or `@panic()`. At least one branch must produce a value.
 5. A branch whose last statement is an `if` or `if let` with an `else`, or a `match`, takes that statement's value, unless every one of its branches leaves.
 6. Type: if the expression has an expected type (§11, Widening, rule 1) that every branch value converts to, that type. Otherwise the first branch type that every other branch value converts to, where `null` among the branches makes it `?T`. It is an error if there is none.

@@ -113,6 +113,7 @@ namespace syntax {
         brk{ label: ?Name },
         cont{ label: ?Name },
         deferred{ body: Block },                        // `defer s` has a block of s alone
+        scope{ body: Block },                           // `{ ... }` as a statement
     }
 
     // `else if` is an else block holding the next `if`.
@@ -126,7 +127,8 @@ namespace syntax {
     // (`&value = x` for `if let &x`) and `null => { B }`, B empty without an `else`.
     struct Match { scrut: *Expr, arms: []Arm, is_ifnull: bool, is_iferr: bool, is_iflet: bool }
 
-    // pats is empty for `else`.
+    // pats is empty for `else`. An arm without braces, `a => s`, has a block of s alone, with
+    // s's span.
     struct Arm { span: Span, pats: []Pattern, body: Block }
 
     // `variant` or `variant{ binders }`, where the variant may be `null`. An error's name may
@@ -166,7 +168,7 @@ namespace syntax {
         ifx{ x: If },
         matchx{ x: Match },                             // `ifnull` and `iferr` too, at the operator
         overflow{ e: *Expr, els: Block },               // `e ifoverflow x`, at the operator; els is x's block, or x alone
-        trye{ e: *Expr, panics: bool },                 // try e, or try! e if panics
+        trye{ e: *Expr, panics: bool },                 // try e, or try! e if panics; e ends at its first call's `}`
         isx{ e: *Expr, pats: []Pattern },               // `e is a | b`, at the `is`
     }
 

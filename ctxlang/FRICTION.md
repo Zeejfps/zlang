@@ -89,10 +89,6 @@ as the write-ups gave them.
     chain (62 for `tok::Kind`; the lexer now indexes const tables instead); a contiguous enum
     could be one range check. *Hit by 3:* ctxc, data (1), walk (1).
 
-11. **Small syntax.** A bare `{ ... }` block isn't a statement, so each section became a fn;
-    `defer if c { ... }` is a parse error, so it is `defer { if c { ... } }`; a match arm that is
-    one expression needs braces (`a => { "A" }`); `try f{}.x` parses as `try (f{}.x)`, against
-    the spec's own example. *Hit by 3:* dialog (2), minigames (1), render (2).
 
 12. **Some errors don't point at the cause.** A build.ctx missing one source directory gives
     "unknown type or namespace mg" at every use (thirty errors) instead of one saying no file

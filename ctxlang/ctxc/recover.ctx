@@ -488,6 +488,7 @@ namespace recover {
             brk{ label } => { if label != null { name{ &c, n = label, lo = a, hi = b } } }
             cont{ label } => { if label != null { name{ &c, n = label, lo = a, hi = b } } }
             deferred{ body } => { block{ &c, x = body, lo = a, hi = b } }
+            scope{ body } => { block{ &c, x = body, lo = a, hi = b } }
         }
     }
 
