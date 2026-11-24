@@ -1,5 +1,5 @@
 // std: task. Tasks: calls that may run concurrently with the code that started them (spec §15,
-// Tasks; ctxlang/internals.md, Tasks). A task is a call of a `#task` fn, made by a bind written in the
+// Tasks; ctxlang/docs/internals.md, Tasks). A task is a call of a `#task` fn, made by a bind written in the
 // start's call that supplies every field, so the call shows everything the task receives. Its
 // handle is a local of the starter's, and the task never outlives the handle's scope: leaving it
 // without waiting cancels the task and waits for it there.

@@ -262,7 +262,7 @@ _ = scripts::run{ &w, &vm, name = "k_pend_area01", self = area_id }   // -> ?i32
   script runs and nowhere else: `scripts::run_program`, `scripts::resume` and ExecuteScript give
   `nwvm::run` or `nwvm::resume` `engine = routines::call{ &w, _ }`, in a call that isn't given
   `&w`, so the world stays a checked `mut w` all the way down (a bind beside a `&` of what it
-  holds is an exclusivity error, ctxlang/spec.md §3.1, rule 8; the bind's record lasts until the
+  holds is an exclusivity error, ctxlang/docs/spec.md §3.1, rule 8; the bind's record lasts until the
   function that made it returns). Every function that may run a script takes `mut w:
   world::World, mut vm: nwvm::Vm`, and what a script changes of the world counts as a change
   made through that `&w`.

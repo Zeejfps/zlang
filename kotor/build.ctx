@@ -40,7 +40,7 @@ fn build { mut b: Build } {
     build::add_sources{ &b, exe, dir = "lib/screens" }
     build::add_sources{ &b, exe, dir = "lib/pazaak" }
     build::add_sources{ &b, exe, dir = "tools/common" }
-    // The unchecked operations (ctxlang/spec.md §13: `@cast`, `@slice`, pointer arithmetic, C's
+    // The unchecked operations (ctxlang/docs/spec.md §13: `@cast`, `@slice`, pointer arithmetic, C's
     // declarations) are errors in the game's code, but for these directories: review for
     // memory safety looks here. The first two are the binding layers; the rest are game-side,
     // each for the reason beside it.

@@ -1,6 +1,6 @@
 # ctxc: what is left
 
-Only open work. How ctxc works, and the decisions behind it, are in [internals.md](internals.md);
+Only open work. How ctxc works, and the decisions behind it, are in [internals.md](../internals.md);
 finished work is in git history. Concurrency (net, http, the Evented backend) is tracked in
 [threads.md](threads.md).
 

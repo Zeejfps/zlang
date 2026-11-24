@@ -12,14 +12,14 @@ The guiding rules, in order of weight:
 3. **What a model writes by default compiles,** or fails with an error that states the fix.
 4. **Feedback is fast, complete and machine-readable.**
 
-Evidence comes from [FRICTION.md](FRICTION.md) (17 agent write-ups from ctxc and the KOTOR port;
-entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../kotor/docs/tooling-gaps.md).
+Evidence comes from [friction.md](friction.md) (17 agent write-ups from ctxc and the KOTOR port;
+entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../../../kotor/docs/tooling-gaps.md).
 
 ## 1. A reference a model can trust
 
 - [x] **1.1 Move the quick reference into ctxlang.**
   Agents learned the language from `kotor/docs/ctxlang-quickref.md`, which lived in the game,
-  not the language; it is now [quickref.md](quickref.md), with the game's own parts in
+  not the language; it is now [quickref.md](../quickref.md), with the game's own parts in
   kotor/AGENTS.md ("ctxlang in this game"). No model has ctxlang in its training data: this
   page is its first source of truth. Move it to `ctxlang/`, keep it short, name the spec
   sections, and list the common mistakes with their fixes.
@@ -36,7 +36,7 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
   got errors that didn't say what to write, or said something wrong: `&&` was "`&` of bool and
   *bool", `loop { break }` suggested renaming `break`. Each is now one error that writes the
   ctxlang form, with a safe fix where it is certain, and the parse goes on as if it were
-  written ([spec §21, rule 7](spec.md#21-checking-and-diagnostics); cases/OtherLanguages).
+  written ([spec §21, rule 7](../spec.md#21-checking-and-diagnostics); cases/OtherLanguages).
   - *Done when:* each form is one error that names the fix, and `--fix` writes the certain ones.
 
 ## 2. Next tier
@@ -48,14 +48,14 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
   that holds an `api.ctx` is a module, which code outside reaches only through that file
   ([modules.md](modules.md)). Apart from that, one half-written file breaks every build that adds
   its directory.
-  - Details: F#5, F#14; [modules.md](modules.md); [spec §10](spec.md#10-namespaces), [§19](spec.md#19-build-programs).
+  - Details: F#5, F#14; [modules.md](modules.md); [spec §10](../spec.md#10-namespaces), [§19](../spec.md#19-build-programs).
   - *Done when:* modules.md is built, and a build can add one file.
 
 - [ ] **2.2 Borrow contracts in signatures.**
   The escape check infers what a call borrows from the callee's body, so an error at a call
   depends on code the model doesn't see, and false positives push code to heap copies. A written
   contract (the `#noescape` field attribute that was put off) keeps reasoning local.
-  - Details: F#2; [spec §14, Escape check](spec.md#escape-check), [§16](spec.md#16-open-questions).
+  - Details: F#2; [spec §14, Escape check](../spec.md#escape-check), [§16](../spec.md#16-open-questions).
   - *Done when:* decided: either the attribute, or a reason it isn't needed, recorded in the spec.
 
 - [ ] **2.3 A formatter.**
@@ -67,7 +67,7 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../koto
   (F#13), slices staying `[]mut` until freed (F#22, F#25), a `mut` argument that is a temporary
   (F#27), locking through a read-only pointer (F#28), tuples (F#29), scoped lock (F#23), hex
   literals in the spec (F#16), array lengths from any folded const (F#37). Take them as they
-  come up; each has its entry in FRICTION.md.
+  come up; each has its entry in friction.md.
 
 ## Not adding
 

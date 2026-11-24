@@ -1,8 +1,8 @@
-// Every code block of spec.md and quickref.md is checked by ctxc: a ```ctx block compiles, in
+// Every code block of docs/spec.md and docs/quickref.md is checked by ctxc: a ```ctx block compiles, in
 // the context the HTML comment before it gives, or has exactly the errors its `// error:`
 // comments state; a ```text block is anything else. tests/helpers/docs.ctx says how.
 //# build docs: {home}/tests/helpers/docs.ctx
-//# $ {docs} {ctxc} {dir}/blocks {home}/spec.md {home}/quickref.md
+//# $ {docs} {ctxc} {dir}/blocks {home}/docs/spec.md {home}/docs/quickref.md
 //# env: CTX_HOME={home}
 //# timeout: 300
 //# stdout:

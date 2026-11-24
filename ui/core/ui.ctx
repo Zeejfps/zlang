@@ -446,7 +446,7 @@ namespace ui {
     #write
     fn write_i16 { mut ui: Ui, n: i16 } { write_i64{ &ui, n } }
 
-    // A float in a hole without a spec is std's text of it (ctxlang/spec.md section 13, Formatting,
+    // A float in a hole without a spec is std's text of it (ctxlang/docs/spec.md section 13, Formatting,
     // rule 9): the shortest digits that read back, plainly from 1e-4 up to 1e16 (`0.1`, `100.0`,
     // `-2.5`), in exponent form outside that.
     #write
@@ -460,7 +460,7 @@ namespace ui {
         write_bytes{ &ui, s = fmt::format_f64{ v = fmt::F64{ x = n, spec = get_plain_spec{} }, into = buf[..] } }
     }
 
-    // A hole with a spec (`{:.1}`, `{:>6}`, `{:08x}`, `{:<12}`), as the spec rules of ctxlang/spec.md
+    // A hole with a spec (`{:.1}`, `{:>6}`, `{:08x}`, `{:<12}`), as the spec rules of ctxlang/docs/spec.md
     // section 13 (Formatting, rule 8) say: the language hands the sink the value with its spec.
     #write
     fn write_fmt_int { mut ui: Ui, v: fmt::Int } {

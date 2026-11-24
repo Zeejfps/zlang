@@ -85,7 +85,7 @@ namespace ui_rec {
     fn write_usize { mut sink: Sink, n: usize } { write_u64{ &sink, n } }
 
     // A hole with a spec (`{:.2}`, `{:>6}`, `{:08X}`): the language hands the sink the value with
-    // its spec (ctxlang/spec.md section 13, Formatting, rule 8). A float with a precision is
+    // its spec (ctxlang/docs/spec.md section 13, Formatting, rule 8). A float with a precision is
     // fixed-point, so a spec is safe in a dump; a float in a bare `{}` still has no writer.
     #write
     fn write_fmt_int { mut sink: Sink, v: fmt::Int } {

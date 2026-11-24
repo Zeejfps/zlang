@@ -2,7 +2,7 @@
 
 What cost time around the port that isn't the language: the agents' shell, the engine's test
 tools and the game's own framework. Language friction goes in
-[ctxlang/FRICTION.md](../../ctxlang/FRICTION.md). Remove an entry once it's fixed.
+[ctxlang/docs/todo/friction.md](../../ctxlang/docs/todo/friction.md). Remove an entry once it's fixed.
 
 - **The agents' shell refuses compound commands.** In a worktree-isolated agent, a command that
   mixes `cd`, `&&`, globs, heredocs, `;` chains or a variable in command position is "too complex

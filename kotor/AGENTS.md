@@ -20,11 +20,11 @@ saves, minigames, music and movies.
 ## Rules
 
 1. **Language.** Everything the game runs is ctxlang. Start with ctxlang's
-   [quick reference](../ctxlang/quickref.md), then "ctxlang in this game" below and the
-   existing code in `kotor/lib/`; read `ctxlang/spec.md` sections when you need the exact rule
-   (the quick reference names them), and `ctxlang/std/*.ctx` for std's APIs. The compiler is young: when it gets in your way, log it in [ctxlang/FRICTION.md](../ctxlang/FRICTION.md)
+   [quick reference](../ctxlang/docs/quickref.md), then "ctxlang in this game" below and the
+   existing code in `kotor/lib/`; read `ctxlang/docs/spec.md` sections when you need the exact rule
+   (the quick reference names them), and `ctxlang/std/*.ctx` for std's APIs. The compiler is young: when it gets in your way, log it in [ctxlang/docs/todo/friction.md](../ctxlang/docs/todo/friction.md)
    (what you wrote, what you had to write instead, how often). Changing the language (ctxc, std,
-   runtime) is allowed when it is a must or greatly helps; follow `ctxlang/internals.md`, "Changing the
+   runtime) is allowed when it is a must or greatly helps; follow `ctxlang/docs/internals.md`, "Changing the
    language" (new feature first, used only after `./ctxc0 run tools/fixpoint.ctx -- --update` refreshes the
    bootstraps), keep the suite passing (`kotor/tools/ctxc run ctxlang/tools/suite`), and add a
    case for every language change (a `.ctx` file under `ctxlang/tests/cases` that states what it
@@ -85,7 +85,7 @@ writes each error as one JSON object on a line of standard error: `file`, `line`
 whose address escapes is declared, the two arguments that overlap, the earlier declaration),
 then `{"type":"summary","errors":N,...}`. The text form has the same notes, indented under
 their error. `ctxc test DIR --json` gives a record for each test and one for the run on
-standard output (ctxlang/spec.md §20, rule 15; §21, rules 8 to 11).
+standard output (ctxlang/docs/spec.md §20, rule 15; §21, rules 8 to 11).
 
 **Let the compiler make the edits it is sure of.** `ctxc check --fix DIR` applies every fix
 that an error's message spells out and that leaves no choice (a pun that needs its field's

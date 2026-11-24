@@ -4,8 +4,8 @@ Enough ctxlang to write code that compiles on the first or second try, without r
 [spec.md](spec.md) first. Each rule names its spec section (§11 is spec.md's section 11): read
 that section when you reach an edge (the escape check, exclusivity, literal inference,
 generics). [Common mistakes](#common-mistakes), at the end, lists what a first draft gets wrong,
-with what to write instead. Code to imitate: std ([std/](std)), [examples/](examples), and the
-test cases ([tests/cases/](tests/cases)), each a program that compiles or names its error.
+with what to write instead. Code to imitate: std ([std/](../std)), [examples/](../examples), and the
+test cases ([tests/cases/](../tests/cases)), each a program that compiles or names its error.
 
 In this repository the compiler is `kotor/tools/ctxc`, which builds ctxc from its bootstrap when
 needed; it is `ctxc` below.
@@ -321,7 +321,7 @@ a number to a width, `{:08x}` is hex with zeros, `{:.3}` a float with three digi
 point; no wrapper type or writer for these. Floats print plainly where short (`100.0`, not
 `1e+02`). A program's own `#write` fns for a type replace std's; a sink of its own takes specs
 with writers of `fmt::Int`, `fmt::Uint`, `fmt::F64`, `fmt::F32` and `fmt::Text`
-([std/fmt.ctx](std/fmt.ctx)).
+([std/fmt.ctx](../std/fmt.ctx)).
 
 String literals convert to `[]u8`, `utf8::String` or `c::String` as the context expects; a
 literal is read-only, so it is no `[]mut u8` (compare a `[]mut u8` with one after
@@ -442,7 +442,7 @@ namespace wav_tests {
 
 ## Common mistakes
 
-What a first draft gets wrong, from the agents' write-ups ([FRICTION.md](FRICTION.md)) and from
+What a first draft gets wrong, from the agents' write-ups ([friction.md](todo/friction.md)) and from
 habits of other languages.
 
 From other languages. ctxc says what to write for each, in one error (§21, rule 7), and

@@ -263,7 +263,7 @@ of the docs (below). A case builds one with `//# build child: {home}/tests/helpe
 ## The docs' code blocks
 
 [cases/Docs/code_blocks](cases/Docs/code_blocks) checks every code block of
-[spec.md](../spec.md) and [quickref.md](../quickref.md) with ctxc, so an example can't drift
+[spec.md](../docs/spec.md) and [quickref.md](../docs/quickref.md) with ctxc, so an example can't drift
 from the language. Each block's fence has a mark: `ctx` for ctxlang, `text` for anything else (a
 grammar, a program's output, a shell session); one without fails. A `ctx` block compiles as a
 program of its own, or has exactly the errors its `// error: MESSAGE` comments state at their
