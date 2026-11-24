@@ -797,6 +797,33 @@ fn check_flow_text { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui_test::expect{ &io, &t, ok = has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 112, h = 16 } and gui.tree.elements[2].line_count == 1 and not gui.tree.elements[2].dots,
         what = "text that does not wrap is one line of its own width" }
 
+    // A status bar: a note that may be cut and counts that must not be, in a row too short for
+    // both (200 for 304 and 120). The note is GROW with dots; the counts are plain text, FIT, which
+    // never gives room up: they keep all 120 and the note gets the other 80, with dots.
+    let note = "Deleted a task. Ctrl+Z brings it back."
+    let counts = "8 tasks, 3 done"
+    start_frame{ ui = &gui, scale = 1.0 }
+    let bar = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 200.0 }, .. } }
+    ui::add_text{ ui = &gui, text = note, style = ui::TextStyle{ overflow = ui::Overflow::ellipsis, .. }, box = ui::Box{ width = ui::GROW, .. } }
+    ui::add_text{ ui = &gui, text = counts, style = ui::TextStyle{ .. }, box = ui::Box{ .. } }
+    ui::end{ ui = &gui, scope = bar }
+    ui::end_frame{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 80, h = 16 } and gui.tree.elements[2].dots
+        and has_solved{ ui = gui, at = 3, x = 80, y = 0, w = 120, h = 16 } and not gui.tree.elements[3].dots,
+        what = "status bar: plain counts keep their width, and the note that may be cut gives up the room, with dots" }
+    // The same counts marked `Overflow::ellipsis` with no width of their own may give room up too
+    // (a FIT line with dots is sized GROW, at most its own width): the bar is 224 short, and the
+    // two give it up alike, 112 each, so the counts are cut. This is the rule the
+    // option's comment and AGENTS.md state: dots mean "may be cut".
+    start_frame{ ui = &gui, scale = 1.0 }
+    let bar2 = begin_at{ ui = &gui, x = 0.0, y = 0.0, axis = ui::Axis::row, box = ui::Box{ width = ui::fix{ size = 200.0 }, .. } }
+    ui::add_text{ ui = &gui, text = note, style = ui::TextStyle{ overflow = ui::Overflow::ellipsis, .. }, box = ui::Box{ width = ui::GROW, .. } }
+    ui::add_text{ ui = &gui, text = counts, style = ui::TextStyle{ overflow = ui::Overflow::ellipsis, .. }, box = ui::Box{ .. } }
+    ui::end{ ui = &gui, scope = bar2 }
+    ui::end_frame{ ui = &gui }
+    ui_test::expect{ &io, &t, ok = is_clean{ ui = gui } and has_solved{ ui = gui, at = 2, x = 0, y = 0, w = 192, h = 16 } and has_solved{ ui = gui, at = 3, x = 192, y = 0, w = 8, h = 16 },
+        what = "status bar: counts with dots and no width give room up alike with the note: 192 and 8, too narrow even for the dots" }
+
     // A line table too small: the lines that fit are laid out, the text that lost lines and the
     // text that got none are each counted once, and solving the frame again does not count them twice.
     let mut cap = get_small{}

@@ -114,6 +114,15 @@ namespace ui {
     // How `add_text` draws. A null font, size or colour is the theme's; `size` is in logical units
     // and becomes a whole pixel size (`ui::to_font_size`). `align` is where each line lies in the
     // element's inner width.
+    //
+    // `overflow` says whether a single line may be cut. `clip` (the default): with a FIT width the
+    // text keeps its whole width whatever its parent has, and never gives room up. `ellipsis`: it
+    // may be cut, and is cut short with dots when it is wider than its room; with a FIT width it is
+    // sized as GROW with its own width as its `max`, so it never grows past its text and gives room
+    // up when its parent is short, alike with the other children that may (ui/core/layout.ctx,
+    // "Text"). So in a status bar a note that may be cut is `ellipsis` (GROW or FIT), and counts
+    // that must never be cut are `clip`; marking both `ellipsis` cuts both. A stock label
+    // (`add_label`) is `ellipsis`.
     enum Overflow: u8 { clip, ellipsis }
     struct TextStyle {
         font: ?Font = null, size: ?f32 = null, color: ?Color = null,

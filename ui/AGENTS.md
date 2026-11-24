@@ -50,6 +50,11 @@ What follows from it, and what a reviewer checks:
   and only the pen inside a run is fractional. KOTOR text drawn through the framework does not
   reproduce `lib/gui`'s fractional sizes (the owner's decision, PLAN.md section 2.7): do not add a
   path that keeps a text size or a glyph between pixels.
+- Dots mean "may be cut". A single line marked `Overflow::ellipsis` with a FIT width is laid out as
+  GROW capped at its own width: it gives room up when its row is short, shared alike with every
+  other child that may (a stock label is one). Text that must never be cut (a status bar's counts)
+  is left `Overflow::clip`, which keeps its width; the comment at `ui::Overflow` and the status-bar
+  check in `ui/tests/layout/flow.ctx` show both.
 - A size never depends on a position. Where pixels are divided, say who gets the remainder (the first
   children when sharing, rounded down when centring), as the comment at the top of
   `ui/core/layout.ctx` does for the layout.

@@ -29,8 +29,10 @@ namespace ui {
 
     // A line of text in the theme's text colour (its disabled colour when `opts.enabled` is
     // false), laid out by `opts.box`; cut short with dots when the box makes it narrower than the
-    // text. With an `opts.id` it is an element of its own with that id, which it describes as a
-    // label node and which can show `opts.tip`.
+    // text. Its text is `Overflow::ellipsis`, so a label left FIT gives room up when its row is short,
+    // alike with the other children that may: text that must never be cut is `add_text` with the
+    // default `Overflow::clip`. With an `opts.id` it is an element of its own with that id, which
+    // it describes as a label node and which can show `opts.tip`.
     fn add_label { mut ui: Ui, text: []u8, opts: Opts } {
         let color = if opts.enabled { ui.theme.text } else { ui.theme.text_disabled }
         let style = TextStyle{ color, overflow = Overflow::ellipsis, .. }
