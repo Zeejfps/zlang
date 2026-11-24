@@ -48,6 +48,22 @@ float clipCoverage(vec2 p, uint index) {
 }
 
 void main() {
+    // The texture is read first, before any discard: a fragment that is discarded stops, and the fragments
+    // beside it in its 2 by 2 block then have no derivatives to pick a mip level by, so an image with mip
+    // levels drawn smaller than its texels would read the wrong level along the edge of every clip.
+    //
+    // An image shows its region once, so it never samples past the region's rim: the coordinate is held to
+    // the centres of the region's outermost texels. That is what CLAMP_TO_EDGE does for a whole texture, done
+    // here so it holds for a region of an atlas (whose neighbours the linear filter would otherwise reach
+    // into) and for a texture made to repeat (whose opposite side it would reach), whenever the image is
+    // drawn larger than its texels. A region under a texel wide is held to its middle.
+    vec2 uvEnd = v_srcUV.xy + v_srcUV.zw;
+    vec2 rim = 0.5 / vec2(textureSize(u_texture, 0));
+    vec2 uvLow = min(v_srcUV.xy, uvEnd) + rim;
+    vec2 uvHigh = max(v_srcUV.xy, uvEnd) - rim;
+    vec2 uv = clamp(v_uv, min(uvLow, uvHigh), max(uvLow, uvHigh));
+    vec4 sample0 = texture(u_texture, uv);
+
     float clipCover = clipCoverage(v_pixelPos, v_clipIndex);
     vec4 clip = u_clipRects[v_clipIndex];
     if (v_pixelPos.x < clip.x || v_pixelPos.x >= clip.z ||
@@ -78,9 +94,6 @@ void main() {
         if (coverage <= 0.0) discard;
     }
 
-    vec2 uvEnd = v_srcUV.xy + v_srcUV.zw;
-    vec2 uv = clamp(v_uv, min(v_srcUV.xy, uvEnd), max(v_srcUV.xy, uvEnd));
-    vec4 sample0 = texture(u_texture, uv);
     vec4 tint = unpackARGB(v_tint);
     f_Color = sample0 * tint * vec4(1.0, 1.0, 1.0, coverage);
     f_Color.a *= clipCover;
