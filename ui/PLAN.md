@@ -889,7 +889,8 @@ namespace ui_fonts {
     struct Library { ... }           // FreeType's library, the faces, their sized variants, the shaped-run cache
     struct Face { id: u32 }
     fn open(S) { mut fonts: Fonts, realloc: alloc::Fn(S), mut heap: S, cap: Capacity } -> !Library
-    fn add_face { mut lib: Library, data: []u8, index: u32 } -> !Face     // TrueType or OpenType bytes the program loaded and keeps alive
+    fn add_face_file { mut lib: Library, path: []u8, index: u32 } -> !Face     // a TrueType or OpenType file, mapped by HarfBuzz
+    fn add_face { mut lib: Library, data: []u8, index: u32 } -> !Face          // bytes the program holds, copied
     fn add_fallback { mut lib: Library, face: Face }                      // tried in this order when a face lacks a character
     fn make_font { mut lib: Library, mut ui: ui::Ui, face: Face } -> ?ui::Font     // registers FontKind::outline with the core
     fn get_provider { lib: *mut Library } -> ui::TextProvider
@@ -900,7 +901,7 @@ namespace ui_fonts {
 
 | ZGF.Fonts | `ui/fonts` |
 |---|---|
-| `LoadFontFromMemory(data, pixelSize)`: a FreeType face over pinned bytes | `add_face`: the program reads the file and passes the bytes. `FT_New_Memory_Face` over them. |
+| `LoadFontFromMemory(data, pixelSize)`: a FreeType face over pinned bytes | `add_face_file`: the program passes the file's path, HarfBuzz maps the file (`hb_blob_create_from_file_or_fail`), and `FT_New_Memory_Face` reads the mapping, so only the pages read are resident and the program holds no copy. `add_face` takes bytes a program holds in memory and copies them. |
 | `GetSizedVariant(font, pixelSize)`: one face per pixel size, each with its own id | The same: a sized variant is made the first time a size is asked for, and its id is the `face` in `Shaped`. Sizes are device pixels (a text's whole pixel size), so text is rasterised at the pixels it is shown at. |
 | `TryGetGlyph`: `FT_Load_Glyph` with `FT_LOAD_RENDER`, `FT_LOAD_NO_BITMAP`, `FT_LOAD_TARGET_NORMAL`; 8-bit coverage into the atlas | `rasterize`: the same call and flags, copied into the caller's buffer. The atlas and the glyph cache live in `ui_stage`, so glyph-table fonts share them. |
 | `GetShapedText`: HarfBuzz per run, positions in 26.6 units divided by 64, results cached per font by text in two generations of 256 | `shape`: the same, with the same cache, so measuring and then staging a line shapes it once. |
@@ -963,8 +964,9 @@ namespace ui_fonts {
 
 **Where a sample gets a font file.** A sample takes `--font PATH` and otherwise tries a system path for
 its platform (`C:\Windows\Fonts\segoeui.ttf`, `/System/Library/Fonts/Helvetica.ttc`,
-`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`), reads the bytes with `fs::read_all`, and exits with
-a message naming the option when none is found. Nothing font-shaped is committed.
+`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`), adds the face from the file with
+`ui_fonts::add_face_file` (it never reads the font itself), and exits with a message naming the path
+it tried and the option when none is found. Nothing font-shaped is committed.
 
 **Encoding.** `bytes`: one byte is one character and indexes the glyph table (KOTOR's cp1252 text).
 `utf8`: text is decoded by code point. The encoding also decides how a text field's caret steps in a
@@ -1070,7 +1072,7 @@ namespace ui {
   program passes smaller or larger numbers.
 - The staged level is made the same way (`ui_stage::make`), with its own capacities and the atlas
   (2048 by 2048 bytes to start). The font library allocates through FreeType and HarfBuzz, which use
-  the C allocator.
+  the C allocator, and HarfBuzz maps the font files `add_face_file` is given.
 - Per frame nothing is allocated. `begin_frame` resets counts. Hit regions and nodes are kept in two
   buffers that swap, because this frame's interaction reads last frame's.
 - Text lives in one frame arena: copies of labels, names of id scopes, formatted text. Slices from
@@ -1240,7 +1242,7 @@ ui_stage::stage{ out = &staged, list = &gui.draw, provider = null }     // null:
 ```
 
 A program with outline fonts differs in three lines (design intent, with each call's shape compiled in
-a4 or a7): it opens a `ui_fonts::Library`, adds a face from bytes it read, sets
+a4 or a7): it opens a `ui_fonts::Library`, adds a face from a font file (`add_face_file`), sets
 `gui.theme.font = ui_fonts::make_font{ &lib, ui = &gui, face }`, and passes
 `ui_fonts::get_provider{ lib = &lib }` to `ui::set_provider` and to `stage`.
 
@@ -1963,7 +1965,10 @@ ctxlang: the tests are found by the compiler. Measured on this machine: the whol
   measured width or the pixel before it, and no wrapped line is wider than its limit in whole pixels,
   at 16 pixels and at 24 (16 units at scale 1.5). `ui/out/text-gl.png` at scales 1 and 1.5 shows
   proportional, kerned, readable text on the pixel grid, every baseline on a pixel row, and a second
-  identical frame uploads no atlas bytes.
+  identical frame uploads no atlas bytes. A face added from its file (`add_face_file`, mapped) is the
+  face added from its bytes; a missing file, a directory, an empty file and one that is not a font are
+  refused, each with its error, leaving nothing behind; a file named past ASCII opens; the mapping is
+  released with the face or at `close`, as HarfBuzz's count of blobs freed shows.
 - **Agent.** opus, high effort. **Depends on:** stage 3. **May run with stage 8** (it owns `ui/fonts`,
   `ui/tests/fonts`, `ui/tests/shots/text.ctx`).
 
