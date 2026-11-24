@@ -1,10 +1,11 @@
-// The widgets test: the stock widgets, the theme and the marks (stage 9), the text field (stage
+// The widgets tests: the stock widgets, the theme and the marks (stage 9), the text field (stage
 // 10), windows, popups and menus (stage 11), lists, trees, tabs and tables (stage 12). How to run
-// it: ui/AGENTS.md.
+// them: ui/AGENTS.md.
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "ui_test_widgets", root = "." }
     build::add_sources{ &b, exe, dir = "../../core" }
     build::add_sources{ &b, exe, dir = "../../widgets" }
     build::add_sources{ &b, exe, dir = "../../record" }
     build::add_sources{ &b, exe, dir = "../../test" }
+    build::add_sources{ &b, exe, dir = "../support" }
 }

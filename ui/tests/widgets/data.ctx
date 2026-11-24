@@ -1,4 +1,4 @@
-// Stage 12's checks: the list, the tree, tabs, the table, the plot and the colour editor.
+// Stage 12's tests: the list, the tree, tabs, the table, the plot and the colour editor.
 //
 //  - Goldens (golden/data-*.txt) of each widget in the dark theme, of all of them in the light one,
 //    of all of them at scale 1.5 (where every border is the same on all four sides), and a node
@@ -20,33 +20,91 @@
 // high with its arrow box 16 square 4 in, and a child is indented 20; a tab header is 28 high and
 // its label's width plus 12 at each end wide; a table cell is padded 4 at each end.
 
-fn check_data { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
-    let out = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 262144 } iferr { return }
-    let scratch = alloc::make(u8, arena::Arena){ realloc = arena::alloc, &heap, count = 262144 } iferr { return }
-    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::list, name = "data-list" }
-    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::tree, name = "data-tree" }
-    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::tabs, name = "data-tabs" }
-    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::table, name = "data-table" }
-    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::plot, name = "data-plot" }
-    record_data_widget{ &io, &fs, &t, &heap, out, scratch, update, widget = DataWidget::color, name = "data-color" }
-    record_data_light{ &io, &fs, &t, &heap, out, scratch, update }
-    record_data_scaled{ &io, &fs, &t, &heap, out, scratch, update }
-    record_data_nodes{ &io, &fs, &t, &heap, out, scratch, update }
-    check_list_pointer{ &io, &t, &heap }
-    check_list_keys{ &io, &t, &heap }
-    check_list_reveal{ &io, &t, &heap }
-    check_list_edges{ &io, &t, &heap }
-    check_list_long{ &io, &t, &heap, count = 10000 }
-    check_list_long{ &io, &t, &heap, count = 1000000 }
-    check_tree_keys{ &io, &t, &heap }
-    check_tree_kept{ &io, &t, &heap }
-    check_tabs_use{ &io, &t, &heap }
-    check_tabs_crowded{ &io, &t, &heap }
-    check_table_lines{ &io, &t, &heap, scale = 1.0 }
-    check_table_lines{ &io, &t, &heap, scale = 1.5 }
-    check_table_use{ &io, &t, &heap }
-    check_plot_series{ &io, &t, &heap }
-    check_color_hex{ &io, &t, &heap }
+#test
+fn draws_a_list_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let dump = try make_dump{ &heap }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::list, name = "data-list" }
+}
+
+#test
+fn draws_a_tree_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let dump = try make_dump{ &heap }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::tree, name = "data-tree" }
+}
+
+#test
+fn draws_tabs_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let dump = try make_dump{ &heap }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::tabs, name = "data-tabs" }
+}
+
+#test
+fn draws_a_table_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let dump = try make_dump{ &heap }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::table, name = "data-table" }
+}
+
+#test
+fn draws_a_plot_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let dump = try make_dump{ &heap }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::plot, name = "data-plot" }
+}
+
+#test
+fn draws_a_colour_editor_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let dump = try make_dump{ &heap }
+    try record_data_widget{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc }, widget = DataWidget::color, name = "data-color" }
+}
+
+#test
+fn draws_the_data_widgets_in_the_light_theme_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let dump = try make_dump{ &heap }
+    try record_data_light{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+}
+
+#test
+fn draws_the_data_widgets_at_scale_1_5_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let dump = try make_dump{ &heap }
+    try record_data_scaled{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+}
+
+#test
+fn lists_the_data_widgets_nodes_as_the_golden { mut t: Test, mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let dump = try make_dump{ &heap }
+    try record_data_nodes{ &io, &fs, &t, &heap, out = dump.out, scratch = dump.scratch, update = ui_check::is_updating{ &proc } }
+}
+
+#test
+fn records_only_the_rows_in_view_of_ten_thousand { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    try check_list_long{ &io, &t, &heap, count = 10000 }
+}
+
+#test
+fn records_only_the_rows_in_view_of_a_million { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    try check_list_long{ &io, &t, &heap, count = 1000000 }
+}
+
+#test
+fn rules_a_table_on_whole_pixels_at_scale_1 { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    try check_table_lines{ &io, &t, &heap, scale = 1.0 }
+}
+
+#test
+fn rules_a_table_on_whole_pixels_at_scale_1_5 { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    try check_table_lines{ &io, &t, &heap, scale = 1.5 }
 }
 
 // ---- the scenes
@@ -314,115 +372,127 @@ fn has_data_text { ui: ui::Ui, text: []u8, tail: bool } -> bool {
 // One widget in the dark theme over a few frames: at rest, then after the interactions that show
 // its states (a selection, the focus, the pointer over a part).
 fn record_data_widget {
-    mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
+    mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool,
     widget: DataWidget, name: []u8,
-} {
+} -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget }
     s.count = 8
     s.selected = 1
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
-    write_frame{ &sink, ui = gui, name = "at rest" } iferr { return }
+    try write_frame{ &sink, ui = gui, name = "at rest" }
     let path: []u8 = match widget {
         list => "items/#3", tree => "Animals", tabs => "About", table => "files/#3/Size", plot => "load", color => "accent/hex", all => "items/#3",
     }
     if not tap_data_node{ &d, ui = &gui, &s, path, button = 0, clicks = 1 } {
-        ui_test::expect{ &io, &t, ok = false, what = "data goldens: the widget's part is found" }
+        // data goldens: the widget's part is found
+        @expect(&t, false)
         return
     }
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
-    write_frame{ &sink, ui = gui, name = "clicked, the pointer still over it" } iferr { return }
+    try write_frame{ &sink, ui = gui, name = "clicked, the pointer still over it" }
     if widget == DataWidget::color { _ = ui_test::type_text{ ui = &gui, text = "3366" } }
     _ = ui_test::move_pointer{ ui = &gui, x = 335, y = 395 }
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
-    write_frame{ &sink, ui = gui, name = "the pointer gone" } iferr { return }
+    try write_frame{ &sink, ui = gui, name = "the pointer gone" }
     // The click's focus draws no ring; a key that moves the widget's cursor or focus does.
     let keyed = widget == DataWidget::list or widget == DataWidget::tree or widget == DataWidget::tabs or widget == DataWidget::table
     if keyed {
         let unringed = not has_ring{ ui = gui }
         _ = ui_test::tap_key{ ui = &gui, key = if widget == DataWidget::tabs { ui::Key::right } else { ui::Key::down }, mods = 0 }
         ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
-        write_frame{ &sink, ui = gui, name = "moved by a key" } iferr { return }
-        ui_test::expect{ &io, &t, ok = unringed and has_ring{ ui = gui }, what = "data goldens: a click's focus draws no ring, a key's move draws it" }
+        try write_frame{ &sink, ui = gui, name = "moved by a key" }
+        // data goldens: a click's focus draws no ring, a key's move draws it
+        @expect(&t, unringed and has_ring{ ui = gui })
     }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "data goldens: every frame is clean" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name, actual = ui_rec::get_text{ sink }, scratch, update })
+    // data goldens: every frame is clean
+    @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
 
 // Every widget in the light theme, at rest.
-fn record_data_light { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+fn record_data_light { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
-    let mut gui = make_ui{ &heap, dark = false } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 900, scale = 1.0 } iferr { return }
+    let mut gui = try make_ui{ &heap, dark = false }
+    let mut d = try make_driver{ &heap, width = 340, height = 900, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::all }
     s.count = 8
     s.selected = 2
     s.table_selected = 1
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
-    write_frame{ &sink, ui = gui, name = "every data widget in the light theme" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "data-light", actual = ui_rec::get_text{ sink }, scratch, update }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "data light: every frame is clean" }
+    try write_frame{ &sink, ui = gui, name = "every data widget in the light theme" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "data-light", actual = ui_rec::get_text{ sink }, scratch, update })
+    // data light: every frame is clean
+    @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
 
 // Every widget at scale 1.5: every border the same on all four sides, a row 36 pixels high.
-fn record_data_scaled { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+fn record_data_scaled { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 510, height = 1350, scale = 1.5 } iferr { return }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 510, height = 1350, scale = 1.5 }
     let mut s = make_data_scene{ widget = DataWidget::all }
     s.count = 8
     s.selected = 2
     s.table_selected = 1
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
-    write_frame{ &sink, ui = gui, name = "every data widget at scale 1.5" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "data-scale", actual = ui_rec::get_text{ sink }, scratch, update }
+    try write_frame{ &sink, ui = gui, name = "every data widget at scale 1.5" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "data-scale", actual = ui_rec::get_text{ sink }, scratch, update })
     let row = find_data_node{ ui = gui, path = "items/#2" }
-    ui_test::expect{ &io, &t, ok = has_even_data_borders{ ui = gui, width = 2 }, what = "data scale 1.5: every border, and every side a rule or a tab is drawn on, is 2 pixels" }
-    ui_test::expect{ &io, &t, ok = row.rect.h == 36 and row.rect.y == find_data_node{ ui = gui, path = "items/#0" }.rect.y + 72,
-        what = "data scale 1.5: a row of 24 units is 36 pixels, and row 2 starts 72 below row 0" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "data scale 1.5: every frame is clean" }
+    // data scale 1.5: every border, and every side a rule or a tab is drawn on, is 2 pixels
+    @expect(&t, has_even_data_borders{ ui = gui, width = 2 })
+    // data scale 1.5: a row of 24 units is 36 pixels, and row 2 starts 72 below row 0
+    @expect(&t, row.rect.h == 36 and row.rect.y == find_data_node{ ui = gui, path = "items/#0" }.rect.y + 72)
+    // data scale 1.5: every frame is clean
+    @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
 
 // The nodes the data widgets describe.
-fn record_data_nodes { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } {
+fn record_data_nodes { mut io: Io, mut fs: Fs, mut t: Test, mut heap: arena::Arena, out: []mut u8, scratch: []mut u8, update: bool } -> ! {
     let mut sink = ui_rec::make_sink{ bytes = out }
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 900, scale = 1.0 } iferr { return }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 900, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::all }
     s.count = 3
     s.table_count = 2
     s.selected = 1
     s.tab = 1
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
-    write_nodes{ &sink, ui = gui, name = "every data widget's nodes" } iferr { return }
-    ui_test::compare_golden{ &io, &fs, &t, dir = GOLDEN_DIR, name = "data-nodes", actual = ui_rec::get_text{ sink }, scratch, update }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0 and sink.lost == 0, what = "data nodes: every frame is clean" }
+    try write_nodes{ &sink, ui = gui, name = "every data widget's nodes" }
+    @expect(&t, ui_check::compare_golden{ &io, &fs, dir = GOLDEN_DIR, name = "data-nodes", actual = ui_rec::get_text{ sink }, scratch, update })
+    // data nodes: every frame is clean
+    @expect(&t, d.unclean == 0 and sink.lost == 0)
 }
 
 // ---- the list
 
 // A click selects a row; a double click activates it; a right press asks for a context menu; a
 // clicked row half out of view is scrolled wholly into view in the next frame.
-fn check_list_pointer { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+#test
+fn selects_list_rows_with_the_pointer { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::list }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     let clicked = ui_test::click{ &d, ui = &gui, path = "items/#3", show = show_data_scene{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
-    ui_test::expect{ &io, &t, ok = clicked and s.selected == 3 and has_node_flag{ ui = gui, path = "items/#3", flag = ui::NODE_SELECTED },
-        what = "list: a click selects the row, and its node says so" }
-    ui_test::expect{ &io, &t, ok = has_node_flag{ ui = gui, path = "items", flag = ui::NODE_FOCUSED }, what = "list: a click on a row focuses the list" }
+    // list: a click selects the row, and its node says so
+    @expect(&t, clicked and s.selected == 3 and has_node_flag{ ui = gui, path = "items/#3", flag = ui::NODE_SELECTED })
+    // list: a click on a row focuses the list
+    @expect(&t, has_node_flag{ ui = gui, path = "items", flag = ui::NODE_FOCUSED })
     _ = tap_data_node{ &d, ui = &gui, &s, path = "items/#4", button = 0, clicks = 1 }
     _ = ui_test::push_button{ ui = &gui, button = 0, down = true, clicks = 2 }
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
     _ = ui_test::push_button{ ui = &gui, button = 0, down = false, clicks = 2 }
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
-    ui_test::expect{ &io, &t, ok = s.selected == 4 and s.activated == 4 and s.activations == 1, what = "list: a double click activates the row, once" }
+    // list: a double click activates the row, once
+    @expect(&t, s.selected == 4 and s.activated == 4 and s.activations == 1)
     _ = tap_data_node{ &d, ui = &gui, &s, path = "items/#1", button = 1, clicks = 1 }
-    ui_test::expect{ &io, &t, ok = s.context == 1 and s.selected == 4, what = "list: a right press asks for a context menu and leaves the selection" }
+    // list: a right press asks for a context menu and leaves the selection
+    @expect(&t, s.context == 1 and s.selected == 4)
     // Scrolled 10 pixels down, row 0 shows its lower 14 pixels; a click on it scrolls back to 0.
     ui::set_scroll{ ui = &gui, id = ui::make_id{ ui = gui, name = "items" }, x = 0, y = 10 }
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
@@ -430,16 +500,19 @@ fn check_list_pointer { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Aren
     _ = tap_data_node{ &d, ui = &gui, &s, path = "items/#0", button = 0, clicks = 1 }
     let after_click = find_data_view{ ui = gui, name = "items" }.y
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
-    ui_test::expect{ &io, &t, ok = before == 10 and s.selected == 0 and after_click == 10 and find_data_view{ ui = gui, name = "items" }.y == 0,
-        what = "list: a clicked row half out of view is scrolled wholly into view in the next frame" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "list pointer: every frame is clean" }
+    // list: a clicked row half out of view is scrolled wholly into view in the next frame
+    @expect(&t, before == 10 and s.selected == 0 and after_click == 10 and find_data_view{ ui = gui, name = "items" }.y == 0)
+    // list pointer: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // The keys: Down and Up a row, no wrapping at either end; PageDown and PageUp by the five rows the
 // view holds; Home and End; Enter activates the selected row.
-fn check_list_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+#test
+fn moves_a_list_selection_with_keys { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::list }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     _ = ui_test::click{ &d, ui = &gui, path = "items/#0", show = show_data_scene{ &s, _ } }
@@ -468,19 +541,27 @@ fn check_list_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     let top_page = s.selected == 0
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::enter }
     let entered = s.activated == 0 and s.activations == 1
-    ui_test::expect{ &io, &t, ok = top and bottom, what = "list keys: Up at the first row and Down at the last stay there (no wrapping)" }
-    ui_test::expect{ &io, &t, ok = down and up, what = "list keys: Down and Up move the selection a row" }
-    ui_test::expect{ &io, &t, ok = page_down and page_again and page_up and bottom_page and top_page, what = "list keys: PageDown and PageUp move by the five rows in view, held at the ends" }
-    ui_test::expect{ &io, &t, ok = end and home, what = "list keys: End and Home go to the last and the first row, and scroll to them" }
-    ui_test::expect{ &io, &t, ok = entered, what = "list keys: Enter activates the selected row" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "list keys: every frame is clean" }
+    // list keys: Up at the first row and Down at the last stay there (no wrapping)
+    @expect(&t, top and bottom)
+    // list keys: Down and Up move the selection a row
+    @expect(&t, down and up)
+    // list keys: PageDown and PageUp move by the five rows in view, held at the ends
+    @expect(&t, page_down and page_again and page_up and bottom_page and top_page)
+    // list keys: End and Home go to the last and the first row, and scroll to them
+    @expect(&t, end and home)
+    // list keys: Enter activates the selected row
+    @expect(&t, entered)
+    // list keys: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // The selection scrolled into view by exactly the pixels needed: from below (the row's bottom at
 // the view's), from above (its top at the view's top), and not at all when it is in view.
-fn check_list_reveal { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+#test
+fn reveals_a_row_scrolled_out_of_view { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::list }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     _ = ui_test::click{ &d, ui = &gui, path = "items/#4", show = show_data_scene{ &s, _ } }
@@ -495,18 +576,26 @@ fn check_list_reveal { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
     let inside = s.selected == 5 and find_data_view{ ui = gui, name = "items" }.y == 96
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
-    ui_test::expect{ &io, &t, ok = still, what = "list reveal: a click on a row in view scrolls nothing" }
-    ui_test::expect{ &io, &t, ok = below and shown, what = "list reveal: Down past the view scrolls 24 pixels, the row's bottom at the view's, in the same frame" }
-    ui_test::expect{ &io, &t, ok = above, what = "list reveal: Up from below a view scrolled past it puts the row's top at the view's top (96)" }
-    ui_test::expect{ &io, &t, ok = inside, what = "list reveal: a row already in view scrolls nothing" }
-    ui_test::expect{ &io, &t, ok = gui.stats.solves == 1, what = "list reveal: a list whose bars do not change is solved once a frame" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "list reveal: every frame is clean" }
+    // list reveal: a click on a row in view scrolls nothing
+    @expect(&t, still)
+    // list reveal: Down past the view scrolls 24 pixels, the row's bottom at the view's, in the same frame
+    @expect(&t, below and shown)
+    // list reveal: Up from below a view scrolled past it puts the row's top at the view's top (96)
+    @expect(&t, above)
+    // list reveal: a row already in view scrolls nothing
+    @expect(&t, inside)
+    // list reveal: a list whose bars do not change is solved once a frame
+    @expect(&t, gui.stats.solves == 1)
+    // list reveal: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // An empty list, a list shorter than its view, and a count that shrank below the selection.
-fn check_list_edges { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+#test
+fn handles_empty_short_and_shrunk_lists { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::list }
     s.count = 0
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
@@ -514,14 +603,14 @@ fn check_list_edges { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::enter }
-    ui_test::expect{ &io, &t, ok = focused and has_node_flag{ ui = gui, path = "items", flag = ui::NODE_FOCUSED } and s.recorded == 0 and s.selected == -1 and s.activations == 0,
-        what = "list edges: an empty list takes the focus, records no row, and its keys select nothing" }
+    // list edges: an empty list takes the focus, records no row, and its keys select nothing
+    @expect(&t, focused and has_node_flag{ ui = gui, path = "items", flag = ui::NODE_FOCUSED } and s.recorded == 0 and s.selected == -1 and s.activations == 0)
     s.count = 3
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     let v = find_data_view{ ui = gui, name = "items" }
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
-    ui_test::expect{ &io, &t, ok = s.recorded == 3 and v.max_y == 0 and v.content_h == 72 and gui.stats.solves == 1 and s.selected == 2,
-        what = "list edges: three rows in a view of five: all recorded, nothing to scroll, one solve, End selects the third" }
+    // list edges: three rows in a view of five: all recorded, nothing to scroll, one solve, End selects the third
+    @expect(&t, s.recorded == 3 and v.max_y == 0 and v.content_h == 72 and gui.stats.solves == 1 and s.selected == 2)
     s.count = 50
     s.selected = 40
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
@@ -532,15 +621,17 @@ fn check_list_edges { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena 
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     let held = find_data_view{ ui = gui, name = "items" }.y == 30 * 24 - 120 and s.last == 30
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::up }
-    ui_test::expect{ &io, &t, ok = at and held and s.selected == 29, what = "list edges: after the count shrank below the selection, the offset is held and Up lands on the last row" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "list edges: every frame is clean" }
+    // list edges: after the count shrank below the selection, the offset is held and Up lands on the last row
+    @expect(&t, at and held and s.selected == 29)
+    // list edges: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // A long list records only the rows in view, wherever it is scrolled, and End reaches the last row
 // without overflowing.
-fn check_list_long { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, count: u32 } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+fn check_list_long { mut io: Io, mut t: Test, mut heap: arena::Arena, count: u32 } -> ! {
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::list }
     s.count = count
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
@@ -554,17 +645,21 @@ fn check_list_long { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, 
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::page_up }
     let page = s.selected == last - 5 and s.recorded <= 6
     let node = find_data_node{ ui = gui, path = "items/#0" }
-    ui_test::expect{ &io, &t, ok = few and end and page and node.id == ui::NO_ID, what = "list long: only the rows in view are recorded, and End and PageUp reach the far end" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "list long: every frame is clean" }
+    // list long: only the rows in view are recorded, and End and PageUp reach the far end
+    @expect(&t, few and end and page and node.id == ui::NO_ID)
+    // list long: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // ---- the tree
 
 // Three levels by the keys: Right opens and then enters, Left closes and then goes to the parent,
 // Up and Down go to the node shown before and after.
-fn check_tree_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+#test
+fn walks_a_tree_with_keys { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::tree }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     _ = ui_test::click{ &d, ui = &gui, path = "Animals", show = show_data_scene{ &s, _ } }
@@ -591,19 +686,26 @@ fn check_tree_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::left }
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
     let root = has_node_flag{ ui = gui, path = "Animals", flag = ui::NODE_FOCUSED }
-    ui_test::expect{ &io, &t, ok = opened, what = "tree keys: a click opens a node and focuses it" }
-    ui_test::expect{ &io, &t, ok = entered and mammals_open and cat, what = "tree keys: Right enters an open node's first child, and opens a closed one" }
-    ui_test::expect{ &io, &t, ok = dog and fish and back, what = "tree keys: Down and Up go to the node shown after and before, across levels" }
-    ui_test::expect{ &io, &t, ok = parent and closed and root, what = "tree keys: Left goes from a leaf to its parent, closes an open node, then goes to its parent" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tree keys: every frame is clean" }
+    // tree keys: a click opens a node and focuses it
+    @expect(&t, opened)
+    // tree keys: Right enters an open node's first child, and opens a closed one
+    @expect(&t, entered and mammals_open and cat)
+    // tree keys: Down and Up go to the node shown after and before, across levels
+    @expect(&t, dog and fish and back)
+    // tree keys: Left goes from a leaf to its parent, closes an open node, then goes to its parent
+    @expect(&t, parent and closed and root)
+    // tree keys: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // A node's open state survives its parent's collapse, and a hidden tab, for longer than the state's
 // lifetime; without either keeping it, it is gone.
-fn check_tree_kept { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
+#test
+fn keeps_a_tree_nodes_state_while_shown { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
     gui.config.state_ttl = 4
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::tree }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     _ = ui_test::click{ &d, ui = &gui, path = "Animals", show = show_data_scene{ &s, _ } }
@@ -612,8 +714,8 @@ fn check_tree_kept { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 140 }
     _ = ui_test::click{ &d, ui = &gui, path = "Animals", show = show_data_scene{ &s, _ } }
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
-    ui_test::expect{ &io, &t, ok = has_node_flag{ ui = gui, path = "Animals/Mammals", flag = ui::NODE_OPEN } and ui::find_node{ ui = gui, path = "Animals/Mammals/Cat" } != null,
-        what = "tree kept: a child stays open through 140 frames of its parent's collapse" }
+    // tree kept: a child stays open through 140 frames of its parent's collapse
+    @expect(&t, has_node_flag{ ui = gui, path = "Animals/Mammals", flag = ui::NODE_OPEN } and ui::find_node{ ui = gui, path = "Animals/Mammals/Cat" } != null)
 
     // In a hidden tab.
     s.widget = DataWidget::tabs
@@ -627,25 +729,28 @@ fn check_tree_kept { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 140 }
     s.tab = 1
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
-    ui_test::expect{ &io, &t, ok = in_tab and has_node_flag{ ui = gui, path = "views/Tree/Animals/Mammals", flag = ui::NODE_OPEN },
-        what = "tree kept: the tree's open nodes stay open through 140 frames of its tab hidden" }
+    // tree kept: the tree's open nodes stay open through 140 frames of its tab hidden
+    @expect(&t, in_tab and has_node_flag{ ui = gui, path = "views/Tree/Animals/Mammals", flag = ui::NODE_OPEN })
 
     // Not recorded and not kept, the state goes.
     s.tree_shown = false
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 140 }
     s.tree_shown = true
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
-    ui_test::expect{ &io, &t, ok = ui::find_node{ ui = gui, path = "views/Tree/Animals" } != null and not has_node_flag{ ui = gui, path = "views/Tree/Animals", flag = ui::NODE_OPEN },
-        what = "tree kept: a tree neither recorded nor kept loses its state, so the checks above are not empty" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tree kept: every frame is clean" }
+    // tree kept: a tree neither recorded nor kept loses its state, so the checks above are not empty
+    @expect(&t, ui::find_node{ ui = gui, path = "views/Tree/Animals" } != null and not has_node_flag{ ui = gui, path = "views/Tree/Animals", flag = ui::NODE_OPEN })
+    // tree kept: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // ---- tabs
 
 // A click shows a tab; Left and Right step, held at the ends; Home and End.
-fn check_tabs_use { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+#test
+fn switches_tabs_by_click_and_keys { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::tabs }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     let first = has_data_text{ ui = gui, text = "General settings", tail = false }
@@ -663,20 +768,26 @@ fn check_tabs_use { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
     let start = s.tab == 0
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
     let end = s.tab == 2
-    ui_test::expect{ &io, &t, ok = first and clicked, what = "tabs: a click on a header shows its tab and focuses the strip" }
-    ui_test::expect{ &io, &t, ok = held and left and home and start and end, what = "tabs: Left and Right step, held at the ends; Home and End" }
+    // tabs: a click on a header shows its tab and focuses the strip
+    @expect(&t, first and clicked)
+    // tabs: Left and Right step, held at the ends; Home and End
+    @expect(&t, held and left and home and start and end)
     // The shown header joins the panel: its bottom edge is the strip's foot, which it covers.
     let header = find_data_node{ ui = gui, path = "views/About" }
     let strip = find_data_node{ ui = gui, path = "views" }
-    ui_test::expect{ &io, &t, ok = header.rect.h == 28 and header.rect.y == strip.rect.y, what = "tabs: a header is 28 high at the strip's top" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tabs: every frame is clean" }
+    // tabs: a header is 28 high at the strip's top
+    @expect(&t, header.rect.h == 28 and header.rect.y == strip.rect.y)
+    // tabs: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // A strip wider than its room: the headers are cut to the largest common width that fits (40 of
 // 120), and never below the control height (28), past which the strip is clipped.
-fn check_tabs_crowded { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+#test
+fn narrows_crowded_tabs_down_to_the_control_height { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::tabs }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     let wide = find_data_node{ ui = gui, path = "views/General" }.rect.w == 73 and find_data_node{ ui = gui, path = "views/Tree" }.rect.w == 52
@@ -692,10 +803,14 @@ fn check_tabs_crowded { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Aren
     let least = find_data_node{ ui = gui, path = "views/General" }.rect.w == 28 and find_data_node{ ui = gui, path = "views/About" }.rect.w == 28
     _ = ui_test::click{ &d, ui = &gui, path = "views/General", show = show_data_scene{ &s, _ } }
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
-    ui_test::expect{ &io, &t, ok = wide, what = "tabs crowded: with room, each header is its label and the padding wide" }
-    ui_test::expect{ &io, &t, ok = cut and dots, what = "tabs crowded: in 120 pixels three headers are cut to 40 each, their labels ending in dots" }
-    ui_test::expect{ &io, &t, ok = least and s.tab == 2, what = "tabs crowded: never below 28, the strip clipped, and a hidden header still reached by End" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "tabs crowded: every frame is clean" }
+    // tabs crowded: with room, each header is its label and the padding wide
+    @expect(&t, wide)
+    // tabs crowded: in 120 pixels three headers are cut to 40 each, their labels ending in dots
+    @expect(&t, cut and dots)
+    // tabs crowded: never below 28, the strip clipped, and a hidden header still reached by End
+    @expect(&t, least and s.tab == 2)
+    // tabs crowded: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // ---- the table
@@ -703,9 +818,9 @@ fn check_tabs_crowded { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Aren
 // The header's cells and the rows' cells have the same pixels, column by column, through resizes of
 // the surface; the columns fill the rows' view exactly, the grow columns sharing what the fixed one
 // leaves with the odd pixel to the first.
-fn check_table_lines { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, scale: f32 } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 400, height = 400, scale } iferr { return }
+fn check_table_lines { mut io: Io, mut t: Test, mut heap: arena::Arena, scale: f32 } -> ! {
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 400, height = 400, scale }
     let mut s = make_data_scene{ widget = DataWidget::table }
     let mut lined = true
     let mut filled = true
@@ -733,9 +848,12 @@ fn check_table_lines { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
         if name != kind and name != kind + 1 { shared = false }
     }
     let size = find_data_node{ ui = gui, path = "files/Size" }.rect.w == ui::to_pixels{ ui = gui, length = 60.0 }
-    ui_test::expect{ &io, &t, ok = lined, what = "table: every header cell has its rows' cells' pixels, through four widths" }
-    ui_test::expect{ &io, &t, ok = filled and shared and size, what = "table: the columns fill the rows' view, the fixed one its length, the grow ones equal but for the first's odd pixel" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "table lines: every frame is clean" }
+    // table: every header cell has its rows' cells' pixels, through four widths
+    @expect(&t, lined)
+    // table: the columns fill the rows' view, the fixed one its length, the grow ones equal but for the first's odd pixel
+    @expect(&t, filled and shared and size)
+    // table lines: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 fn join_data_path { out: []mut u8, a: []u8, b: []u8, c: []u8 } -> usize {
@@ -748,9 +866,11 @@ fn join_data_path { out: []mut u8, a: []u8, b: []u8, c: []u8 } -> usize {
 }
 
 // A click selects a row; a long name ends in dots; the keys move the selection as a list's do.
-fn check_table_use { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+#test
+fn selects_table_rows_and_cuts_long_names { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::table }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     let dots = has_data_text{ ui = gui, text = "...", tail = true } and not has_data_text{ ui = gui, text = "A name far too long for its column", tail = false }
@@ -758,9 +878,12 @@ fn check_table_use { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
     let picked = s.table_selected == 3 and has_node_flag{ ui = gui, path = "files/#3", flag = ui::NODE_SELECTED }
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::down }
-    ui_test::expect{ &io, &t, ok = dots, what = "table: a cell's text too long for it ends in dots" }
-    ui_test::expect{ &io, &t, ok = picked and s.table_selected == 4, what = "table: a click selects a row, and Down the next" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "table use: every frame is clean" }
+    // table: a cell's text too long for it ends in dots
+    @expect(&t, dots)
+    // table: a click selects a row, and Down the next
+    @expect(&t, picked and s.table_selected == 4)
+    // table use: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // ---- the plot
@@ -768,9 +891,11 @@ fn check_table_use { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
 const PLOT_ONE: [1]f32 = [2.0]
 const PLOT_FLAT: [4]f32 = [3.0, 3.0, 3.0, 3.0]
 
-fn check_plot_series { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+#test
+fn plots_series_in_their_bounds { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::plot }
     let nan: f32 = 0.0 / 0.0
     let gaps: [6]f32 = [1.0, nan, 2.0, 3.0, nan, 4.0]
@@ -794,19 +919,27 @@ fn check_plot_series { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena
     s.values = all_nan[..]
     ui_test::step_frame{ &d, ui = &gui, show = show_data_scene{ &s, _ } }
     let blank = count_data_lines{ ui = gui }
-    ui_test::expect{ &io, &t, ok = full.count == 7 and full.finite, what = "plot: eight values are seven segments" }
-    ui_test::expect{ &io, &t, ok = none.count == 0 and blank.count == 0, what = "plot: no values, or only NaN, draw no line" }
-    ui_test::expect{ &io, &t, ok = one.count == 1 and one.flat, what = "plot: one value is a dot" }
-    ui_test::expect{ &io, &t, ok = flat.count == 3 and flat.flat and flat.y == @as(f32, middle), what = "plot: a constant series is a flat line across the middle" }
-    ui_test::expect{ &io, &t, ok = gapped.count == 3 and gapped.finite, what = "plot: NaN is a gap: a dot, a segment and a dot for 1, NaN, 2, 3, NaN, 4" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "plot: every frame is clean" }
+    // plot: eight values are seven segments
+    @expect(&t, full.count == 7 and full.finite)
+    // plot: no values, or only NaN, draw no line
+    @expect(&t, none.count == 0 and blank.count == 0)
+    // plot: one value is a dot
+    @expect(&t, one.count == 1 and one.flat)
+    // plot: a constant series is a flat line across the middle
+    @expect(&t, flat.count == 3 and flat.flat and flat.y == @as(f32, middle))
+    // plot: NaN is a gap: a dot, a segment and a dot for 1, NaN, 2, 3, NaN, 4
+    @expect(&t, gapped.count == 3 and gapped.finite)
+    // plot: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
 
 // ---- the colour editor
 
-fn check_color_hex { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = make_ui{ &heap, dark = true } iferr { return }
-    let mut d = make_driver{ &heap, width = 340, height = 400, scale = 1.0 } iferr { return }
+#test
+fn edits_a_colour_as_hex { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try make_ui{ &heap, dark = true }
+    let mut d = try make_driver{ &heap, width = 340, height = 400, scale = 1.0 }
     let mut s = make_data_scene{ widget = DataWidget::color }
     ui_test::step_frames{ &d, ui = &gui, show = show_data_scene{ &s, _ }, count = 2 }
     let shows = has_data_text{ ui = gui, text = "#112233FF", tail = false }
@@ -833,10 +966,16 @@ fn check_color_hex { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena }
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::home }
     let clear = s.color.a == 0 and s.color.r == 0xAA
     press_data_key{ &d, ui = &gui, &s, key = ui::Key::end }
-    ui_test::expect{ &io, &t, ok = shows and focused, what = "colour: the hex field shows the colour, and a click focuses it and asks for text input" }
-    ui_test::expect{ &io, &t, ok = typed and set, what = "colour: six digits typed and Enter set the colour, alpha kept, and the field shows it" }
-    ui_test::expect{ &io, &t, ok = refused, what = "colour: an invalid hex value (a G refused, three digits left) keeps the old colour" }
-    ui_test::expect{ &io, &t, ok = alpha and escaped, what = "colour: eight digits set the alpha too; Escape drops an edit" }
-    ui_test::expect{ &io, &t, ok = clear and s.color.a == 255, what = "colour: the alpha slider goes to 0 and 255 by Home and End" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "colour: every frame is clean" }
+    // colour: the hex field shows the colour, and a click focuses it and asks for text input
+    @expect(&t, shows and focused)
+    // colour: six digits typed and Enter set the colour, alpha kept, and the field shows it
+    @expect(&t, typed and set)
+    // colour: an invalid hex value (a G refused, three digits left) keeps the old colour
+    @expect(&t, refused)
+    // colour: eight digits set the alpha too; Escape drops an edit
+    @expect(&t, alpha and escaped)
+    // colour: the alpha slider goes to 0 and 255 by Home and End
+    @expect(&t, clear and s.color.a == 255)
+    // colour: every frame is clean
+    @expect(&t, d.unclean == 0)
 }

@@ -6,13 +6,16 @@
 // A shortcut is matched against what the frame of its key left, so it works in the frame after
 // the key: every check names that frame.
 
-fn check_keys { mut io: Io, mut fs: Fs, mut t: ui_test::Tally, mut heap: arena::Arena, update: bool } {
-    check_shortcut_closed{ &io, &t, &heap }
-    check_shortcut_open{ &io, &t, &heap }
-    check_shortcut_field{ &io, &t, &heap }
-    check_bar_keys{ &io, &t, &heap }
-    check_shortcut_column{ &io, &t, &heap, scale = 1.0 }
-    check_shortcut_column{ &io, &t, &heap, scale = 1.5 }
+#test
+fn lines_up_the_shortcut_column_at_scale_1 { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    try check_shortcut_column{ &io, &t, &heap, scale = 1.0 }
+}
+
+#test
+fn lines_up_the_shortcut_column_at_scale_1_5 { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    try check_shortcut_column{ &io, &t, &heap, scale = 1.5 }
 }
 
 // What the scene's widgets did.
@@ -105,8 +108,10 @@ fn tap_board { mut k: Desk2, mut b: Board, key: ui::Key, mods: u8 } {
 // With every menu closed: each shortcut works the frame after its key and not in it; the
 // disabled item's does nothing; a submenu's item and a check work; a button's works. A frame that
 // matches shortcuts records nothing of the closed menus.
-fn check_shortcut_closed { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut k = make_desk2{ &heap, scale = 1.0 } iferr { return }
+#test
+fn works_a_shortcut_with_its_menu_closed { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut k = try make_desk2{ &heap, scale = 1.0 }
     let mut b = make_board{}
     step_board{ &k, &b }
     step_board{ &k, &b }
@@ -116,37 +121,44 @@ fn check_shortcut_closed { mut io: Io, mut t: ui_test::Tally, mut heap: arena::A
     let in_key_frame = b.news == 0
     let asked = k.d.requests.wake != null
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = in_key_frame and asked and b.news == 1,
-        what = "shortcuts: Ctrl+N with File closed picks New in the frame after the key, which the key's frame asks for" }
-    ui_test::expect{ &io, &t, ok = k.ui.draw.count == shapes and ui::get_node_count{ ui = k.ui } == nodes and ui::find_node{ ui = k.ui, path = "File/New" } == null,
-        what = "shortcuts: the frame that matches them draws and describes nothing of the closed menus" }
+    // shortcuts: Ctrl+N with File closed picks New in the frame after the key, which the key's frame asks for
+    @expect(&t, in_key_frame and asked and b.news == 1)
+    // shortcuts: the frame that matches them draws and describes nothing of the closed menus
+    @expect(&t, k.ui.draw.count == shapes and ui::get_node_count{ ui = k.ui } == nodes and ui::find_node{ ui = k.ui, path = "File/New" } == null)
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = b.news == 1, what = "shortcuts: once" }
+    // shortcuts: once
+    @expect(&t, b.news == 1)
     tap_board{ &k, &b, key = ui::Key::s, mods = ui::MOD_CTRL }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = b.saves == 0, what = "shortcuts: a disabled item's shortcut does nothing" }
+    // shortcuts: a disabled item's shortcut does nothing
+    @expect(&t, b.saves == 0)
     tap_board{ &k, &b, key = ui::Key::t, mods = ui::MOD_CTRL | ui::MOD_SHIFT }
     step_board{ &k, &b }
     tap_board{ &k, &b, key = ui::Key::t, mods = ui::MOD_CTRL }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = b.reopens == 1, what = "shortcuts: a closed submenu's item works by Ctrl+Shift+T, and not by Ctrl+T" }
+    // shortcuts: a closed submenu's item works by Ctrl+Shift+T, and not by Ctrl+T
+    @expect(&t, b.reopens == 1)
     tap_board{ &k, &b, key = ui::Key::f2, mods = 0 }
     step_board{ &k, &b }
     tap_board{ &k, &b, key = ui::Key::b, mods = ui::MOD_CTRL }
     step_board{ &k, &b }
     tap_board{ &k, &b, key = ui::Key::equals, mods = ui::MOD_CTRL }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = b.renames == 1 and b.bolds == 1 and b.bold and b.zooms == 1,
-        what = "shortcuts: F2, Ctrl+B on a check (which it flips) and Ctrl+= in the second menu" }
+    // shortcuts: F2, Ctrl+B on a check (which it flips) and Ctrl+= in the second menu
+    @expect(&t, b.renames == 1 and b.bolds == 1 and b.bold and b.zooms == 1)
     tap_board{ &k, &b, key = ui::Key::d, mods = ui::MOD_CTRL }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = b.news == 11, what = "shortcuts: a button's Ctrl+D works it" }
-    ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "shortcuts closed: every frame is clean" }
+    // shortcuts: a button's Ctrl+D works it
+    @expect(&t, b.news == 11)
+    // shortcuts closed: every frame is clean
+    @expect(&t, k.d.unclean == 0)
 }
 
 // With File open: its own shortcut picks an item and closes the menu; another menu's works too.
-fn check_shortcut_open { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut k = make_desk2{ &heap, scale = 1.0 } iferr { return }
+#test
+fn works_a_shortcut_with_a_menu_open { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut k = try make_desk2{ &heap, scale = 1.0 }
     let mut b = make_board{}
     step_board{ &k, &b }
     _ = ui_test::click{ d = &k.d, ui = &k.ui, path = "File", show = show_board{ &b, _ } }
@@ -154,19 +166,23 @@ fn check_shortcut_open { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Are
     tap_board{ &k, &b, key = ui::Key::o, mods = ui::MOD_CTRL }
     step_board{ &k, &b }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = open and b.opens == 1 and ui::find_node{ ui = k.ui, path = "File/New" } == null,
-        what = "shortcuts: with File open, Ctrl+O picks Open... and closes the menu" }
+    // shortcuts: with File open, Ctrl+O picks Open... and closes the menu
+    @expect(&t, open and b.opens == 1 and ui::find_node{ ui = k.ui, path = "File/New" } == null)
     _ = ui_test::click{ d = &k.d, ui = &k.ui, path = "File", show = show_board{ &b, _ } }
     tap_board{ &k, &b, key = ui::Key::c, mods = ui::MOD_CTRL }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = b.copies == 1, what = "shortcuts: with File open, Edit's Ctrl+C works too" }
-    ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "shortcuts open: every frame is clean" }
+    // shortcuts: with File open, Edit's Ctrl+C works too
+    @expect(&t, b.copies == 1)
+    // shortcuts open: every frame is clean
+    @expect(&t, k.d.unclean == 0)
 }
 
 // A focused text field takes Ctrl+C (it copies its selection), so Edit > Copy's shortcut does not
 // work then; with the field not focused, it does. A letter typed into the field is no shortcut.
-fn check_shortcut_field { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut k = make_desk2{ &heap, scale = 1.0 } iferr { return }
+#test
+fn leaves_a_focused_fields_keys_to_the_field { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut k = try make_desk2{ &heap, scale = 1.0 }
     let mut b = make_board{}
     b.field = true
     step_board{ &k, &b }
@@ -182,8 +198,8 @@ fn check_shortcut_field { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Ar
     _ = ui_test::type_text{ ui = &k.ui, text = "n" }
     step_board{ &k, &b }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = field_took and b.news == 0 and slice::eq_bytes{ a = b.text[..b.len], b = "n" },
-        what = "shortcuts: a focused field takes Ctrl+C (it copies) and a typed letter, so neither is a shortcut" }
+    // shortcuts: a focused field takes Ctrl+C (it copies) and a typed letter, so neither is a shortcut
+    @expect(&t, field_took and b.news == 0 and slice::eq_bytes{ a = b.text[..b.len], b = "n" })
     _ = ui_test::move_pointer{ ui = &k.ui, x = 390, y = 290 }
     _ = ui_test::push_button{ ui = &k.ui, button = 0, down = true, clicks = 1 }
     step_board{ &k, &b }
@@ -191,8 +207,10 @@ fn check_shortcut_field { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Ar
     step_board{ &k, &b }
     tap_board{ &k, &b, key = ui::Key::c, mods = ui::MOD_CTRL }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = b.copies == 1, what = "shortcuts: with the field not focused, Ctrl+C is Edit > Copy's" }
-    ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "shortcuts and a field: every frame is clean" }
+    // shortcuts: with the field not focused, Ctrl+C is Edit > Copy's
+    @expect(&t, b.copies == 1)
+    // shortcuts and a field: every frame is clean
+    @expect(&t, k.d.unclean == 0)
 }
 
 fn is_focused_node { ui: ui::Ui, path: []u8 } -> bool {
@@ -203,8 +221,10 @@ fn is_focused_node { ui: ui::Ui, path: []u8 } -> bool {
 // Alt alone or F10 puts the focus on the bar's first title the frame after the key, from a text
 // field that does not take them; Escape there gives it back to the field; Alt again, and Alt with
 // a menu open, close the menus and give it back too; the arrows and Enter then work the bar.
-fn check_bar_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut k = make_desk2{ &heap, scale = 1.0 } iferr { return }
+#test
+fn enters_the_menu_bar_by_keyboard { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut k = try make_desk2{ &heap, scale = 1.0 }
     let mut b = make_board{}
     b.field = true
     step_board{ &k, &b }
@@ -215,16 +235,16 @@ fn check_bar_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
     tap_board{ &k, &b, key = ui::Key::alt, mods = 0 }
     let not_yet = is_focused_node{ ui = k.ui, path = "field" }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = in_field and not_yet and is_focused_node{ ui = k.ui, path = "menu bar/File" } and ui::is_focus_visible{ ui = k.ui },
-        what = "bar keys: Alt alone from the field focuses File, with its ring, the frame after the key" }
+    // bar keys: Alt alone from the field focuses File, with its ring, the frame after the key
+    @expect(&t, in_field and not_yet and is_focused_node{ ui = k.ui, path = "menu bar/File" } and ui::is_focus_visible{ ui = k.ui })
     tap_board{ &k, &b, key = ui::Key::right, mods = 0 }
     step_board{ &k, &b }
     let along = is_focused_node{ ui = k.ui, path = "menu bar/Edit" }
     tap_board{ &k, &b, key = ui::Key::escape, mods = 0 }
     step_board{ &k, &b }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = along and is_focused_node{ ui = k.ui, path = "field" } and not is_focused_node{ ui = k.ui, path = "menu bar/Edit" },
-        what = "bar keys: Right moves along the bar, and Escape gives the focus back to the field" }
+    // bar keys: Right moves along the bar, and Escape gives the focus back to the field
+    @expect(&t, along and is_focused_node{ ui = k.ui, path = "field" } and not is_focused_node{ ui = k.ui, path = "menu bar/Edit" })
     tap_board{ &k, &b, key = ui::Key::f10, mods = 0 }
     step_board{ &k, &b }
     let by_f10 = is_focused_node{ ui = k.ui, path = "menu bar/File" }
@@ -234,19 +254,21 @@ fn check_bar_keys { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } 
     tap_board{ &k, &b, key = ui::Key::alt, mods = 0 }
     step_board{ &k, &b }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = by_f10 and opened and ui::find_node{ ui = k.ui, path = "File/New" } == null and is_focused_node{ ui = k.ui, path = "field" },
-        what = "bar keys: F10 focuses File, Down opens it, and Alt closes it and gives the focus back to the field" }
+    // bar keys: F10 focuses File, Down opens it, and Alt closes it and gives the focus back to the field
+    @expect(&t, by_f10 and opened and ui::find_node{ ui = k.ui, path = "File/New" } == null and is_focused_node{ ui = k.ui, path = "field" })
     tap_board{ &k, &b, key = ui::Key::alt, mods = 0 }
     step_board{ &k, &b }
     tap_board{ &k, &b, key = ui::Key::alt, mods = 0 }
     step_board{ &k, &b }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = is_focused_node{ ui = k.ui, path = "field" }, what = "bar keys: Alt twice goes into the bar and back out" }
+    // bar keys: Alt twice goes into the bar and back out
+    @expect(&t, is_focused_node{ ui = k.ui, path = "field" })
     tap_board{ &k, &b, key = ui::Key::f, mods = ui::MOD_ALT }
     step_board{ &k, &b }
-    ui_test::expect{ &io, &t, ok = is_focused_node{ ui = k.ui, path = "field" } and ui::find_node{ ui = k.ui, path = "File/New" } == null,
-        what = "bar keys: Alt+F is not Alt alone, and opens nothing (mnemonics are not supported)" }
-    ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "bar keys: every frame is clean" }
+    // bar keys: Alt+F is not Alt alone, and opens nothing (mnemonics are not supported)
+    @expect(&t, is_focused_node{ ui = k.ui, path = "field" } and ui::find_node{ ui = k.ui, path = "File/New" } == null)
+    // bar keys: every frame is clean
+    @expect(&t, k.d.unclean == 0)
 }
 
 // The text shape of `needle` in the last frame, as wide as it measures; one of -1s when there is
@@ -269,8 +291,8 @@ fn find_text_rect { mut ui: ui::Ui, needle: []u8 } -> ui::Rect {
 // the row's end; a label never reaches into the column; the menu is wide enough for its longest
 // label and its widest shortcut. The tests' font is 8 by 16 at 16 pixels, so a character is half
 // the pixel size wide.
-fn check_shortcut_column { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena, scale: f32 } {
-    let mut k = make_desk2{ &heap, scale } iferr { return }
+fn check_shortcut_column { mut io: Io, mut t: Test, mut heap: arena::Arena, scale: f32 } -> ! {
+    let mut k = try make_desk2{ &heap, scale }
     let mut b = make_board{}
     step_board{ &k, &b }
     _ = ui_test::click{ d = &k.d, ui = &k.ui, path = "File", show = show_board{ &b, _ } }
@@ -285,7 +307,9 @@ fn check_shortcut_column { mut io: Io, mut t: ui_test::Tally, mut heap: arena::A
     // The row is padded half a padding (4 units) at its end, and the arrow column (a mark's 16
     // units, 14 + 2) and the row's gap (4) follow the column.
     let end = new_row.rect.x + new_row.rect.w - ui::to_pixels{ ui = k.ui, length = 4.0 } - ui::to_pixels{ ui = k.ui, length = 16.0 } - ui::to_pixels{ ui = k.ui, length = 4.0 }
-    ui_test::expect{ &io, &t, ok = lined and n.x + n.w == end and rename.x + rename.w < f2.x,
-        what = if scale == 1.0 { "shortcut column: the shortcuts end at one x, before the arrow column, after every label (scale 1)" } else { "shortcut column: the same at scale 1.5" } }
-    ui_test::expect{ &io, &t, ok = k.d.unclean == 0, what = "shortcut column: every frame is clean" }
+    // shortcut column: the shortcuts end at one x, before the arrow column, after every label, at
+    // the scale the test gives
+    @expect(&t, lined and n.x + n.w == end and rename.x + rename.w < f2.x)
+    // shortcut column: every frame is clean
+    @expect(&t, k.d.unclean == 0)
 }
