@@ -26,11 +26,20 @@ Nothing in the repository was modified (`git status` is clean), and nothing was 
 6. Real text is FreeType and HarfBuzz, as `ZGF.Fonts` does it.
 7. The library is `ui/` at the top level, namespace `ui`. The SDL host is its own library, and nothing
    under `ui/` adds a `kotor/` directory. A program composes the core and the backend and host it needs.
-8. Vulkan is the second backend, as a stage. Metal is specified, not staged.
+8. Vulkan was to be the second backend, as a stage. The owner then decided to build OpenGL only ("can we
+   just skip vulkan for now and only build opengl?"): stage 14 is excluded from this plan (section 1.2),
+   and section 4.4 stays written as the Vulkan backend's specification for when it is taken up, as
+   section 4.5 is Metal's. Metal is specified, not staged.
 9. Functions, widgets included, have verb names.
 10. **The unit is the device pixel, in whole numbers (i32).** Decided after stages 0 to 7 were built in
     fractional logical units, and the code was converted; section 2.0 ("Units") has the rule and its
     reasons, and every later stage is specified on it.
+11. **kotor's renderer draws the staged instances itself** (section 8.1). The owner's words: "KOTOR's
+    OpenGL backend gains the four ported shaders and the draw loop (about 400 lines, one new entry in
+    render's contract). Everything looks the same in KOTOR as on the other backends, and the adapter
+    shrinks to a call."
+12. **The developer overlay goes into the game**, beside `fxhud` and behind the same option, with
+    `fxhud` left in place and untouched, in a commit separate from the adapter (stage 15).
 
 ---
 
@@ -45,7 +54,8 @@ Nothing in the repository was modified (`git status` is clean), and nothing was 
 2. **Rendering behind a seam of a few high-level shapes.** The core emits a list of shapes as plain data
    and never calls a backend. A shared CPU layer stages the list into ZGF's instance kinds (rounded
    rectangle, glyph, image, line), each drawn by one instanced shader ported from ZGF, in batches. A GPU
-   backend (OpenGL, Vulkan, Metal, kotor's `render::Frame`) uploads and draws them.
+   backend uploads and draws them: OpenGL, and kotor's renderer with the same shaders; Vulkan and Metal
+   are specified, not built.
 3. **Real text for applications, glyph tables for games.** A font is either an outline font the program
    loaded (TrueType or OpenType bytes, shaped by HarfBuzz, rasterised by FreeType into the glyph atlas)
    or a glyph table the program built (KOTOR's byte-indexed bitmap fonts).
@@ -64,6 +74,7 @@ Nothing in the repository was modified (`git status` is clean), and nothing was 
 | Rewriting the KOTOR screens | The owner put it outside this plan; one screen is proved (stage 16). |
 | Backends on 2D drawing APIs (Direct2D, CoreGraphics) | The owner's "native APIs" are GPU APIs. |
 | A Metal backend | It cannot be built or run on this Windows machine. Section 4.5 specifies it from ZGF's Metal backend. |
+| A Vulkan backend (stage 14) | The owner's decision: OpenGL only. The Khronos validation layer is not installed on this machine, and a Vulkan backend written without it is wrong in ways that show only on another driver; and nothing consumes a second backend yet. Section 4.4 and stage 14 stay written as its specification for when it is taken up, as section 4.5 is Metal's. |
 | Popups, tooltips or dialogs as separate OS windows | A game's UI lives in one surface, and separate windows need a windowing seam on every platform that is larger than the render seam. Popups are a top layer of the one surface. |
 | A font rasteriser or shaper written in ctxlang | FreeType and HarfBuzz do both, and ZGF uses them. |
 | Bidirectional reordering (ZGF's `Bidi.cs`) | No program in this plan shows right-to-left text. A line that is wholly right-to-left still shapes correctly, because HarfBuzz orders the run; a line that mixes directions is not reordered. The port would be `Bidi.cs` (371 lines) and `ShapeBidi` in the font package, plus caret mapping in the text field. |
@@ -87,7 +98,8 @@ A top-level directory `G:\Dev\zlang-worktree-1\ui\`, namespace `ui` (decided).
   sketches compile beside `kotor/lib/base` and `kotor/lib/platform` [compiled, a5].
 - A context field named `ui` and the namespace `ui` coexist: `fn f { mut ui: ui::Ui }` with
   `ui::add_button{ &ui, .. }` [compiled, a4].
-- Library namespaces: `ui_stage`, `ui_fonts`, `ui_gl`, `ui_vk`, `ui_sdl`, `ui_rec`, `ui_test`. On the
+- Library namespaces: `ui_stage`, `ui_fonts`, `ui_gl`, `ui_sdl`, `ui_rec`, `ui_test`, and `ui_vk` in
+  the Vulkan specification (section 4.4). On the
   kotor side: `ui_kotor` (adapter) and `kui` (the KOTOR widget set).
 
 ---
@@ -241,8 +253,7 @@ staged level, one GPU backend, and the host it needs (section 2.1). Each frame i
 and hands the result to the backend's `render`.
 
 - Backends and hosts keep their own namespaces instead of kotor's one shared `gpu` namespace, so two
-  can be in one program: the recorder beside OpenGL in the screenshot tests, OpenGL beside Vulkan in a
-  comparison.
+  can be in one program: the recorder beside OpenGL in the screenshot tests.
 - Each backend has a contract file in kotor's manner that pins its function shapes [compiled, a4
   `ui_shapes::check`].
 - The single runtime hook is the font provider for outline fonts: a struct of three `fn` values and an
@@ -268,7 +279,7 @@ KOTOR part lives in kotor:
 | KOTOR need | General feature in `ui` | KOTOR part (in `kotor/lib/kui`) |
 |---|---|---|
 | Rotated-corner, segmented-edge borders | the `image` shape with a UV region, tint, exact quarter turns, free angle, additive blend; rectangles in whole device pixels, and placement and painting that take pixels as given (`ui::place_pixels`, `ui::paint_image`) | `kui::paint_border` works out each piece's pixels with the original's snap and emits the pieces (sketch, section 3.2) |
-| 3D views inside the UI z-order | `ui::add_host_slot`: a `host` shape that ends a UI pass | the adapter starts a new `render::begin_ui` run after each view |
+| 3D views inside the UI z-order | `ui::add_host_slot`: a `host` shape that ends a UI pass | the screen adds its view after the pass that ends at the slot, then the next pass (section 8.1) |
 | Controls addressable by tag | names of id scopes are kept; `ui::find_node{ path }` | TAG is the id name |
 | Hover is focus | `PressOpts.focus_on_hover` | kui widgets set it |
 | Designer navigation links | `ui::set_links{ id, links }` | from `MOVETO` |
@@ -317,21 +328,25 @@ ui/stage     namespace ui_stage   draw list -> four instance kinds, clip table, 
                                   passes, the glyph atlas and glyph cache               needs: core
 ui/fonts     namespace ui_fonts   outline fonts: FreeType rasterises, HarfBuzz shapes   needs: core;
                                                                                         links freetype, harfbuzz
-ui/shaders   (GLSL, no ctxlang)   ZGF's four shader pairs, one source for OpenGL and Vulkan
+ui/shaders   (GLSL, no ctxlang)   ZGF's four shader pairs, one source for OpenGL and (as SPIR-V) Vulkan
 ui/gl        namespace ui_gl      OpenGL 4.1 core backend                               needs: core, stage
-ui/vulkan    namespace ui_vk      Vulkan backend                                        needs: core, stage;
+ui/gl/glsl   namespace ui_gl      the shaders' text (generated), in a directory of its own so kotor's
+                                  renderer adds it without the backend's device       needs: nothing
+ui/vulkan    namespace ui_vk      Vulkan backend: specified, not built (section 4.4)    needs: core, stage;
                                                                                         links vulkan-1
-ui/sdl       namespace ui_sdl     the SDL2 host: its own SDL binding, a window with a GL context or a
-                                  Vulkan surface, events -> ui::Event, requests -> SDL  needs: core; links SDL2
+ui/sdl       namespace ui_sdl     the SDL2 host: its own SDL binding, a window with a GL context (a
+                                  Vulkan surface: section 4.4), events -> ui::Event,
+                                  requests -> SDL                                       needs: core; links SDL2
 ui/record    namespace ui_rec     draw list, staged draws and node list as text         needs: core, stage
 ui/test      namespace ui_test    tally, golden compare, scripted driver, the test font,
                                   a PNG writer                                          needs: core, record
 ui/samples/gallery   namespace gallery   one UI that shows every widget (no main)       needs: core, widgets
-ui/samples/demo_gl, demo_vulkan          programs: the gallery on a backend
+ui/samples/demo_gl                       program: the gallery on OpenGL (demo_vulkan: section 4.4)
 ui/samples/tasks                         program: a desktop application
 ui/tests/<name>                          programs: one per package (section 6)
 
-kotor/lib/ui_kotor   namespace ui_kotor  staged instances -> render::Frame, fonts, events   needs: core, stage, kotor render
+kotor/lib/ui_kotor   namespace ui_kotor  staged passes -> render::Frame, fonts, events      needs: core, stage, kotor render
+                                         (kotor's lib/render_gl draws the passes with ui/gl/glsl's shaders)
 kotor/lib/kui        namespace kui       the KOTOR widget set and .gui replay               needs: core, kotor gui data
 ```
 
@@ -362,10 +377,12 @@ Rules that keep this true:
 - `ui/widgets` calls only the public primitives of section 3.3, never the core's internals. The core's
   internals sit in nested namespaces (`ui::tree`, `ui::layout`, `ui::emit`), so the check is a grep with
   no matches: `grep -rn "ui::\(tree\|layout\|emit\)::" ui/widgets`.
-- A backend never depends on a host: `ui_gl::open` takes a function that looks up GL symbols, and
-  `ui_vk::open` takes a surface. The host supplies both.
-- kotor's rule 2 (no native library beyond SDL2, OpenGL, libc and libm) is untouched: kotor adds the
-  core, the staged level and its own adapter, and never `ui/fonts` or `ui/vulkan`.
+- A backend never depends on a host: `ui_gl::open` takes a function that looks up GL symbols (and
+  `ui_vk::open` would take a surface, section 4.4). The host supplies them.
+- kotor's rule 2 (no native library beyond SDL2, OpenGL, libc and libm) is untouched: the game adds the
+  core, the widgets, the staged level, `ui/gl/glsl` and its own adapter, never `ui/fonts`, and links
+  nothing new. Its tool `kotor/tools/uispike` links FreeType and HarfBuzz to draw the gallery in an
+  outline font for its comparison with the library's own picture (stage 15).
 
 ### 2.2 Frame lifecycle
 
@@ -794,11 +811,14 @@ Deliberate changes, each with its reason:
 | The shadow shader is not ported | Section 1.2. | |
 
 `ui/tools/build_shaders` (a script) validates each file as OpenGL GLSL, compiles it to SPIR-V with
-`glslc`, and writes two generated data files: `ui/gl/shaders_glsl.ctx` (the sources as multi-line
-literals) and `ui/vulkan/shaders_spv.ctx` (the SPIR-V as byte strings). Both are committed, so building
-a program needs neither tool, in the way `ctxlang/bootstrap/ctxc.windows.c` is committed. The script's
-`--check` mode fails when a generated file does not match its source, and the test runner calls it when
-`glslc` is present.
+`glslc` (so the one source stays valid for Vulkan), and writes the generated data file
+`ui/gl/glsl/shaders_glsl.ctx` (the sources as literals, one a line). It has a directory of its own so
+that kotor's renderer, which draws staged passes with these shaders (section 8.1), adds the text
+without `ui_gl`'s device: there is one text, and no copy to drift. It is committed, so building a
+program needs neither tool, in the way `ctxlang/bootstrap/ctxc.windows.c` is committed. The Vulkan
+backend, when it is taken up, adds `ui/vulkan/shaders_spv.ctx` (the SPIR-V as byte strings) the same
+way (section 4.4). The script's `--check` mode fails when the generated file does not match its source,
+and the test runner calls it when `glslc` is present.
 
 ### 2.7 Text and fonts
 
@@ -1520,9 +1540,9 @@ fn read_pixels { mut dev: Device, into: []mut u8 } -> !                    // RG
 |---|---|---|
 | Recorder | none: writes text | stage 0 (shapes), stage 2 (staged) |
 | OpenGL 4.1 core | the four ported pairs, as GLSL | stage 3 |
-| Vulkan | the same four pairs, as SPIR-V | stage 14 |
+| Vulkan | the same four pairs, as SPIR-V | specified in 4.4, not staged (the owner's decision) |
 | Metal | ZGF's four `.gen.metal` files | specified in 4.5, not staged |
-| kotor `render::Frame` | kotor's own quad shader | stage 15 (section 8.1) |
+| kotor's renderer (`kotor/lib/render_gl`) | the four ported pairs, from `ui/gl/glsl` | stage 15 (section 8.1) |
 
 ### 4.1 Recorder (`ui/record`, `ui_rec`)
 
@@ -1568,8 +1588,9 @@ A port of the structure of ZGF's `OpenGlRenderedCanvas` [read: 560 lines].
 Its own library, with its own SDL2 binding (decided). A program that runs on something else writes the
 same three things for its platform and uses none of this.
 
-- A window with an OpenGL 4.1 core context (`open_gl_window`, `get_gl_proc`, `swap`) or with a Vulkan
-  surface (`open_vulkan_window`, `get_vulkan_extensions`, `create_vulkan_surface`).
+- A window with an OpenGL 4.1 core context (`open_gl_window`, `get_gl_proc`, `swap`). A window with a
+  Vulkan surface (`open_vulkan_window`, `get_vulkan_extensions`, `create_vulkan_surface`) belongs to
+  the Vulkan specification (section 4.4).
 - `to_event{ event, pointer_scale } -> ?ui::Event`: SDL's events as the core's, pointer positions in
   device pixels (SDL's window coordinates times the drawable's pixels a window coordinate, which is 1
   where the program is DPI aware and 2 on a Retina display), keys as `ui::Key`.
@@ -1582,10 +1603,13 @@ same three things for its platform and uses none of this.
   something happened.
 - About 350 lines, written against SDL2's headers; kotor's `sdl.ctx` shows the binding style [read].
 
-### 4.4 Vulkan (`ui/vulkan`, `ui_vk`)
+### 4.4 Vulkan (`ui/vulkan`, `ui_vk`): specified, not staged
 
-The second GPU backend (decided), drawing the same `Staged` with the same shader sources compiled to
-SPIR-V.
+The owner decided to build OpenGL only ("can we just skip vulkan for now and only build opengl?"), so
+stage 14 is excluded from this plan: the Khronos validation layer is not installed on this machine (the
+table below), and nothing consumes a second backend yet. What follows is the backend's specification for
+when it is taken up, as section 4.5 is Metal's: a second GPU backend, drawing the same `Staged` with the
+same shader sources compiled to SPIR-V.
 
 **What is on this machine** [run]:
 
@@ -1647,9 +1671,10 @@ Reason: it cannot be built or tested on this machine. The source to port is ZGF'
   run, a2].
 - Fonts need nothing new: FreeType and HarfBuzz build on macOS, and the atlas is one R8 `MTLTexture`.
 
-### 4.6 kotor's renderer (`kotor/lib/ui_kotor`)
+### 4.6 kotor's renderer (`kotor/lib/render_gl`, `kotor/lib/ui_kotor`)
 
-Section 8.1.
+Section 8.1: kotor's OpenGL backend draws a `Staged` with the four ported pairs, through its own GL
+binding.
 
 ---
 
@@ -1718,9 +1743,10 @@ Four kinds of check:
    lines at angles, quarter turns, additive, text at scales 1, 1.5 and 2) and the gallery to PNG under
    `ui/out/` (ignored by git), written by `ui_test`'s own PNG writer. The implementing agent looks at
    the PNG with the Read tool, as kotor's rule 6 requires. PNGs are not compared byte for byte within
-   one backend, because GPUs differ. Stage 14 renders the same conformance list with Vulkan and counts
-   the pixels that differ from the OpenGL picture, which is the conformance check between backends that
-   ZGF's own plan lists as not built.
+   one backend, because GPUs differ. The conformance check between backends, which ZGF's own plan lists
+   as not built, is between `ui_gl` and kotor's renderer: `kotor/tools/uispike --against` counts the
+   pixels of the gallery that differ from demo_gl's picture (stage 15). A Vulkan backend would be held
+   to the same check (section 4.4).
 
 Every test also asserts, after each frame, that nothing was dropped and no problem was recorded.
 
@@ -1748,9 +1774,9 @@ kotor/tools/ctxc run ui/tests/widgets -- --update      # rewrite goldens after a
 kotor/tools/ctxc run ui/samples/demo_gl                # the gallery, interactive
 kotor/tools/ctxc run ui/samples/demo_gl -- --headless --script ui/samples/gallery/tour.txt --shot ui/out/tour.png
 kotor/tools/ctxc run ui/samples/tasks                  # stage 13: the desktop application
-kotor/tools/ctxc run ui/samples/demo_vulkan            # stage 14
-kotor/tools/ctxc run ui/tests/shots_vulkan -- --out ui/out --against ui/out/conformance-gl.png   # stage 14
-kotor/tools/ctxc run kotor/tools/uispike -- --headless --out kotor/out/uispike.png   # stage 15
+kotor/tools/ctxc run kotor/tools/uispike -- --headless --out kotor/out/uispike.png   # stage 15: the gallery through kotor's renderer, console font
+kotor/tools/ctxc run ui/samples/demo_gl -- --headless --shot ui/out/gallery-basic.png
+kotor/tools/ctxc run kotor/tools/uispike -- --headless --font C:/Windows/Fonts/segoeui.ttf --against ui/out/gallery-basic.png   # stage 15: 0 pixels differ
 kotor/tools/ctxc run kotor/tools/uiview -- optgameplay --scale 1.5 --out kotor/out/uiview   # stage 16
 ui/tools/check                                         # every headless ui test in turn; non-zero if one fails
 ```
@@ -1875,7 +1901,7 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   widget converts.
 - **Files.** `ui/shaders/canvas_{rect,glyph,image,shape}.{vert,frag}.glsl`, `ui/tools/build_shaders`,
   `ui/tools/embed_shaders.py`, `ui/gl/api.ctx`, `ui/gl/device.ctx`, `ui/gl/shaders_glsl.ctx`
-  (generated), `ui/gl/contract.ctx`, `ui/sdl/sdl.ctx`, `ui/sdl/host.ctx`, `ui/test/png.ctx`,
+  (generated; in `ui/gl/glsl/` since stage 15), `ui/gl/contract.ctx`, `ui/sdl/sdl.ctx`, `ui/sdl/host.ctx`, `ui/test/png.ctx`,
   `ui/tests/shots/{build.ctx, main.ctx}`.
 - **Acceptance.** The agent shows the `diff` of each shader file against ZGF's: only the listed
   changes. `build_shaders --check` passes. `ui/tests/shots` writes `ui/out/conformance-gl.png` at scales
@@ -2098,11 +2124,13 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   `ui/out/tasks.png` is looked at, at scales 1, 1.25 and 1.5, and at each every border and separator
   is the same thickness along its length and on every side; the program draws no frame during two
   idle seconds of the script; resizing the window re-lays the content with nothing clipped.
-- **Agent.** sonnet, medium effort. **Depends on:** stages 10, 11 and 12. **May run with stages 14 and
-  15.**
+- **Agent.** sonnet, medium effort. **Depends on:** stages 10, 11 and 12. **May run with stage 15.**
 
-### Stage 14: the Vulkan backend
+### Stage 14: the Vulkan backend (excluded)
 
+- **Excluded from this plan** (the owner's decision, section 1.2): OpenGL only. The Khronos validation
+  layer is not installed on this machine, and nothing consumes a second backend yet. The entry stays
+  as the specification for when it is taken up, as section 4.5 is Metal's.
 - **Scope.** Section 4.4: the binding, the device and swapchain, the five pipelines from the embedded
   SPIR-V, descriptor sets, instance buffers, the atlas and images, `render`, `record`, the offscreen
   target and `read_pixels`; `ui_sdl`'s Vulkan window and surface; the gallery on Vulkan.
@@ -2119,25 +2147,38 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
   count of differing pixels is reported and explained (antialiased edges may differ by a level; nothing
   else may). The gallery in an outline font matches `gallery-basic.png` the same way. A second
   identical frame uploads nothing. Resizing recreates the swapchain without a validation message.
-- **Agent.** fable, high effort. **Depends on:** stages 3 and 9. **May run with stages 13 and 15.**
+- **Agent.** fable, high effort. **Depends on:** stages 3 and 9.
 
 ### Stage 15: the kotor adapter and a developer overlay
 
-- **Scope.** `ui_kotor`, as section 8.1 maps it: staged passes into `render::Frame` in a UI pass the
-  size of the drawable (one unit a device pixel), `from_font`, `to_event` (window coordinates to device
-  pixels, and cp1252 mapping of typed text), the `FrameInfo` kotor passes (the drawable's pixel size
-  and its quarter-step scale), a spike tool that shows the gallery through kotor's renderer in the
-  game's console font, and the GPU timing overlay drawn with the stock widgets beside the existing
-  `fxhud`.
-- **Files.** `kotor/lib/ui_kotor/{adapter.ctx, font.ctx, events.ctx}`,
-  `kotor/tools/uispike/{build.ctx, main.ctx}`, `kotor/game/devui.ctx` and the two call sites in
-  `kotor/game/play.ctx` (open decision 1).
-- **Acceptance.** `uispike --headless` writes a PNG of the gallery drawn by `gpu::submit`; it matches
-  the OpenGL gallery to the eye apart from what section 8.1 says kotor's renderer cannot draw;
-  `frame.dropped` is 0; the quads and UI draws that `gpu::get_stats` reports are logged; the game with
-  the timing option shows the new overlay and still builds in the usual time; `fxhud` is untouched;
-  kotor's build adds no `ui/fonts` and links nothing new.
-- **Agent.** opus, medium effort. **Depends on:** stages 2 and 9. **May run with stages 13 and 14.**
+- **Scope.** Section 8.1 as the owner decided it: kotor's OpenGL backend draws a `Staged` itself, with
+  the library's four shader pairs (their one text, `ui/gl/glsl`) and `ui_gl`'s draw loop ported onto
+  kotor's GL binding, reached through one new kind of step in `render::Frame` (`render::add_staged`);
+  `ui_kotor`: the passes into the frame, a host slot's viewport, `from_font`, `to_event` (window
+  coordinates to device pixels, SDL's buttons to the core's, cp1252 mapping of typed text), the
+  requests, textures as images, and the `FrameInfo` kotor passes; a spike tool that shows the gallery
+  through kotor's renderer, in the game's console font or in an outline font compared pixel for pixel
+  with demo_gl's picture; and the GPU timing overlay drawn with the stock widgets beside the existing
+  `fxhud`, behind the same option, in a commit of its own.
+- **Units.** The UI pass is the screen target (`gpu::screen_size`, the drawable's size unless the game
+  renders smaller), one unit a device pixel, not `ui_w` by `ui_h`. The `FrameInfo` is that size and the
+  GUI's quarter-step scale; the pointer arrives in render pixels.
+- **Files.** `kotor/lib/render/render.ctx` (`StepKind::staged`, `Step.staged`, `add_staged`),
+  `kotor/lib/render_gl/canvas.ctx` (new) and `gpu.ctx` (the device's canvas, the step in `submit`),
+  `kotor/lib/ui_kotor/{adapter.ctx, font.ctx, events.ctx}`, `kotor/tools/uispike/{build.ctx, main.ctx}`,
+  `kotor/game/devui.ctx`, `kotor/game/play.ctx` (the overlay's state, its draw beside `fxhud`'s, its
+  events in `pump_events`), `kotor/build.ctx` and the `build.ctx` of every tool that adds `lib/render`
+  (they add `ui/core`, `ui/stage` and `ui/gl/glsl`), and `ui/gl/shaders_glsl.ctx` moved to
+  `ui/gl/glsl/` (`ui/tools/build_shaders`, `embed_shaders.py` and `ui/.gitattributes` follow it).
+- **Acceptance.** `uispike --headless --font PATH --against ui/out/gallery-basic.png` finds no pixel
+  that differs from demo_gl's picture, rounded corners, smooth marks and outline text included, and
+  the same at other pages, themes and scales; `uispike --headless` writes the gallery in the console
+  font; `frame.dropped` is 0; the UI draws and quads `gpu::get_stats` reports are logged; the game
+  with the timing option shows the overlay beside `fxhud` and its window takes the pointer (it moves
+  and folds), while kotor's headless pictures (`rendertest`, `guiview`, the game's screenshots) are
+  byte for byte what they were with the option off; `fxhud` is untouched; the game adds no `ui/fonts`
+  and links nothing new.
+- **Agent.** opus, medium effort. **Depends on:** stages 2 and 9. **May run with stage 13.**
 
 ### Stage 16: kui, and one KOTOR screen through the framework
 
@@ -2168,12 +2209,12 @@ small program builds and runs in 0.4 to 0.6 s, and a cached rerun in 0.1 s.
 ### Order and concurrency
 
 ```
-0 -> 1 -> { 2 | 5 } -> { 3 | 6 | 7 } -> { 4 | 8 } -> 9 -> { 10 | 11 | 12 } -> { 13 | 14 | 15 } -> 16
+0 -> 1 -> { 2 | 5 } -> { 3 | 6 | 7 } -> { 4 | 8 } -> 9 -> { 10 | 11 | 12 } -> { 13 | 15 } -> 16
 ```
 
 Braces are stages that may run together, never more than three. With two agents: run 6 and 7 together
-and 3 after; 10 with 11, then 12; 14 with 15, then 13. Every stage in braces owns disjoint files, as its
-entry says.
+and 3 after; 10 with 11, then 12; 13 with 15. Every stage in braces owns disjoint files, as its entry
+says. Stage 14 (Vulkan) is excluded (section 1.2).
 
 ---
 
@@ -2181,41 +2222,56 @@ entry says.
 
 ### 8.1 The adapter
 
-`kotor/lib/ui_kotor` turns a `Staged` into kotor's `render::Frame`. kotor's own art crosses exactly,
-because the staged image is kotor's `render::Quad` [read: `render.ctx:529`]. What kotor's renderer has
-no primitive for is drawn in a reduced form.
+kotor's renderer draws the staged instances itself (the owner's decision): its OpenGL backend has
+`ui_gl`'s four programs and draw loop, ported onto kotor's own GL binding
+(`kotor/lib/render_gl/canvas.ctx`), with the shaders' text taken from `ui/gl/glsl`, not copied. So a UI
+looks the same in KOTOR as on the library's backend (stage 15 compares the two pixel for pixel), and the
+adapter, `kotor/lib/ui_kotor`, hands the staged passes to the frame and converts fonts and events.
 
-**Units.** The staged instances are device pixels, so the adapter's UI pass is the size of the drawable
-(`win_w` by `win_h`), one unit a pixel, and not kotor's GUI pixel space (`ui_w` by `ui_h`, the window
-divided by the quarter-step scale), which is what `lib/gui`'s own passes use. A quad the adapter adds
-is therefore already where it will be drawn, and kotor's renderer scales nothing. The `FrameInfo` kotor
-passes is the drawable's size and its quarter-step scale; kui's pixels come from its own snap of design
-coordinates (section 3.2), which is the same arithmetic `lib/gui` does with `Grid`
-[read: `draw.ctx:44`], so a border piece lands on the same device pixels either way.
+**The seam.** A `render::Frame` is a list of steps that `gpu::submit` draws in order: a view's 3D
+drawing, a run of `render::Quad`s (lib/gui's), and now a pass of a `ui_stage::Staged`:
 
-| `ui_stage` | `render` | Exact? |
-|---|---|---|
-| `Pass` | one `render::begin_ui{ &frame, width = win_w, height = win_h, target }` run: the pass is the drawable, in device pixels | yes |
-| `ImageInstance` | one `render::Quad`: the rectangle flipped back to y down, the same rotation, the tint as floats, the UV region in kotor's convention (textures are stored bottom row first) | yes, apart from rounded corners, which are not drawn |
-| the instance's `clip` index | `Quad.clip`: the table's rectangle, or null for entry 0 | yes for rectangles; a rounded clip cuts square |
-| `Draw.image` n | `render::Texture{ id = n }`: kui makes each `ui::Image` from a `gui::Img`, so the id is the texture's | yes |
-| `Draw.blend` | `render::Blend::alpha` or `additive` | yes |
-| `Pass.host` | the caller adds its `render::add_view` there, with the slot's rectangle as the viewport | yes |
-| `RectInstance` | one quad for the fill and one for each side's border in its colour | square corners: `render` has no rounded primitive |
-| `ShapeInstance` (a line) | one solid quad of the line's length and width, turned | no antialiasing, butt caps |
-| `GlyphInstance` | one quad on the atlas, kept by the adapter as an RGBA texture (white, coverage as alpha) because kotor's one-channel format samples as grey with alpha 1 [read: `render.ctx:87`] | yes |
+- `render::add_staged{ &frame, staged, pass, target }` adds pass `pass` of `*staged`, drawn over what came
+  before into `target` (null: the screen). The frame keeps the pointer, not a copy: the instances are
+  read at submit, so the `Staged` must not change before. `ui_kotor::submit{ &frame, staged, target }`
+  adds every pass; `add_pass` adds one.
+- A step and not a function of its own beside `submit`, because a pass must take its place among the
+  frame's other steps: under or over a view, before or after lib/gui's runs, under the game's pointer.
+  So `render`'s change is the step kind (`StepKind::staged`, `Step.staged`, `add_staged`), and
+  `render/contract.ctx` is unchanged: `gpu::submit` draws the new step. In exchange `render` names
+  `ui_stage::Staged`, so every program that adds `lib/render` adds `ui/core` and `ui/stage`, and one
+  that adds `lib/render_gl` adds `ui/gl/glsl`.
 
-- KOTOR's screens use image instances only: borders, fills, pictures, and its fonts, which are glyph
-  tables on their own textures. Those are the exact rows.
-- The stock widgets inside kotor (the developer overlay) therefore look plainer than on the OpenGL or
-  Vulkan backend: square corners, discs drawn as squares, marks without antialiasing. Whether kotor's
-  renderer should draw the staged instances properly is open decision 2.
-- kotor's `draw_ui` batches the quads its own way (consecutive quads of one texture, blend and clip, by
-  scissor), so the adapter passes instances in staged order.
+**Units.** The staged instances are device pixels, so a pass is drawn on the target's pixels, one unit a
+pixel, its canvas anchored at the target's top left: on the screen that is the screen target
+(`gpu::screen_size`), not kotor's GUI pixel space (`ui_w` by `ui_h`, the window over the quarter-step
+scale), which lib/gui's own passes stretch. The `FrameInfo` kotor passes is that size and the GUI's
+quarter-step scale (`ui_kotor::make_frame_info`); kui's pixels come from its own snap of design
+coordinates (section 3.2), which is the same arithmetic lib/gui does with `Grid` [read: `draw.ctx:44`],
+so a border piece lands on the same device pixels either way.
+
+| `ui_stage` | kotor's renderer |
+|---|---|
+| `Pass` | one `render::add_staged` step |
+| the four instance arrays, the clip table, the canvas block | uploaded once per revision of a `Staged`, as `ui_gl` does: four programs, each with the unit quad and an instance buffer laid out by `@offset_of`; `ClipRects` and `Canvas` bound to points 2 and 3, because the scene's `Frame` block has 0; GL 4.1 has no base instance, so a draw points the attributes at its first instance |
+| `Draw.image` n | the texture whose id is n: `ui_kotor::to_image` makes a `ui::Image` of a `render::Texture` (kui of a `gui::Img`); an id the device does not have skips the draw and is counted |
+| `ImageInstance` | as it is, but its V flipped as it is uploaded, because kotor's textures are stored bottom row first: above the seam a region's uv (0, 0) is the picture's top left, in kotor as everywhere |
+| the glyph atlas | an R8 texture updated by its dirty rectangle, as `ui_gl`'s (bottom row first in both) |
+| `Draw.blend` | the library's blending (separate alpha factors; additive adds the colour), not kotor's `render::Blend` states |
+| `Pass.host` | `ui_kotor::get_slot` gives the slot and its rectangle as a `View`'s viewport: the screen adds its `render::add_view` there, then the next pass |
+| a KOTOR font | `ui_kotor::from_font`: a glyph table on the font's texture with `Encoding::bytes`, a glyph's advance its width; staged as image instances, tinted |
+
+- The step leaves GL as the rest of `lib/render_gl` expects it: program, vertex array, texture unit 0,
+  depth, cull, offset and stencil go through the backend's cached setters, and its blend state is marked
+  unknown after the pass.
+- lib/gui's quads keep their own path (`draw_ui`); a frame holds both, in any order, which is how
+  screens move one at a time (section 8.2).
+- The stats count a staged draw as a UI draw and its instances as quads (`gpu::get_stats`).
 
 The frame composition a screen with a 3D view uses today (`draw_panels_under_views`, the views,
-`draw_overlay`) becomes a loop over passes. UI into a render target (minimap, map) is a second
-`ui::DrawList` built with `ui::draw::*`, staged, and submitted with a target.
+`draw_overlay`) becomes a loop over passes: `add_pass`, and after a pass that ends at a host slot the
+view in `get_slot`'s viewport. UI into a render target (minimap, map) is a second `ui::DrawList` built
+with `ui::draw::*`, staged as a canvas the target's size, and added with that target.
 
 **The atlas path for KOTOR's art.** kui holds every piece of border and picture art as a `ui::Region`.
 Today a region is a whole texture, so a panel is a draw per texture, which is what kotor does now.
@@ -2226,10 +2282,15 @@ Excluded from this plan: it is an optimisation of kotor's material loading, and 
 once screens run on kui (stage 15 logs the draw counts it would improve).
 
 Input: `ui_kotor::to_event` converts kotor's `sdl::Event` to the core's with the pointer in device
-pixels (kotor's window coordinates times the drawable's pixels a window coordinate; `gui::handle_event`
-divides by the scale into GUI pixels instead, which the framework no longer wants), and
-`ui::push_event`'s answer is what the game loop already expects from `gui::handle_event`. kotor keeps
-its own SDL binding and does not add `ui/sdl`.
+pixels (an event's coordinates times `pointer_scale`: 1 for the game's events, which `display::map_event`
+has already put in render pixels; `gui::handle_event` divides by the scale into GUI pixels instead,
+which the framework does not want), SDL's buttons as the core's (left 0, right 1, middle 2) and typed
+UTF-8 as cp1252 bytes, the encoding of kotor's fonts. `ui_kotor::push_event` moves the pointer to a
+button's position before the button, and answers with `ui::push_event`'s answer, which is what the game
+loop already expects from `gui::handle_event`. `ui_kotor::apply_requests` turns OS text input on and
+off; kotor draws its own pointer, and its SDL binding has no clipboard, so the cursor, copy and paste
+requests are not applied (no screen built on it has a field that copies or pastes). kotor keeps its own
+SDL binding and does not add `ui/sdl`.
 
 ### 8.2 Two ways to move a screen, both on kui
 
@@ -2269,21 +2330,19 @@ where they are.
 
 ## 9. Open decisions for the owner
 
-Both are about how far the adapter stage reaches into kotor.
+None is open. Already decided, and so not on this list: the seam level, GPU-only backends, the
+rectangle's per-corner and per-side fields, ZGF's shaders, no built-in font, FreeType and HarfBuzz, the
+location and the SDL library, OpenGL only (Vulkan, like Metal, specified and not staged: section 1.2),
+verb names, the unit (whole device pixels, section 2.0), and the two decisions about how far the adapter
+stage reaches into kotor:
 
-1. **The game.** Recommendation: add the new developer overlay behind the same option and leave `fxhud`
-   in place, in a commit separate from the adapter. Alternative: tool only (`uispike`), nothing under
-   `kotor/game`. What changes: two call sites in `play.ctx` and one file.
-2. **kotor's renderer.** Recommendation: leave it alone for this plan, so stock widgets inside kotor
-   draw in the reduced form of section 8.1 while KOTOR's own art is exact. Alternative: make kotor's
-   OpenGL backend draw a `Staged` itself (the four programs and the draw loop of `ui/gl`, written
-   against kotor's `gl` binding, about 400 lines, plus one entry in `render`'s contract), so everything
-   looks as it does on the other backends. What changes: `render.ctx`, `contract.ctx`, `gpu.ctx`,
-   `shaders.ctx`, and the adapter shrinks to a call.
-
-Already decided, and so not on this list: the seam level, GPU-only backends, the rectangle's per-corner
-and per-side fields, ZGF's shaders, no built-in font, FreeType and HarfBuzz, the location and the SDL
-library, Vulkan, verb names, and the unit (whole device pixels, section 2.0).
+- **The game.** The developer overlay goes into the game beside `fxhud`, behind the same option, with
+  `fxhud` left in place and untouched, in a commit separate from the adapter. (The alternative was the
+  spike tool only.)
+- **kotor's renderer.** kotor's OpenGL backend draws a `Staged` itself with the library's four shader
+  pairs and draw loop, so stock widgets look in KOTOR as they do on the library's backend (section 8.1).
+  (The alternative was to leave the renderer alone and lower the instances to square `render::Quad`s:
+  no rounded corners, lines without antialiasing.)
 
 ---
 
@@ -2303,11 +2362,11 @@ library, Vulkan, verb names, and the unit (whole device pixels, section 2.0).
 | The clip table fills (256) | A deep UI with many distinct clips loses shapes. | Equal clips share an entry; overflow drops and counts, never draws unclipped; asserted zero in tests. |
 | The atlas fills | A program with many fonts, sizes or scripts exhausts it. | ZGF's atlas: growth to a limit, reuse of freed space; at the limit the frame's misses are counted and the cache refills next frame. |
 | FreeType's struct layouts | The binding mirrors three C structs whose offsets depend on the platform's `long`. A wrong offset reads garbage. | Offsets chosen by `target::OS`; a start-up check of mirrored fields on every face; the probe's offsets came from a C program against the installed headers. |
-| Vulkan without validation | A backend that works on one driver and breaks on another. | Stage 14 requires the validation layer and a clean run with it on; it is not installed today. |
-| Vulkan's size | It is the largest single backend (binding, swapchain, pipelines). | Its own stage with the strongest model, after OpenGL has fixed what a backend does; nothing else depends on it. |
+| Vulkan without validation | A backend that works on one driver and breaks on another. | Stage 14 is excluded (section 1.2); its specification requires the validation layer and a clean run with it on before it starts, and the layer is not installed today. |
+| Vulkan's size | It is the largest single backend (binding, swapchain, pipelines). | Not built (section 1.2). When it is taken up: its own stage with the strongest model, now that OpenGL has fixed what a backend does; nothing else depends on it. |
 | Pixel parity with `lib/gui` | The proof screen must match the original's borders, wrap and snapping. | The core does not snap at all: kui applies kotor's own formula to its design coordinates and the core takes the resulting pixels as given (`ui::place_pixels`, the `paint_*` calls), so borders and pictures are the same integers; kui keeps kotor's wrap; text is not required to match: it is drawn at a whole pixel size with every glyph on whole pixels, where `lib/gui` draws fractional sizes between pixels (the owner's decision, section 2.7); `uiview` counts differing pixels and sweeps every `.gui`. |
 | A value in the wrong unit | A logical length passed where pixels are taken, or the reverse, draws at the wrong size at any scale but 1, where the two are the same numbers and tests pass. | Most such mistakes do not compile: declarations are `f32` and pixels, text sizes included, are `i32`, and the language converts neither way. The ones that do (a radius, a line, `f32` in both worlds) are caught by recording goldens and screenshots at scale 1.5 as well as 1, which every widget stage must. |
-| Stock widgets look plainer inside kotor | `render` has no rounded or antialiased primitive. | Stated in section 8.1, with the alternative priced (decision 2). KOTOR's own art is unaffected. |
+| kotor's renderer keeps a port of `ui_gl`'s draw loop | `kotor/lib/render_gl/canvas.ctx` can drift from `ui/gl/device.ctx`, and a UI then looks different in KOTOR. | The shaders' text is one (`ui/gl/glsl`); `uispike --against` counts the gallery's pixels that differ from demo_gl's picture (0 at stage 15), to rerun when either backend changes. |
 | Two SDL bindings in the repository | kotor's and `ui/sdl`'s can diverge. | They serve different programs and may even share one [compiled, a9]; `ui/sdl` is small and only what a UI host needs. |
 | `..` forwarding binds any same-named local | `ui::add_label{ .. }` picks up a stray local called `text`. | Library code never uses it; the guide says to keep widget field names out of local names in functions that use it. |
 | Frame-arena slices outlive the frame | `take_text` results kept across frames point at reused bytes; the escape check cannot see it. | Documented at the function; nothing in the library keeps one. |
