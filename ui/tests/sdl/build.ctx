@@ -1,12 +1,13 @@
 // The SDL host's conversions: SDL's events, buttons, keys and modifiers as the core's, from raw
 // SDL_Event bytes up to a Ui (ui/sdl/host.ctx). It opens no window and does not start SDL: the
-// conversions call nothing of SDL's, so ui/tools/check runs it. How to run it: ui/AGENTS.md.
+// conversions call nothing of SDL's. How to run them: ui/AGENTS.md.
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "ui_test_sdl", root = "." }
     build::add_sources{ &b, exe, dir = "../../core" }
     build::add_sources{ &b, exe, dir = "../../widgets" }
     build::add_sources{ &b, exe, dir = "../../record" }
     build::add_sources{ &b, exe, dir = "../../test" }
+    build::add_sources{ &b, exe, dir = "../support" }
     build::add_sources{ &b, exe, dir = "../../sdl" }
     match build::os{ &b } {
         macos => {

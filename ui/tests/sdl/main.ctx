@@ -14,23 +14,14 @@
 //    context menu, and Alt pressed and released alone (as SDL sends it: the Alt key, which the
 //    host has no name for, with its modifier) is the core's Key::alt.
 //
-// It neither starts SDL nor opens a window: none of these calls SDL. Exits 1 when a check fails.
+// It neither starts SDL nor opens a window: none of these calls SDL.
 //
-//   kotor/tools/ctxc run ui/tests/sdl
+//   kotor/tools/ctxc test ui/tests/sdl
 
-fn main { mut io: Io, mut mem: Mem, mut sdl: ui_sdl::Sdl } -> i32 {
-    let mut t = ui_test::Tally{ run = 0, failed = 0 }
-    let buf = mem::pages{ &mem, size = 67108864 } ifnull { return 1 }
-    let mut heap = arena::new{ buf }
-    ui_test::expect{ &io, &t, ok = ui_sdl::check_layout{}, what = "the binding's structs have SDL_Event's sizes" }
-    check_raw{ &io, &t, &sdl }
-    check_buttons{ &io, &t }
-    check_keys{ &io, &t }
-    check_pointer{ &io, &t }
-    check_ui{ &io, &t, &heap }
-    _ = @fmt(&io, "ui/tests/sdl: {} checks, {} failed\n", t.run, t.failed)
-    io::flush{ &io }
-    return if t.failed == 0 { 0 } else { 1 }
+#test
+fn matches_the_sizes_of_sdl_events { mut t: Test } {
+    // the binding's structs have SDL_Event's sizes
+    @expect(&t, ui_sdl::check_layout{})
 }
 
 // ---- raw SDL_Event bytes
@@ -72,7 +63,8 @@ fn make_window_raw { event: u8, data1: u32, data2: u32 } -> ui_sdl::RawEvent {
     return raw
 }
 
-fn check_raw { mut io: Io, mut t: ui_test::Tally, mut sdl: ui_sdl::Sdl } {
+#test
+fn decodes_raw_sdl_events { mut t: Test, mut io: Io, mut sdl: ui_sdl::Sdl } -> ! {
     // A key going down, repeating, with left Shift and right Ctrl held (KMOD_LSHIFT 0x1, KMOD_RCTRL 0x80).
     let k = ui_sdl::decode{ &sdl, raw = make_key_raw{ down = true, repeat = true, sym = 'n', mods = 0x81 } }
     let mut key_ok = false
@@ -80,7 +72,8 @@ fn check_raw { mut io: Io, mut t: ui_test::Tally, mut sdl: ui_sdl::Sdl } {
     let up = ui_sdl::decode{ &sdl, raw = make_key_raw{ down = false, repeat = false, sym = 0x4000003B, mods = 0 } }
     let mut up_ok = false
     if up is key{ down, repeat, keycode, mods } { up_ok = not down and not repeat and keycode == 0x4000003B and mods == 0 }
-    ui_test::expect{ &io, &t, ok = key_ok and up_ok, what = "raw: a key down and up, its repeat, symbol and modifiers from their offsets" }
+    // raw: a key down and up, its repeat, symbol and modifiers from their offsets
+    @expect(&t, key_ok and up_ok)
 
     // SDL_TextInputEvent: text at 12, NUL-terminated.
     let mut text_raw = make_raw{ kind = ui_sdl::TEXTINPUT }
@@ -89,7 +82,8 @@ fn check_raw { mut io: Io, mut t: ui_test::Tally, mut sdl: ui_sdl::Sdl } {
     let tx = ui_sdl::decode{ &sdl, raw = text_raw }
     let mut text_ok = false
     if tx is text{ bytes, len } { text_ok = len == 3 and slice::eq_bytes{ a = bytes[..3], b = word } }
-    ui_test::expect{ &io, &t, ok = text_ok, what = "raw: typed text, its bytes up to the NUL" }
+    // raw: typed text, its bytes up to the NUL
+    @expect(&t, text_ok)
 
     // SDL_MouseMotionEvent: x at 20, y at 24.
     let mut motion_raw = make_raw{ kind = ui_sdl::MOUSEMOTION }
@@ -98,7 +92,8 @@ fn check_raw { mut io: Io, mut t: ui_test::Tally, mut sdl: ui_sdl::Sdl } {
     let mo = ui_sdl::decode{ &sdl, raw = motion_raw }
     let mut motion_ok = false
     if mo is motion{ x, y } { motion_ok = x == 123 and y == 45 }
-    ui_test::expect{ &io, &t, ok = motion_ok, what = "raw: a motion's x and y" }
+    // raw: a motion's x and y
+    @expect(&t, motion_ok)
 
     // SDL_MouseButtonEvent: button at 16, state at 17, clicks at 18, x at 20, y at 24.
     let mut button_raw = make_raw{ kind = ui_sdl::MOUSEBUTTONDOWN }
@@ -116,7 +111,8 @@ fn check_raw { mut io: Io, mut t: ui_test::Tally, mut sdl: ui_sdl::Sdl } {
     let re = ui_sdl::decode{ &sdl, raw = release_raw }
     let mut release_ok = false
     if re is button{ down, button, clicks } { release_ok = not down and button == 1 and clicks == 1 }
-    ui_test::expect{ &io, &t, ok = button_ok and release_ok, what = "raw: a button down (SDL's right, 3, a double click) and up (left, 1)" }
+    // raw: a button down (SDL's right, 3, a double click) and up (left, 1)
+    @expect(&t, button_ok and release_ok)
 
     // SDL_MouseWheelEvent: direction at 24, preciseX at 28, preciseY at 32 (floats: 1.0 is
     // 0x3F800000, -2.5 is 0xC0200000). Flipped (direction 1), both signs turn over.
@@ -130,7 +126,8 @@ fn check_raw { mut io: Io, mut t: ui_test::Tally, mut sdl: ui_sdl::Sdl } {
     if wh is wheel{ dx, dy } { wheel_ok = dx == 1.0 and dy == -2.5 }
     let mut flipped_ok = false
     if flipped is wheel{ dx, dy } { flipped_ok = dx == -1.0 and dy == 2.5 }
-    ui_test::expect{ &io, &t, ok = wheel_ok and flipped_ok, what = "raw: the wheel's precise x and y, turned over when SDL says the OS flipped it" }
+    // raw: the wheel's precise x and y, turned over when SDL says the OS flipped it
+    @expect(&t, wheel_ok and flipped_ok)
 
     // Window events, by SDL_WindowEventID.
     let size = ui_sdl::decode{ &sdl, raw = make_window_raw{ event = ui_sdl::WINDOWEVENT_SIZE_CHANGED, data1 = 800, data2 = 600 } }
@@ -149,8 +146,8 @@ fn check_raw { mut io: Io, mut t: ui_test::Tally, mut sdl: ui_sdl::Sdl } {
     let exposed = ui_sdl::decode{ &sdl, raw = make_window_raw{ event = ui_sdl::WINDOWEVENT_EXPOSED, data1 = 0, data2 = 0 } }
     let quit = ui_sdl::decode{ &sdl, raw = make_raw{ kind = ui_sdl::QUIT } }
     let other = ui_sdl::decode{ &sdl, raw = make_raw{ kind = 0x700 } }
-    ui_test::expect{ &io, &t, ok = size_ok and focus_ok and gained_ok and leave is leave and close is close and exposed is exposed and quit is quit and other is other,
-        what = "raw: a size change, focus gained and lost, leave, close, exposed, quit, and anything else as other" }
+    // raw: a size change, focus gained and lost, leave, close, exposed, quit, and anything else as other
+    @expect(&t, size_ok and focus_ok and gained_ok and leave is leave and close is close and exposed is exposed and quit is quit and other is other)
 }
 
 // ---- buttons
@@ -162,19 +159,25 @@ fn to_core_button { sdl_button: u8 } -> i32 {
     return -3
 }
 
-fn check_buttons { mut io: Io, mut t: ui_test::Tally } {
+#test
+fn converts_each_pointer_button { mut t: Test, mut io: Io } -> ! {
     // SDL: left 1, middle 2, right 3, back (X1) 4, forward (X2) 5. The core: left 0, right 1,
     // middle 2, back 3, forward 4.
-    ui_test::expect{ &io, &t, ok = to_core_button{ sdl_button = 1 } == 0, what = "buttons: SDL's left (1) is the core's 0" }
-    ui_test::expect{ &io, &t, ok = to_core_button{ sdl_button = 3 } == 1, what = "buttons: SDL's right (3) is the core's 1" }
-    ui_test::expect{ &io, &t, ok = to_core_button{ sdl_button = 2 } == 2, what = "buttons: SDL's middle (2) is the core's 2" }
-    ui_test::expect{ &io, &t, ok = to_core_button{ sdl_button = 4 } == 3 and to_core_button{ sdl_button = 5 } == 4, what = "buttons: SDL's back and forward (4, 5) are the core's 3 and 4" }
+    // buttons: SDL's left (1) is the core's 0
+    @expect(&t, to_core_button{ sdl_button = 1 } == 0)
+    // buttons: SDL's right (3) is the core's 1
+    @expect(&t, to_core_button{ sdl_button = 3 } == 1)
+    // buttons: SDL's middle (2) is the core's 2
+    @expect(&t, to_core_button{ sdl_button = 2 } == 2)
+    // buttons: SDL's back and forward (4, 5) are the core's 3 and 4
+    @expect(&t, to_core_button{ sdl_button = 4 } == 3 and to_core_button{ sdl_button = 5 } == 4)
     let up = ui_sdl::to_event{ event = ui_sdl::Event::button{ down = false, button = 3, clicks = 2, x = 0, y = 0 }, pointer_scale = 1.0 }
     let mut up_ok = false
     if let e = up {
         if e is pointer_button{ button, down, clicks } { up_ok = button == 1 and not down and clicks == 2 }
     }
-    ui_test::expect{ &io, &t, ok = up_ok, what = "buttons: a release keeps its button and its click count" }
+    // buttons: a release keeps its button and its click count
+    @expect(&t, up_ok)
 }
 
 // ---- keys
@@ -214,7 +217,8 @@ fn is_key_event { e: ?ui::Event, key: ui::Key, mods: u8, down: bool } -> bool {
     return false
 }
 
-fn check_keys { mut io: Io, mut t: ui_test::Tally } {
+#test
+fn converts_keys_and_modifiers { mut t: Test, mut io: Io } -> ! {
     let mut wrong: u32 = 0
     for code at i in CODES {
         if not is_key_event{ e = to_core_key{ code, mods = 0, down = true }, key = NAMED[i], mods = 0, down = true } {
@@ -222,7 +226,8 @@ fn check_keys { mut io: Io, mut t: ui_test::Tally } {
             _ = @fmt(&io, "  key code {} is not {}\n", code, ui::get_key_name{ key = NAMED[i] })
         }
     }
-    ui_test::expect{ &io, &t, ok = wrong == 0, what = "keys: each of the 76 keys a host sends comes from its SDL key code" }
+    // keys: each of the 76 keys a host sends comes from its SDL key code
+    @expect(&t, wrong == 0)
     // The table holds every key the script reader names but alt: the keys ui::Key has.
     let mut missing: u32 = 0
     for k in ui_test::KEYS {
@@ -233,18 +238,21 @@ fn check_keys { mut io: Io, mut t: ui_test::Tally } {
         }
         if not found { missing = missing + 1 }
     }
-    ui_test::expect{ &io, &t, ok = missing == 0 and ui_test::KEYS.len == NAMED.len + 1, what = "keys: the table above is every key of ui::Key but none and alt" }
+    // keys: the table above is every key of ui::Key but none and alt
+    @expect(&t, missing == 0 and ui_test::KEYS.len == NAMED.len + 1)
     let kp = is_key_event{ e = to_core_key{ code = 0x40000058, mods = 0, down = true }, key = ui::Key::enter, mods = 0, down = true }
         and is_key_event{ e = to_core_key{ code = 0x40000056, mods = 0, down = true }, key = ui::Key::minus, mods = 0, down = true }
         and is_key_event{ e = to_core_key{ code = 0x40000057, mods = 0, down = true }, key = ui::Key::plus, mods = 0, down = true }
-    ui_test::expect{ &io, &t, ok = kp, what = "keys: the keypad's Enter, - and + are Enter, minus and plus" }
+    // keys: the keypad's Enter, - and + are Enter, minus and plus
+    @expect(&t, kp)
     // Keys it has no name for (left Alt, left Shift, Caps Lock, a non-ASCII letter) are none, with
     // the modifiers.
     let none = is_key_event{ e = to_core_key{ code = 0x400000E2, mods = 0x100, down = true }, key = ui::Key::none, mods = ui::MOD_ALT, down = true }
         and is_key_event{ e = to_core_key{ code = 0x400000E1, mods = 0x1, down = true }, key = ui::Key::none, mods = ui::MOD_SHIFT, down = true }
         and is_key_event{ e = to_core_key{ code = 0x40000039, mods = 0x2000, down = true }, key = ui::Key::none, mods = 0, down = true }
         and is_key_event{ e = to_core_key{ code = 0xE9, mods = 0, down = false }, key = ui::Key::none, mods = 0, down = false }
-    ui_test::expect{ &io, &t, ok = none, what = "keys: a key the core has no name for is none, carrying the modifiers (Caps Lock is none of them)" }
+    // keys: a key the core has no name for is none, carrying the modifiers (Caps Lock is none of them)
+    @expect(&t, none)
     // Each modifier bit, left and right: KMOD_LSHIFT 0x1, RSHIFT 0x2, LCTRL 0x40, RCTRL 0x80,
     // LALT 0x100, RALT 0x200; Num Lock (0x1000) and Caps Lock (0x2000) are none.
     let mods = is_key_event{ e = to_core_key{ code = 'n', mods = 0x1, down = true }, key = ui::Key::n, mods = ui::MOD_SHIFT, down = true }
@@ -255,7 +263,8 @@ fn check_keys { mut io: Io, mut t: ui_test::Tally } {
         and is_key_event{ e = to_core_key{ code = 'n', mods = 0x200, down = true }, key = ui::Key::n, mods = ui::MOD_ALT, down = true }
         and is_key_event{ e = to_core_key{ code = 'n', mods = 0x3000, down = true }, key = ui::Key::n, mods = 0, down = true }
         and is_key_event{ e = to_core_key{ code = 'n', mods = 0x2C1, down = false }, key = ui::Key::n, mods = ui::MOD_SHIFT | ui::MOD_CTRL | ui::MOD_ALT, down = false }
-    ui_test::expect{ &io, &t, ok = mods, what = "keys: each modifier, left and right, and all three at once; Num and Caps Lock are not modifiers" }
+    // keys: each modifier, left and right, and all three at once; Num and Caps Lock are not modifiers
+    @expect(&t, mods)
 }
 
 // ---- the pointer, the wheel, text and paste
@@ -266,25 +275,28 @@ fn is_move { e: ?ui::Event, x: i32, y: i32 } -> bool {
     return false
 }
 
-fn check_pointer { mut io: Io, mut t: ui_test::Tally } {
+#test
+fn converts_the_pointer_wheel_and_text { mut t: Test, mut io: Io } -> ! {
     let at = ui_sdl::Event::motion{ x = 10, y = 21 }
     // Window coordinates times the pixels a coordinate, rounded down: 10 and 21 at 1.25 are 12.5
     // and 26.25, pixels 12 and 26; at 2, 20 and 42.
-    ui_test::expect{ &io, &t, ok = is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 1.0 }, x = 10, y = 21 }
+    // pointer: a window coordinate at 1, 1.25 and 2 pixels a coordinate lands on the device pixel it starts in
+    @expect(&t, is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 1.0 }, x = 10, y = 21 }
         and is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 1.25 }, x = 12, y = 26 }
-        and is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 2.0 }, x = 20, y = 42 },
-        what = "pointer: a window coordinate at 1, 1.25 and 2 pixels a coordinate lands on the device pixel it starts in" }
-    ui_test::expect{ &io, &t, ok = is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 0.0 }, x = 10, y = 21 },
-        what = "pointer: a scale that is no number of pixels is 1" }
+        and is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 2.0 }, x = 20, y = 42 })
+    // pointer: a scale that is no number of pixels is 1
+    @expect(&t, is_move{ e = ui_sdl::to_event{ event = at, pointer_scale = 0.0 }, x = 10, y = 21 })
     let up = ui_sdl::to_event{ event = ui_sdl::Event::wheel{ dx = 0.0, dy = 1.5 }, pointer_scale = 2.0 } ifnull ui::Event::pointer_leave
     let side = ui_sdl::to_event{ event = ui_sdl::Event::wheel{ dx = -1.0, dy = 0.0 }, pointer_scale = 1.0 } ifnull ui::Event::pointer_leave
     let mut wheel_ok = false
     if up is wheel{ dx, dy } {
         if side is wheel{ dx = sx, dy = sy } { wheel_ok = dx == 0.0 and dy == 1.5 and sx == -1.0 and sy == 0.0 }
     }
-    ui_test::expect{ &io, &t, ok = wheel_ok, what = "pointer: the wheel keeps its sign and its axis, and is not scaled" }
+    // pointer: the wheel keeps its sign and its axis, and is not scaled
+    @expect(&t, wheel_ok)
     let leave = ui_sdl::to_event{ event = ui_sdl::Event::leave, pointer_scale = 1.0 } ifnull ui::Event::focus{ gained = true }
-    ui_test::expect{ &io, &t, ok = leave is pointer_leave, what = "pointer: leaving the window" }
+    // pointer: leaving the window
+    @expect(&t, leave is pointer_leave)
 
     let mut bytes: [32]u8
     let word = "caf\xC3\xA9"
@@ -300,8 +312,8 @@ fn check_pointer { mut io: Io, mut t: ui_test::Tally } {
     let fo = ui_sdl::to_event{ event = ui_sdl::Event::focus{ gained = false }, pointer_scale = 1.0 } ifnull ui::Event::pointer_leave
     let mut focus_ok = false
     if fo is focus{ gained } { focus_ok = not gained }
-    ui_test::expect{ &io, &t, ok = text_ok and paste_ok and focus_ok and quit == null and resized == null,
-        what = "text, a paste and focus go to the core as they are; quit and a resize are the host's" }
+    // text, a paste and focus go to the core as they are; quit and a resize are the host's
+    @expect(&t, text_ok and paste_ok and focus_ok and quit == null and resized == null)
 }
 
 // ---- a Ui fed through the host's conversion
@@ -343,22 +355,28 @@ fn click_sdl { mut d: ui_test::Driver, mut ui: ui::Ui, mut s: Stage, path: []u8,
     return true
 }
 
-fn check_ui { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
-    let mut gui = ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ elements = 1024, text = 16384, cmds = 1024, clips = 16, hits = 256, states = 64, nodes = 128, fonts = 2, scopes = 32, layers = 8, lines = 64, measures = 32, shaped = 32 } } iferr { return }
+#test
+fn works_a_ui_through_sdl_events { mut t: Test, mut io: Io, mut mem: Mem } -> ! {
+    let mut heap = ui_check::make_heap{ &mem }
+    let mut gui = try ui::make{ realloc = arena::alloc, &heap, cap = ui::Capacity{ elements = 1024, text = 16384, cmds = 1024, clips = 16, hits = 256, states = 64, nodes = 128, fonts = 2, scopes = 32, layers = 8, lines = 64, measures = 32, shaped = 32 } }
     gui.theme = ui::make_dark_theme{}
-    let def = ui_test::make_test_font{ realloc = arena::alloc, &heap } iferr { return }
+    let def = try ui_test::make_test_font{ realloc = arena::alloc, &heap }
     if let font = ui::add_font{ ui = &gui, font = def } { gui.theme.font = font }
-    let mut d = ui_test::make_driver{ realloc = arena::alloc, &heap, width = 320, height = 240, scale = 1.0, dt = 0.125, clipboard = 64 } iferr { return }
+    let mut d = try ui_test::make_driver{ realloc = arena::alloc, &heap, width = 320, height = 240, scale = 1.0, dt = 0.125, clipboard = 64 }
     let mut s = Stage{ clicks = 0, copies = 0, menu = false }
     ui_test::step_frame{ &d, ui = &gui, show = show_stage{ &s, _ } }
     let left = click_sdl{ &d, ui = &gui, &s, path = "Press", button = 1 }
-    ui_test::expect{ &io, &t, ok = left and s.clicks == 1 and not s.menu, what = "ui: SDL's left button clicks a button" }
+    // ui: SDL's left button clicks a button
+    @expect(&t, left and s.clicks == 1 and not s.menu)
     let right_on_button = click_sdl{ &d, ui = &gui, &s, path = "Press", button = 3 }
-    ui_test::expect{ &io, &t, ok = right_on_button and s.clicks == 1, what = "ui: SDL's right button does not click it" }
+    // ui: SDL's right button does not click it
+    @expect(&t, right_on_button and s.clicks == 1)
     let right = click_sdl{ &d, ui = &gui, &s, path = "target", button = 3 }
-    ui_test::expect{ &io, &t, ok = right and s.menu and ui::find_node{ ui = gui, path = "target menu/Copy" } != null, what = "ui: SDL's right button opens the target's context menu" }
+    // ui: SDL's right button opens the target's context menu
+    @expect(&t, right and s.menu and ui::find_node{ ui = gui, path = "target menu/Copy" } != null)
     let copy = click_sdl{ &d, ui = &gui, &s, path = "target menu/Copy", button = 1 }
-    ui_test::expect{ &io, &t, ok = copy and s.copies == 1, what = "ui: and its left button picks the menu's item" }
+    // ui: and its left button picks the menu's item
+    @expect(&t, copy and s.copies == 1)
     // The Alt key as SDL sends it: left Alt (a key code the host has no name for) going down with
     // KMOD_LALT, coming up with no modifier.
     send{ ui = &gui, event = ui_sdl::Event::key{ down = true, repeat = false, keycode = 0x400000E2, mods = 0x100 } }
@@ -367,6 +385,8 @@ fn check_ui { mut io: Io, mut t: ui_test::Tally, mut heap: arena::Arena } {
     let ks = ui::get_keys{ ui = gui }
     let alt = ks.len == 1 and ks[0].key == ui::Key::alt
     ui::end_frame{ ui = &gui }
-    ui_test::expect{ &io, &t, ok = alt, what = "ui: the Alt key pressed and released alone, as SDL sends it, is Key::alt" }
-    ui_test::expect{ &io, &t, ok = d.unclean == 0, what = "ui: every frame is clean" }
+    // ui: the Alt key pressed and released alone, as SDL sends it, is Key::alt
+    @expect(&t, alt)
+    // ui: every frame is clean
+    @expect(&t, d.unclean == 0)
 }
