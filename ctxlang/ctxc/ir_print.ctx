@@ -110,6 +110,25 @@ namespace ir_print {
             text{ &o, a = ")\n" }
             i = i + 1
         }
+        i = 0
+        while i < p.links.len {
+            let x = p.links[i]
+            text{ &o, a = "(link " }
+            quote{ &o, b = x.lib }
+            char{ &o, c = ' ' }
+            flag{ &o, b = x.archive }
+            char{ &o, c = ' ' }
+            flag{ &o, b = x.framework }
+            text{ &o, a = " [" }
+            let mut k: usize = 0
+            while k < x.dirs.len {
+                if k > 0 { char{ &o, c = ' ' } }
+                quote{ &o, b = x.dirs[k] }
+                k = k + 1
+            }
+            text{ &o, a = "])\n" }
+            i = i + 1
+        }
         if p.stack_limit != lower::NONE {
             text{ &o, a = "(stack_limit " }
             num{ &o, n = p.stack_limit }

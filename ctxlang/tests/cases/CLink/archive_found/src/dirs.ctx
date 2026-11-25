@@ -1,0 +1,10 @@
+namespace three {
+    #c_link{ lib = "ctxthree", archive = true, dirs = ["../nowhere", "../vendor"] }
+    capability Lib
+
+    extern fn ctx_three { mut lib: Lib } -> i32
+}
+
+fn main { mut io: Io, mut lib: three::Lib } {
+    io::println_i64{ &io, n = three::ctx_three{ &lib } }
+}

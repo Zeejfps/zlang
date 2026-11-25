@@ -1,0 +1,34 @@
+// What `#c_link`'s fields may hold (spec §18, Extern functions, rule 11): `lib` is a library's
+// name, or `:` and its file's; a library is an archive or a framework, not both; a framework has
+// no `:`; and `dirs`, where an archive is looked for, go with `archive = true`.
+
+#c_link{ lib = "" }  //~ error at 1: `lib` is a library's name as `-l` takes it, or `:` and its file's: not empty, and without `-` first, a space, a control character, `/` or `\`
+capability A
+
+#c_link{ lib = ":" }  //~ error at 1: `lib` is a library's name as `-l` takes it, or `:` and its file's: not empty, and without `-` first, a space, a control character, `/` or `\`
+capability B
+
+#c_link{ lib = "-lssl" }  //~ error at 1: `lib` is a library's name as `-l` takes it, or `:` and its file's: not empty, and without `-` first, a space, a control character, `/` or `\`
+capability C
+
+#c_link{ lib = "a b" }  //~ error at 1: `lib` is a library's name as `-l` takes it, or `:` and its file's: not empty, and without `-` first, a space, a control character, `/` or `\`
+capability D
+
+#c_link{ lib = "lib/a" }  //~ error at 1: `lib` is a library's name as `-l` takes it, or `:` and its file's: not empty, and without `-` first, a space, a control character, `/` or `\`
+capability E
+
+#c_link{ lib = "a", archive = true, framework = true }  //~ error at 1: a library is an archive or a framework, not both
+capability F
+
+#c_link{ lib = ":a.so", framework = true }  //~ error at 1: a framework is named without `:`, which names a library's file
+capability G
+
+#c_link{ lib = "a", dirs = ["/opt/lib"] }  //~ error at 21: `dirs` are where an archive is looked for: they go with `archive = true`
+capability H
+
+// Each of several is checked, and a good one beside a bad one stands.
+#c_link{ lib = "good" }
+#c_link{ lib = "" }  //~ error at 1: `lib` is a library's name as `-l` takes it, or `:` and its file's: not empty, and without `-` first, a space, a control character, `/` or `\`
+capability I
+
+fn main {} {}

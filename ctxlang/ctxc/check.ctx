@@ -87,6 +87,7 @@ namespace check {
         task_handle: bool = false,      // a struct with `#loan_holder`: std's task::Task(R) and Group
         tasky:    bool = false,         // a fn whose body starts tasks or passes handles (task_borrows)
         includes: []u32,                // what a capability includes, directly or not (§15)
+        links:    []Link = [],          // a capability's `#c_link`s, in the order they are written
         vars:     []mut CVar,           // a capability's C variables, its own and included ones
         defaults: []u32,                // a struct's: by field, the const holding its default, or NONE; empty if none has one
         // Modules (spec §10, Modules). module is the innermost module of its file, or NONE.
@@ -119,6 +120,11 @@ namespace check {
     // no symbol of C's: a place, through the capability (§15, rule 13).
     struct CVar { name: []u8, ty: Id, owner: u32, symbol: []u8, stat: bool }
 
+    // A C library that a capability's extern fns need (§18, Extern functions, rule 11):
+    // `#c_link{ lib, archive, framework, dirs }`, as written. A program that calls one of them
+    // links it (lower.ctx, reach_links).
+    struct Link { lib: []u8, archive: bool, framework: bool, dirs: [][]u8 }
+
     // What a name in a path refers to.
     union Entry {
         space{ ns: u32 },
@@ -133,8 +139,9 @@ namespace check {
     // The attributes the compiler declares, in the universe: `#convert` (§18, Literal
     // conversions), `#write` (§13, Formatting), `#start` and `#panic` (§15, Entry point),
     // `#stack_limit` and `#thread_local` on a static (§15, rule 13), `#pure` on an extern fn (§18, Extern functions, rule 8), and tasks' (§15, Tasks):
-    // `#thread_bound` on a capability, and std's `#loan_holder` and `#scope_end`.
-    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, pure, thread_bound, loan_holder, scope_end, test, test_main, c_symbol, c_callback, c_export }
+    // `#thread_bound` on a capability, and std's `#loan_holder` and `#scope_end`. The C
+    // attributes (§18): `#c_symbol`, `#c_callback`, `#c_export`, and `#c_link` on a capability.
+    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, pure, thread_bound, loan_holder, scope_end, test, test_main, c_symbol, c_callback, c_export, c_link }
 
     struct Space {
         name:   []u8,
@@ -748,6 +755,7 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "c_symbol", e = Entry::attr{ a = Attribute::c_symbol } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "c_callback", e = Entry::attr{ a = Attribute::c_callback } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "c_export", e = Entry::attr{ a = Attribute::c_export } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "c_link", e = Entry::attr{ a = Attribute::c_link } }
         c.parsed = diags.items.len
         return c
     }
@@ -2111,6 +2119,7 @@ namespace check {
                             hook_attr{ &c, x, file, a, which, seen = seen_runner }
                             seen_runner = true
                         }
+                        c_link => { link_attr{ &c, x, file, a } }
                         // checked with the other attributes, once consts are folded (attribute_list)
                         c_symbol | c_callback | c_export => {}
                     }
@@ -2128,7 +2137,7 @@ namespace check {
 
     // A compiler attribute's name, for messages.
     fn attr_name { a: Attribute } -> []u8 {
-        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } pure => { "pure" } thread_bound => { "thread_bound" } test => { "test" } test_main => { "test_main" } c_symbol => { "c_symbol" } c_callback => { "c_callback" } c_export => { "c_export" } loan_holder => { "loan_holder" } scope_end => { "scope_end" } }
+        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } pure => { "pure" } thread_bound => { "thread_bound" } test => { "test" } test_main => { "test_main" } c_symbol => { "c_symbol" } c_callback => { "c_callback" } c_export => { "c_export" } c_link => { "c_link" } loan_holder => { "loan_holder" } scope_end => { "scope_end" } }
     }
 
     // The attribute the compiler declares that a names, if it is one: `#convert` or `#write`
@@ -2158,7 +2167,7 @@ namespace check {
     }
 
     fn takes_fields { a: Attribute } -> bool {
-        return a == Attribute::test or a == Attribute::c_symbol or a == Attribute::c_callback or a == Attribute::c_export
+        return a == Attribute::test or a == Attribute::c_symbol or a == Attribute::c_callback or a == Attribute::c_export or a == Attribute::c_link
     }
 
     // `#convert` on x: a fn with a body and no generic parameters, whose context is one
@@ -2399,6 +2408,110 @@ namespace check {
         }
         let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         list::at{ list = c.decls, i = d }.thread_bound = true
+    }
+
+    const LINK_PLACE: utf8::String = "`c_link` applies only to a capability, whose extern fns need the library"
+
+    // `#c_link{ lib, archive = false, framework = false, dirs = [] }` on x, a capability: a C
+    // library its extern fns need (§18, Extern functions, rule 11). Several may be given, each
+    // a library, in the order they are linked. Each field is a literal: `lib` a string, the
+    // library's name as `-l` takes it, or `:FILE` for a file of that name; `archive` and
+    // `framework` booleans, not both; and `dirs` an array of strings, where an archive is
+    // looked for after CTX_LIB_PATH's directories and the C compiler's own.
+    fn link_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr } {
+        if not (x.k is cap) {
+            error{ &c, at = a.span, msg = LINK_PLACE }
+            return
+        }
+        let shape = "`lib = \"name\"`, a string literal, and, each of which may be left out, `archive = true` or `false`, `framework = true` or `false` and `dirs = [\"dir\", ...]`, string literals"
+        let mut got = Link{ lib = "", archive = false, framework = false, dirs = slice::empty([]u8){} }
+        let mut has_lib = false
+        let mut has_archive = false
+        let mut has_framework = false
+        let mut has_dirs = false
+        let mut dirs_at = a.span
+        let mut ok = true
+        if a.value.k is braced{ items } {
+            for item in items {
+                let plain = not item.pun and not item.spread
+                let name = item.name.text
+                let mut known = plain
+                let mut twice = false
+                if plain and slice::eq_bytes{ a = name, b = "lib" } and item.value.k is str{ bytes } {
+                    twice = has_lib
+                    has_lib = true
+                    got.lib = bytes
+                } else if plain and slice::eq_bytes{ a = name, b = "archive" } and item.value.k is boolean{ value } {
+                    twice = has_archive
+                    has_archive = true
+                    got.archive = value
+                } else if plain and slice::eq_bytes{ a = name, b = "framework" } and item.value.k is boolean{ value } {
+                    twice = has_framework
+                    has_framework = true
+                    got.framework = value
+                } else if plain and slice::eq_bytes{ a = name, b = "dirs" } and item.value.k is array{ elems } {
+                    let mut dirs = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+                    for e in elems {
+                        if e.k is str{ bytes } and bytes.len > 0 {
+                            try! list::push{ list = &dirs, item = bytes }
+                        } else {
+                            error{ &c, at = expr_at{ e }, msg = "`dirs` holds string literals, each a directory an archive is looked for in" }
+                            ok = false
+                        }
+                    }
+                    twice = has_dirs
+                    has_dirs = true
+                    dirs_at = item.span
+                    got.dirs = list::items{ list = dirs }
+                } else {
+                    known = false
+                }
+                if not known {
+                    errorf{ &c, at = item.span, msg = @fmt("`c_link` takes {}", str{ s = shape }) }
+                    ok = false
+                } else if twice {
+                    errorf{ &c, at = item.span, msg = @fmt("`{}` is given twice", str{ s = name }) }
+                    ok = false
+                }
+            }
+        }
+        if not ok { return }
+        if not has_lib {
+            errorf{ &c, at = a.span, msg = @fmt("`c_link` takes {}", str{ s = shape }) }
+            return
+        }
+        let name = if got.lib.len > 0 and got.lib[0] == ':' { got.lib[1..] } else { got.lib }
+        if name.len == 0 or got.lib[0] == '-' or not link_name{ s = name } {
+            error{ &c, at = a.span, msg = "`lib` is a library's name as `-l` takes it, or `:` and its file's: not empty, and without `-` first, a space, a control character, `/` or `\\`" }
+            return
+        }
+        if got.archive and got.framework {
+            error{ &c, at = a.span, msg = "a library is an archive or a framework, not both" }
+            return
+        }
+        if got.framework and got.lib[0] == ':' {
+            error{ &c, at = a.span, msg = "a framework is named without `:`, which names a library's file" }
+            return
+        }
+        if got.dirs.len > 0 and not got.archive {
+            error{ &c, at = dirs_at, msg = "`dirs` are where an archive is looked for: they go with `archive = true`" }
+            return
+        }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let at = list::at{ list = c.decls, i = d }
+        let mut all = list::new(Link){ realloc = arena::alloc, heap = c.heap }
+        for l in at.links { try! list::push{ list = &all, item = l } }
+        try! list::push{ list = &all, item = got }
+        at.links = list::items{ list = all }
+    }
+
+    // Whether s can be a library's name: no space, control character or path separator, which
+    // neither `-l` nor a file in a directory takes.
+    fn link_name { s: []u8 } -> bool {
+        for b in s {
+            if b <= ' ' or b == 127 or b == '/' or b == '\\' { return false }
+        }
+        return true
     }
 
     // `#scope_end` on x: a fn that ends a loan holder, which the end of the holder's scope calls
@@ -3169,6 +3282,9 @@ namespace check {
                     c_symbol => {
                         error{ &c, at = a.span, msg = "`c_symbol` on a field applies only to a capability's C variable, `extern name: T`" }
                     }
+                    c_link => {
+                        error{ &c, at = a.span, msg = LINK_PLACE }
+                    }
                     else => {
                         errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr_name{ a = which } }) }
                     }
@@ -3207,6 +3323,8 @@ namespace check {
                     } else if which == Attribute::c_symbol {
                         if let got = c_fields{ &c, a, which } { var_symbol_attr{ &c, d, f, a, name = got.name, seen } }
                         seen = true
+                    } else if which == Attribute::c_link {
+                        error{ &c, at = a.span, msg = LINK_PLACE }
                     } else {
                         errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr_name{ a = which } }) }
                     }

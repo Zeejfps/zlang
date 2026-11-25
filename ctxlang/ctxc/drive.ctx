@@ -308,8 +308,9 @@ namespace drive {
         let root = place{ &heap, dir = path, rel = t.root }
         let all = program_paths{ &heap, d, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root }
         let mut units: [][]u8 = slice::empty([]u8){}
+        let mut links: []ir::Link = slice::empty(ir::Link){}
         let mut found = report::found{ &heap }
-        let r = analyze{ &io, &fs, &mem, &proc, &threads, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = if api { Mode::api } else { Mode::where }, out = what, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing = false, &found }
+        let r = analyze{ &io, &fs, &mem, &proc, &threads, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = if api { Mode::api } else { Mode::where }, out = what, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, &links, texts = all.texts, denied = all.denied, places = all.places, testing = false, &found }
         report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
         return r
     }
@@ -341,9 +342,10 @@ namespace drive {
                 continue
             }
             let mut units: [][]u8 = slice::empty([]u8){}
+            let mut links: []ir::Link = slice::empty(ir::Link){}
             let all = program_paths{ &heap, d, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root = place{ &heap, dir = path, rel = t.root } }
             let mut own = report::found{ &heap }
-            let r = analyze{ &io, &fs, &mem, &proc, &threads, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::check, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing = false, found = &own }
+            let r = analyze{ &io, &fs, &mem, &proc, &threads, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::check, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, &links, texts = all.texts, denied = all.denied, places = all.places, testing = false, found = &own }
             // 1 with errors, which are in own, or after saying what else stopped it.
             if r != 0 and own.entries.len == 0 { failed = true }
             explain{ &io, &fs, &heap, d, found = &own, origin = origin_of{ &fs, &heap, path, t }, files }
@@ -919,6 +921,7 @@ namespace drive {
         let argv = if end < args.len { args[end + 1..] } else { args[end..] }
         let stack = host_stack{ &proc } / 4 * 3
         let mut units: [][]u8 = slice::empty([]u8){}
+        let mut links: []ir::Link = slice::empty(ir::Link){}
         // The program's environment: ctxc's, with the edits.
         let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
         add_all{ xs = &env, ys = proc::environment{ &proc } }
@@ -939,7 +942,7 @@ namespace drive {
             k = k + 2
         }
         let mut found = report::found{ &heap }
-        let code = analyze{ &io, &fs, &mem, &proc, &threads, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = if end > at + 1 { "program" } else { stem{ path = base{ path } } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, places = slice::empty([]u8){}, testing = false, &found }
+        let code = analyze{ &io, &fs, &mem, &proc, &threads, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = if end > at + 1 { "program" } else { stem{ path = base{ path } } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, &links, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, places = slice::empty([]u8){}, testing = false, &found }
         report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
         return code
     }
@@ -1818,8 +1821,9 @@ namespace drive {
         let base = join{ &heap, a = dir, b = name }
         let all = program_paths{ &heap, d, files, gens, denied, deny, root }
         let mut units: [][]u8 = slice::empty([]u8){}
+        let mut links: []ir::Link = slice::empty(ir::Link){}
         let mut found = report::found{ &heap }
-        let code = analyze{ &io, &fs, &mem, &proc, &threads, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing, &found }
+        let code = analyze{ &io, &fs, &mem, &proc, &threads, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, &links,texts = all.texts, denied = all.denied, places = all.places, testing, &found }
         if code != 0 {
             explain{ &io, &fs, &heap, d, &found, origin, files }
             report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = d.json }
@@ -1831,7 +1835,8 @@ namespace drive {
         // A unit's HASH is of its C, the runtime, the compiler, the flags and the program's name;
         // the executable's, of its units' and the link flags.
         let cflags = c_flags{ &heap, level, trace }
-        let ldflags = link_flags{ &heap, os = d.os, flags }
+        let libs = library_flags{ &io, &fs, &proc, &heap, cc = d.cc, cc_env = d.cc_env, os = d.os, links } ifnull { return null }
+        let ldflags = link_flags{ &heap, os = d.os, libs, flags }
         let mut h = mix_u64{ h = FNV_BASIS, n = d.rt }
         h = mix_all{ h, xs = d.cc }
         h = mix_all{ h, xs = cflags }
@@ -2086,11 +2091,12 @@ namespace drive {
         return list::items{ list = xs }
     }
 
-    // What links an executable, after its objects: its build program's flags, the math library,
-    // and the main thread's stack, which std's rt checks against 16 MiB (or CTX_STACK) and on
-    // Linux raises itself.
-    fn link_flags { mut heap: Heap, os: build::Os, flags: [][]u8 } -> [][]u8 {
+    // What links an executable, after its objects: the libraries its capabilities name (libs,
+    // from library_flags), its build program's flags, the math library, and the main thread's
+    // stack, which std's rt checks against 16 MiB (or CTX_STACK) and on Linux raises itself.
+    fn link_flags { mut heap: Heap, os: build::Os, libs: [][]u8, flags: [][]u8 } -> [][]u8 {
         let mut xs = list::new([]u8){ realloc = arena::alloc, &heap }
+        add_all{ xs = &xs, ys = libs }
         add_all{ xs = &xs, ys = flags }
         try! list::push{ list = &xs, item = "-lm" }
         match os {
@@ -2099,6 +2105,104 @@ namespace drive {
             linux => {}
         }
         return list::items{ list = xs }
+    }
+
+    // The flags that link the C libraries a program's capabilities name (ir::Program.links;
+    // spec §18, Extern functions, rule 11), in their order: `-lLIB`, which is `-l:FILE` for a
+    // `lib` of `:FILE`; `-framework` and LIB, on macOS alone; and an archive's absolute path
+    // (`archive_path`). cc is the C compiler, which runs with cc_env. Null after saying which
+    // archive isn't there and where it was looked for, or that a framework is macOS's.
+    fn library_flags { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, cc: [][]u8, cc_env: [][]u8, os: build::Os, links: []ir::Link } -> ?[][]u8 {
+        let mut xs = list::new([]u8){ realloc = arena::alloc, &heap }
+        for k in links {
+            if k.framework {
+                if os != build::Os::macos {
+                    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+                    try! @fmt(&b, "ctxc: `#c_link{{ lib = \"{}\", framework = true }}` names a macOS framework, which a program for {} can't link", utf8::String{ bytes = k.lib }, utf8::String{ bytes = os_name{ os } })
+                    io::eprintln{ &io, s = utf8::view{ b } }
+                    return null
+                }
+                try! list::push{ list = &xs, item = "-framework" }
+                try! list::push{ list = &xs, item = k.lib }
+            } else if k.archive {
+                let path = archive_path{ &io, &fs, &proc, &heap, cc, cc_env, os, k } ifnull { return null }
+                try! list::push{ list = &xs, item = path }
+            } else {
+                try! list::push{ list = &xs, item = cat{ &heap, a = "-l", b = k.lib } }
+            }
+        }
+        return list::items{ list = xs }
+    }
+
+    fn os_name { os: build::Os } -> []u8 {
+        return match os { windows => { "Windows" } macos => { "macOS" } linux => { "Linux" } }
+    }
+
+    // The absolute path of the static archive link k names: `libLIB.a`, or the file after
+    // `lib`'s `:`. It is looked for in CTX_LIB_PATH's directories, separated as PATH's are, then
+    // where the C compiler finds it (`-print-file-name`), then in k's dirs. Null after saying
+    // there is none, and where it was looked for.
+    fn archive_path { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, cc: [][]u8, cc_env: [][]u8, os: build::Os, k: ir::Link } -> ?[]u8 {
+        let name = if k.lib[0] == ':' { k.lib[1..] } else { cat{ &heap, a = cat{ &heap, a = "lib", b = k.lib }, b = ".a" } }
+        let mut looked = list::new([]u8){ realloc = arena::alloc, &heap }
+        let set = proc::env{ &proc, name = "CTX_LIB_PATH" } ifnull { "" }
+        let sep: u8 = if os == build::Os::windows { ';' } else { ':' }
+        let mut start: usize = 0
+        let mut i: usize = 0
+        while i <= set.len {
+            if i == set.len or set[i] == sep {
+                if i > start {
+                    let dir = set[start..i]
+                    try! list::push{ list = &looked, item = dir }
+                    let at = join{ &heap, a = dir, b = name }
+                    if kind_of{ &fs, path = at } == 1 { return absolute{ &io, &fs, &heap, path = at } }
+                }
+                start = i + 1
+            }
+            i = i + 1
+        }
+        if let found = compiler_finds{ &io, &fs, &proc, &heap, cc, cc_env, name } { return found }
+        try! list::push{ list = &looked, item = cat{ &heap, a = cat{ &heap, a = "where `", b = base{ path = cc[0] } }, b = " -print-file-name` looks" } }
+        for dir in k.dirs {
+            try! list::push{ list = &looked, item = dir }
+            let at = join{ &heap, a = dir, b = name }
+            if kind_of{ &fs, path = at } == 1 { return absolute{ &io, &fs, &heap, path = at } }
+        }
+        let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+        try! @fmt(&b, "ctxc: no archive {} for `#c_link{{ lib = \"{}\", archive = true }}`: looked in ", utf8::String{ bytes = name }, utf8::String{ bytes = k.lib })
+        if set.len == 0 { try! @fmt(&b, "CTX_LIB_PATH (not set); ") }
+        for p at n in list::items{ list = looked } {
+            if n > 0 { try! @fmt(&b, "; ") }
+            try! @fmt(&b, "{}", utf8::String{ bytes = p })
+        }
+        io::eprintln{ &io, s = utf8::view{ b } }
+        return null
+    }
+
+    // Where the C compiler cc would link the file `name` from, by its absolute path: what
+    // `-print-file-name=NAME` prints, if that is a file. gcc and clang print the name alone for
+    // one they don't find. Null for none, or if cc doesn't run.
+    fn compiler_finds { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, cc: [][]u8, cc_env: [][]u8, name: []u8 } -> ?[]u8 {
+        let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
+        add_all{ xs = &argv, ys = cc }
+        try! list::push{ list = &argv, item = cat{ &heap, a = "-print-file-name=", b = name } }
+        let mut child = proc::spawn{ &proc, argv = list::items{ list = argv }, options = proc::Options{ env = cc_env, stdout = proc::Stdio::pipe, stderr = proc::Stdio::ignore, .. } } iferr { return null }
+        let pipe = child.stdout ifnull { return null }
+        let mut out = list::new(u8){ realloc = arena::alloc, &heap }
+        let mut buf: [4096]u8
+        while true {
+            let n = proc::read{ &proc, pipe, into = buf[..] } iferr { 0 }
+            if n == 0 { break }
+            for ch in buf[..n] { try! list::push{ list = &out, item = ch } }
+        }
+        let code = proc::wait{ &proc, &child } iferr { return null }
+        if code != 0 { return null }
+        let text = list::items{ list = out }
+        let mut end = text.len
+        while end > 0 and (text[end - 1] == '\n' or text[end - 1] == '\r' or text[end - 1] == ' ') { end = end - 1 }
+        let path = text[..end]
+        if path.len == 0 or slice::eq_bytes{ a = path, b = name } or kind_of{ &fs, path } != 1 { return null }
+        return absolute{ &io, &fs, &heap, path }
     }
 
     // Runs the C compiler; false after saying it failed.

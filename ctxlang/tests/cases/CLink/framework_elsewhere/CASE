@@ -1,0 +1,9 @@
+// `#c_link{ lib, framework = true }` is a macOS framework (spec §18, Extern functions, rule 11):
+// a program for another platform that reaches one fails to build, naming it.
+//# only: windows linux: a macOS build links the framework
+//# $ ctxc exe main.ctx -o main{exe}
+//# exit: 1
+//# [windows] stderr:
+//| ctxc: `#c_link{ lib = "Security", framework = true }` names a macOS framework, which a program for Windows can't link
+//# [linux] stderr:
+//| ctxc: `#c_link{ lib = "Security", framework = true }` names a macOS framework, which a program for Linux can't link

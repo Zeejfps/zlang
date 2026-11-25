@@ -1,0 +1,23 @@
+// `#c_link` goes on a capability's declaration (spec §18, Extern functions, rule 11): not on a
+// fn, an extern fn, a struct, or any field.
+
+#c_link{ lib = "a" }  //~ error at 1: `c_link` applies only to a capability, whose extern fns need the library
+fn f {} {}
+
+capability Lib
+
+#c_link{ lib = "a" }  //~ error at 1: `c_link` applies only to a capability, whose extern fns need the library
+extern fn g { mut lib: Lib }
+
+#c_link{ lib = "a" }  //~ error at 1: `c_link` applies only to a capability, whose extern fns need the library
+struct S {
+    #c_link{ lib = "a" }  //~ error at 5: `c_link` applies only to a capability, whose extern fns need the library
+    x: i32,
+}
+
+capability Vars {
+    #c_link{ lib = "a" }  //~ error at 5: `c_link` applies only to a capability, whose extern fns need the library
+    extern optind: i32,
+}
+
+fn main {} {}

@@ -113,7 +113,7 @@ makes the table (`ready`: 0, then 1 while it runs, then 2), and keeps the pointe
 
 ```
 namespace os {
-    #c::link{ lib = "ws2_32" }
+    #c_link{ lib = "ws2_32" }
     capability Net {
         static ready: u32,              // WSAStartup and the lookups done: 0, 1 while they run, 2
         static connect_ex: ?*u8,        // ConnectEx, called through @cast(ConnectExFn, p)
@@ -139,8 +139,9 @@ Extern functions, rule 7), and a program's own libraries are its build program's
 fits: a single-file program that opens a socket on Windows must link `ws2_32`, and one that doesn't
 mustn't.
 
-1. `#c::link{ lib: []u8, archive: bool = false, framework: bool = false, dirs: [][]u8 = [] }` on a
-   capability declaration names a C library its extern fns need. Several may be given. `lib` may be
+1. `#c_link{ lib = "...", archive = false, framework = false, dirs = [] }`, a compiler attribute whose
+   fields are literals, on a capability declaration names a C library its extern fns need. Several may
+   be given. `lib` may be
    `:FILE`, which GNU ld takes as that file's name (`-l:libssl.so.3`); `framework` makes it a macOS
    framework (`-framework LIB`).
 2. A program links each library named by a capability that some extern fn it calls takes, directly
@@ -682,7 +683,7 @@ is rebuilt with a newer OpenSSL. macOS ships no OpenSSL a program may link: its 
 aborts a program that loads it.
 
 **macOS's archives** are Homebrew's `openssl@3`. The driver looks for an archive in `CTX_LIB_PATH`'s
-directories first, then in the C compiler's paths, then in the directories the `#c::link` names
+directories first, then in the C compiler's paths, then in the directories the `#c_link` names
 (`dirs`): the layer's `os::Tls` names Homebrew's two standard prefixes, `/opt/homebrew/opt/openssl@3/lib`
 (Apple silicon) and `/usr/local/opt/openssl@3/lib` (Intel), whose `opt` links Homebrew keeps whether or
 not a formula is linked into the prefix. So `brew install openssl@3` is all a Mac needs, and
@@ -943,9 +944,10 @@ next. "Verified" is what must pass before it is done; every package also runs th
    (true, and `wait_all` then gives their first error at once), one whose task sleeps past it (false,
    the group untouched, then `cancel_all`), 0 on a busy group, and a waiter cancelled while it waits
    (the group stopped, true).
-2. **Link by use.** `#c::link{ lib, archive, framework, dirs }` on capabilities: spec §18 and §17, ctxc's checker (an
-   attribute of std's `c`), lowering collecting the libraries of reached extern fns, the driver passing
-   them (and finding archives in `CTX_LIB_PATH`, with `-print-file-name`, and in `dirs`). Files: std/c.ctx,
+2. **Link by use.** `#c_link{ lib, archive, framework, dirs }` on capabilities: spec §18 and §17, ctxc's checker (a
+   compiler attribute, as `#c_symbol` is), lowering collecting the libraries of reached extern fns, the
+   driver passing them (and finding archives in `CTX_LIB_PATH`, with `-print-file-name`, and in `dirs`),
+   and `ctxc build`'s C naming them for the suite's runner. Files: ctxc/check.ctx,
    ctxc/lower.ctx, ctxc/ir.ctx, ir_print/ir_read, ctxc/drive.ctx, spec.md. Verified: a test program whose
    capability names a library that doesn't exist builds when it doesn't call the extern fn and fails
    to link, naming it, when it does; `archive = true` with a missing archive fails naming it.
@@ -972,7 +974,7 @@ next. "Verified" is what must pass before it is done; every package also runs th
 8. **Server test and docs.** Testing 4; TCP's server example made to compile against the real
    API; spec §17's table rows for `net`. Files: tests, net.md, spec.md.
 9. **The OpenSSL binding.** std/tls/openssl.ctx over memory BIOs; `os::Tls` in every layer with its
-   `#c::link`s (Windows' static archives and their dependencies, Linux's `-l:libssl.so.3`, macOS's
+   `#c_link`s (Windows' static archives and their dependencies, Linux's `-l:libssl.so.3`, macOS's
    archives with Homebrew's `dirs` and the frameworks, the interpreter's empty, with `os::TLS` false);
    `tls::engine`, configs, identities, Linux's verification. Files: std/tls/openssl.ctx, std/tls.ctx,
    the layers. Verified on Linux: a handshake with a Python server using the test CA, and each
@@ -1039,7 +1041,7 @@ next. "Verified" is what must pass before it is done; every package also runs th
 11. **Static OpenSSL on Windows and macOS, the system's on Linux.** An executable for Windows or macOS
     needs nothing beside it, and Linux's distributions update their OpenSSL for every program at once.
     The driver finds macOS's archives in `CTX_LIB_PATH` or Homebrew's two standard prefixes, which the
-    layer's `#c::link` names, so `brew install openssl@3` is enough. It doesn't build OpenSSL: MSYS2 and
+    layer's `#c_link` names, so `brew install openssl@3` is enough. It doesn't build OpenSSL: MSYS2 and
     Homebrew ship the archives, and OpenSSL's build needs Perl and its own configure step.
 
 ## Open questions

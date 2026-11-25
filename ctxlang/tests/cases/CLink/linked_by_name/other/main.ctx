@@ -1,0 +1,3 @@
+fn main { mut io: Io, mut lib: three::Lib } {
+    io::println{ &io, s = "other" }
+}

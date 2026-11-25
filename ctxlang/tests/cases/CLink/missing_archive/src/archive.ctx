@@ -1,0 +1,10 @@
+namespace nolib {
+    #c_link{ lib = "ctx_no_such_archive", archive = true, dirs = ["nowhere", "/also/nowhere"] }
+    capability Missing
+
+    extern fn ctx_no_such_fn { mut m: Missing } -> i32
+}
+
+fn main { mut io: Io, mut m: nolib::Missing } {
+    io::println_i64{ &io, n = nolib::ctx_no_such_fn{ &m } }
+}

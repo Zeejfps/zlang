@@ -32,7 +32,10 @@
 //                                               environment with N set to V, or N removed
 //   ctxc build OUT.c STD... -- FILE...          checks the program of FILE..., with std's files
 //                                               STD..., and writes it as C, for ctxc/rt/ctxrt.c
-//                                               (and ctxfloat.c);
+//                                               (and ctxfloat.c), first a line `// link: FLAG`
+//                                               for each flag that links a library its
+//                                               capabilities name (spec §18, Extern functions,
+//                                               rule 11);
 //                                               or prints its errors and exits with 1. In the
 //                                               FILEs after a `--deny-unchecked`, up to the next
 //                                               `--allow-unchecked`, the unchecked operations
@@ -251,6 +254,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut thre
     }
     let out: []u8 = if mode == Mode::build { args[1] } else { "" }
     let mut units: [][]u8 = slice::empty([]u8){}
+    let mut links: []ir::Link = slice::empty(ir::Link){}
     // A program's errors, and their text as it is written.
     let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
         io::eprintln{ &io, s = "out of memory" }
@@ -258,15 +262,18 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut thre
     }
     let mut scratch = arena::new{ buf = pages }
     let mut found = report::found{ heap = &scratch }
-    let code = analyze{ &io, &fs, &mem, &proc, &threads, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, places = list::items{ list = places }, testing = false, &found }
+    let code = analyze{ &io, &fs, &mem, &proc, &threads, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, &links, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, places = list::items{ list = places }, testing = false, &found }
     report::write{ &io, heap = &scratch, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
     return code
 }
 
 // Checks the program of `paths`, std's files first, and acts on it as `mode` says: for build,
-// writes it as C to `out`; for units, sets `made` to its C in units of about `size` bytes, each
+// writes it as C to `out`, after a line `// link: FLAG` for each flag that links the C libraries
+// its capabilities name (drive::library_flags), for the suite's runner, which links the C itself;
+// for units, sets `made` to its C in units of about `size` bytes, each
 // with copies of the functions of fewer than `copy` statements and expressions it calls in others
-// (emit::units), which live as long as ctxc does; for interp, runs it with args `argv`, as the
+// (emit::units), and `links` to those libraries (ir::Program.links), which live as long as ctxc
+// does; for interp, runs it with args `argv`, as the
 // program named `out`, letting its calls take `stack` bytes of ctxc's stack. A const computed by
 // running code (comptime.ctx) may take half of ctxc's stack, and CTX_CONST_FUEL steps if that is
 // set. The last texts.len files aren't read: their text is texts', as the driver has it for the
@@ -280,7 +287,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut thre
 // nothing is made of the program: every diagnostic is kept, whatever their number, the program
 // is checked as a test build as well (check::Checker.checking). A program's errors are added
 // to found, which the caller shows (report::write), but those `ir` prints in its own form.
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool, places: [][]u8, testing: bool, mut found: report::Found } -> i32 {
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, mut links: []ir::Link, texts: [][]u8, denied: []bool, places: [][]u8, testing: bool, mut found: report::Found } -> i32 {
     let given = paths.len - texts.len               // paths[given..] are texts'
     let mut total: u64 = 0
     let mut i: usize = 0
@@ -434,11 +441,26 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: 
             return interpret{ &io, &heap, p = lower::program{ &c }, name = out, argv, env, stack }
         }
         if diags.errors == 0 and mode == Mode::units {
-            made = emit::units{ &heap, p = lower::program{ &c }, size, copy }
+            let p = lower::program{ &c }
+            made = emit::units{ &heap, p, size, copy }
+            links = p.links
             return 0
         }
         if diags.errors == 0 {
-            let code = emit::program{ heap = &heap, p = lower::program{ &c } }
+            let p = lower::program{ &c }
+            let mut head = list::new(u8){ realloc = arena::alloc, &heap }
+            if p.links.len > 0 {
+                let os = proc::os{ &proc }
+                let cc = drive::compiler{ &fs, &proc, &heap, os }
+                let libs = drive::library_flags{ &io, &fs, &proc, &heap, cc, cc_env = drive::cc_env{ &proc, &heap, cc = cc[0], os }, os, links = p.links } ifnull { return 1 }
+                for flag in libs {
+                    let tag: []u8 = "// link: "
+                    for ch in tag { try! list::push{ list = &head, item = ch } }
+                    for ch in flag { try! list::push{ list = &head, item = ch } }
+                    try! list::push{ list = &head, item = '\n' }
+                }
+            }
+            let code = drive::cat{ &heap, a = list::items{ list = head }, b = emit::program{ heap = &heap, p } }
             let ok = fs::write_all{ &fs, path = out, bytes = code } else {
                 cannot{ &io, path = out, what = "cannot write" }
                 return 1

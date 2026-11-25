@@ -1745,7 +1745,7 @@ Settled questions are removed, and the rest keep their numbers.
 
 ## 17. Standard library
 
-1. The standard library is ctxlang source (`std/*.ctx`) and one platform layer: `std/os/windows`, or for Linux and macOS `std/os/posix`, which they share, with `std/os/linux` or `std/os/macos` beside it. It is part of every program, with the layer of the platform it is built for, and a build program's has std/build/ too, with ctxc's lexer and parser (§19, rule 16). `ctxc interp` builds a program with the interpreter's layer, `std/os/interp`, instead, and the `target.ctx` of the platform it runs on; there, a `#start` fn's `argv` (§15, Entry point) is UTF-8 on every platform, where Windows' C gives the ANSI code page's bytes. Its extern fns (§18) are the operating system's and the C library's, except for a few that the runtime provides in C: panics without a position, memory for function values' records, and a thread's name, stack limit and end (`rt`), and floats as text and back (`ascii`), which a program links only if it uses them. Its state for the whole program is statics (§15, rule 13).
+1. The standard library is ctxlang source (`std/*.ctx`) and one platform layer: `std/os/windows`, or for Linux and macOS `std/os/posix`, which they share, with `std/os/linux` or `std/os/macos` beside it. It is part of every program, with the layer of the platform it is built for, and a build program's has std/build/ too, with ctxc's lexer and parser (§19, rule 16). `ctxc interp` builds a program with the interpreter's layer, `std/os/interp`, instead, and the `target.ctx` of the platform it runs on; there, a `#start` fn's `argv` (§15, Entry point) is UTF-8 on every platform, where Windows' C gives the ANSI code page's bytes. Its extern fns (§18) are the operating system's and the C library's, except for a few that the runtime provides in C: panics without a position, memory for function values' records, and a thread's name, stack limit and end (`rt`), and floats as text and back (`ascii`), which a program links only if it uses them. No capability of std's names a library (§18, Extern functions, rule 11): what its extern fns call is in the libraries every program links. Its state for the whole program is statics (§15, rule 13).
 2. Its namespaces are visible from user code as if declared at top level. A user declaration with the same name shadows a std one (§10).
 3. It allocates only through an allocator the caller passes in (§14), and does IO only through an `Io` or `Fs` the caller passes in (§15). Only `mem::pages` takes memory from the system, through a `Mem` the caller passes in.
 4. A platform layer declares namespace `os`: what the rest of std needs from the operating system, over extern fns to the OS's own C functions and, through its capability `os::Proc`, C variables (§15, rule 12). Every layer declares the same functions and an `os::Proc`, so std's other files are the same on every platform, and each function that can fail declares the same set (§8, Errors, rule 14), `fs::Error` or `proc::Error`, whichever of it its OS gives, so a program checks the same on every platform. Linux's and macOS's share `os` and differ in namespace `sys`: the C library's numbers and layouts, and the functions it names differently. What the platform is, apart from how it is reached, is namespace `target`, in each platform's `target.ctx`: `OS`, `ENV_CASE` and `is_absolute`. The interpreter's layer, `std/os/interp`, is over extern fns that only `ctxc interp` provides (`ctx_interp_*`); what it can't do (standard input, files, other programs) stops the run.
@@ -1830,7 +1830,7 @@ fn movement {
 
 2. `path` names a struct, and the braces are a literal of it, checked as a const's initializer is and folded (§14): it can't call a function or use a const that isn't folded. `#path` alone means `#path{}`. A field of a number type or `bool` may be left out, and is then 0 or `false`: `#ecs::cascade` is `#ecs::cascade{ depth = 0 }`. A field with a default (§7, rule 4) isn't: `..` takes it from its default, as in any literal.
 3. Attributes are data. The compiler acts on its own (rule 4) and ignores the rest; a build program reads them as written with `build::declarations` (§19, rule 14), and their checked values later (todo/metaprogramming.md). ctxc's driver reads std's `build::sources` on a build program's `fn build` before compiling it (§19, rule 12); to the checker it is data, as any other.
-4. The compiler declares `convert` (Literal conversions, below), `write` (§13, Formatting), `start` and `panic` (§15, Entry point), `stack_limit` and `thread_local` (§15, rule 13), `thread_bound`, `loan_holder` and `scope_end` (§15, Tasks), `test` and `test_main` (§20), `pure` (Extern functions, rule 8), `c_symbol` (Extern functions, rule 2, and §15, rule 12), and `c_callback` and `c_export` (Callbacks) itself. `test` takes fields (§20), and `c_symbol`, `c_callback` and `c_export` theirs, `name = "..."` and `any_thread = true` or `false`, each a literal; rules 2 and 3 aren't theirs, and the rest take no field. A namespace is never an attribute, so `#test` is the compiler's beside std's namespace `test`. They have no namespace, and a declaration of the same name shadows one. Each is an error anywhere it means nothing, a field that isn't a capability's included.
+4. The compiler declares `convert` (Literal conversions, below), `write` (§13, Formatting), `start` and `panic` (§15, Entry point), `stack_limit` and `thread_local` (§15, rule 13), `thread_bound`, `loan_holder` and `scope_end` (§15, Tasks), `test` and `test_main` (§20), `pure` (Extern functions, rule 8), `c_symbol` (Extern functions, rule 2, and §15, rule 12), `c_link` (Extern functions, rule 11), and `c_callback` and `c_export` (Callbacks) itself. `test` takes fields (§20), `c_symbol`, `c_callback` and `c_export` theirs, `name = "..."` and `any_thread = true` or `false`, and `c_link` its own, each a literal; rules 2 and 3 aren't theirs, and the rest take no field. A namespace is never an attribute, so `#test` is the compiler's beside std's namespace `test`. They have no namespace, and a declaration of the same name shadows one. Each is an error anywhere it means nothing, a field that isn't a capability's included.
 
 ### Extern functions
 
@@ -1841,13 +1841,35 @@ fn movement {
    A literal where a `cstr` is expected points to its bytes, which the hidden zero ends (`c::from_literal`; §11, Literals).
 5. Every call goes through a declaration of the symbol made for that function, so it can't clash with the declaration of the same symbol in a C header. Nothing checks the declaration against C's: a wrong one is undefined behaviour.
 6. An extern fn is called like any function and is a value of type `fn{C} -> R`; where an `extern fn{C} -> R` is expected, it is its C symbol's address instead (§12, C function pointers).
-7. Every program is linked with the C library and the math library.
+7. Every program is linked with the C library and the math library, and with the libraries its capabilities name (rule 11).
 
 8. §1.3 holds by declaration: every extern fn has a capability field, for the IO, OS or memory outside its pointer arguments it reaches, or `#pure`, which says it has no effect beyond the memory its pointer arguments reach and its result depends only on its arguments and that memory, as `sqrt`'s. One with neither, or with both, is an error, as is `#pure` on any other declaration. The compiler can't check the C side.
 
 9. C's global variables have no declaration of their own: a capability names them, `extern name: T` among its fields, and only its namespace reads them (§15, rule 12). Reading one is as much an effect as calling an extern fn that takes the capability.
 
 10. An extern fn's borrowing contract, `from` after its result and `into` after a field's type (§14, Escape check, rule 8), is taken on its word, as its C types are: one that keeps a pointer it is given, as a C library that holds on to a buffer does, says so with `into`, and one whose result points into an argument says so with `from`. Unwritten, it keeps nothing.
+
+11. `#c_link{ lib = "...", archive = false, framework = false, dirs = [] }` on a capability's declaration names a C library that its extern fns need. A capability may have several, in the order they are linked, so a library's own dependencies are listed after it on the same declaration. A program links the libraries of each capability that an extern fn it calls takes, or one of whose C variables it reads (rule 9), and of each capability such a one includes (§15), and no others: a program that never reaches a capability's extern fns links nothing for it. They are passed to the linker after the program's objects, each capability's in the order it lists them and the capabilities in the order the program first reaches them, each once; a library that two capabilities name is linked for each.
+    - `lib` is the library's name as `-l` takes it, `-lLIB`, or `:` and the name of its file, which GNU ld looks for as it is (`lib = ":libssl.so.3"`). It isn't empty, and has no `-` first, space, control character, `/` or `\`.
+    - `framework = true` makes it a macOS framework, `-framework LIB`. Building a program that reaches one for another platform fails, naming it.
+    - `archive = true` links the static archive `libLIB.a`, or the file named after `:`, by its path. It is looked for in the directories of the environment variable `CTX_LIB_PATH`, separated as `PATH`'s are, then where the C compiler finds it (`-print-file-name`), then in `dirs`, a relative one being from the directory of the file that declares the capability. There being none fails the build, naming the archive and where it was looked for. `dirs` goes with `archive = true` alone, and a library is an archive or a framework, not both.
+    - Each field is a literal; `dirs` is an array of string literals. A declaration that isn't a capability's, or a field, can't have one.
+    - `ctxc interp` links nothing: it runs only the extern fns it provides itself (§17, rule 1).
+
+<!-- context:
+fn main {} {}
+-->
+```ctx
+namespace ssl {
+    // The static archives, and what they need of the system after them.
+    #c_link{ lib = "ssl", archive = true, dirs = ["/opt/homebrew/opt/openssl@3/lib"] }
+    #c_link{ lib = "crypto", archive = true, dirs = ["/opt/homebrew/opt/openssl@3/lib"] }
+    #c_link{ lib = "Security", framework = true }
+    capability Tls
+
+    extern fn OPENSSL_init_ssl { mut tls: Tls, opts: u64, settings: ?*u8 } -> i32
+}
+```
 
 ### Literal conversions
 

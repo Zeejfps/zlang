@@ -1,0 +1,26 @@
+// `#c_link{ lib, archive = true }` links the static archive libLIB.a by its path (spec §18,
+// Extern functions, rule 11), made here from vendor/three.c: found in the attribute's `dirs`, a
+// relative one being from its file's directory; in CTX_LIB_PATH's directories; and, for a `lib`
+// of `:FILE`, as the file of that name.
+//# needs: ar
+//# $ cc -c {dir}/vendor/three.c -o {dir}/vendor/three.o
+//# exit: 0
+//# $ ar rcs {dir}/vendor/libctxthree.a {dir}/vendor/three.o
+//# exit: 0
+
+//# program: src/dirs.ctx
+//# interp: cannot run
+//# stdout:
+//| 3
+
+//# program: src/from_env.ctx
+//# [windows] env: CTX_LIB_PATH={dir}/nowhere;{dir}/vendor
+//# [posix] env: CTX_LIB_PATH={dir}/nowhere:{dir}/vendor
+//# interp: cannot run
+//# stdout:
+//| 3
+
+//# program: src/file.ctx
+//# interp: cannot run
+//# stdout:
+//| 3

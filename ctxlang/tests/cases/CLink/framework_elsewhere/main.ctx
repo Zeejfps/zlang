@@ -1,0 +1,11 @@
+namespace sec {
+    #c_link{ lib = "Security", framework = true }
+    capability Lib
+
+    extern fn SecRandomCopyBytes { mut lib: Lib, rnd: ?*u8, count: usize, bytes: *mut u8 } -> i32
+}
+
+fn main { mut io: Io, mut lib: sec::Lib } {
+    let mut b: u8 = 0
+    io::println_i64{ &io, n = sec::SecRandomCopyBytes{ &lib, rnd = null, count = 1, bytes = &b } }
+}

@@ -1,0 +1,10 @@
+// A program that calls an extern fn of a capability with `#c_link{ lib }` links that library
+// (spec §18, Extern functions, rule 11): `-lctx_no_such_library`, which doesn't exist, so the
+// link fails, naming it. The same capability unreached builds (unreached_library_isnt_linked).
+//# $ ctxc exe used.ctx -o used{exe}
+//# exit: 1
+//# stderr has:
+//| ctx_no_such_library
+//# stderr has:
+//| ctxc: the C compiler failed
+//|

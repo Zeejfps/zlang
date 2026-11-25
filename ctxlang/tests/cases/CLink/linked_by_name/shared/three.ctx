@@ -1,0 +1,6 @@
+namespace three {
+    #c_link{ lib = "ctxlinked" }
+    capability Lib
+
+    extern fn ctx_three { mut lib: Lib } -> i32
+}

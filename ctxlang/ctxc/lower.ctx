@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 25
+    const VERSION: u64 = 26
 
     // A function instance: a declaration and its generic arguments. The hidden fn of an @fmt
     // without a sink is an instance too, under the declaration it is in: site is its Site,
@@ -62,6 +62,10 @@ namespace lower {
         kept:      map::Map(u64, Kept, Heap),
         // In a test build, the fn that runs each of the checker's tests, in their order.
         test_ids:  list::List(u32, Heap),
+        // The C libraries to link (ir::Program.links), and the capabilities whose `#c_link`s
+        // are among them (reach_links).
+        links:     list::List(ir::Link, Heap),
+        linked:    list::List(u32, Heap),
     }
 
     fn program { mut c: check::Checker } -> ir::Program {
@@ -135,6 +139,8 @@ namespace lower {
             trap_ids = map::new(u64, u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u64, eq = map::eq_u64 },
             kept = map::new(u64, Kept){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u64, eq = map::eq_u64 },
             test_ids = list::new(u32){ realloc = arena::alloc, heap = c.heap },
+            links = list::new(ir::Link){ realloc = arena::alloc, heap = c.heap },
+            linked = list::new(u32){ realloc = arena::alloc, heap = c.heap },
             traps = 0,
         }
     }
@@ -179,6 +185,7 @@ namespace lower {
             statics = list::items{ list = l.statics },
             fns = list::items{ list = l.fns },
             main, start, panic, entry = ends.entry, on_panic = ends.on_panic, stack_limit, threaded, exports,
+            links = list::items{ list = l.links },
         }
     }
 
@@ -381,7 +388,41 @@ namespace lower {
         let i = @as(u32, l.queue.len)
         try! map::put{ m = &l.fn_ids, key = k, value = i }
         try! list::push{ list = &l.queue, item = Inst{ decl, targs, site = NONE, widen = null, entry = NONE } }
+        let x = check::get_decl{ c = l.c.*, d = decl }
+        if x.kind == check::Kind::external {
+            for f in x.fields {
+                let mut t = f.ty
+                if get{ l, t } is ptr{ elem } { t = elem }
+                if get{ l, t } is cap{ decl = d } { reach_links{ &l, d } }
+            }
+        }
         return i
+    }
+
+    // Capability d's `#c_link`s and those of the capabilities it includes, each capability's
+    // once, the first time the program reaches it (spec §18, Extern functions, rule 11): an
+    // extern fn that takes it, or one of its C variables, is called or read. A library two
+    // capabilities name is linked for each, so that each lists its own dependencies after it.
+    fn reach_links { mut l: Lower, d: u32 } {
+        let x = check::get_decl{ c = l.c.*, d }
+        if not has{ xs = list::items{ list = l.linked }, n = d } {
+            try! list::push{ list = &l.linked, item = d }
+            // A relative directory is from the file's.
+            let dir = drive::parent{ path = unit_of{ l, x } }
+            for k in x.links {
+                let mut dirs = list::new(ir::Bytes){ realloc = arena::alloc, heap = l.heap }
+                for at in k.dirs { try! list::push{ list = &dirs, item = drive::place{ heap = l.heap, dir, rel = at } } }
+                try! list::push{ list = &l.links, item = ir::Link{ lib = k.lib, archive = k.archive, framework = k.framework, dirs = list::items{ list = dirs } } }
+            }
+        }
+        for i in x.includes {
+            if not has{ xs = list::items{ list = l.linked }, n = i } { reach_links{ &l, d = i } }
+        }
+    }
+
+    fn has { xs: []u32, n: u32 } -> bool {
+        for x in xs { if x == n { return true } }
+        return false
     }
 
     // The id of the hidden fn of site si (Inst), in the instance being lowered.
@@ -2589,6 +2630,7 @@ namespace lower {
         let ty = tid{ &l, t = T{ &l, t = v.ty } }
         try! list::push{ list = &l.vars, item = ir::Var{ name = v.name, symbol = check::var_symbol{ c = l.c.*, v }, ty } }
         try! list::push{ list = &l.var_owners, item = v.owner }
+        reach_links{ &l, d = v.owner }
         return @as(u32, vs.len)
     }
 

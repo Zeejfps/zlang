@@ -250,8 +250,10 @@ namespace tool {
 
     // Compiles the C at tmp_c, with the runtime, into exe, with linker flags, and removes
     // tmp_c. The runtime is linked as ctxc's driver links it: ctxfloat's object if the C calls
-    // it, and ctxthread's for a threaded program. Null if all went well, or the C compiler's
-    // words.
+    // it, and ctxthread's for a threaded program; and after the objects, each flag of a line
+    // `// link: FLAG` that `ctxc build` starts the C with, which link the C libraries the
+    // program's capabilities name (spec §18, Extern functions, rule 11). Null if all went well,
+    // or the C compiler's words.
     fn link { mut io: Io, mut fs: Fs, mut proc: Proc, mut heap: Heap, s: Session, mut scratch: Scratch, tmp_c: []u8, exe: []u8, name: []u8, flags: [][]u8, cflags: [][]u8 } -> ?[]u8 {
         let c = read_file{ &fs, &heap, path = tmp_c } ifnull { return "the C can't be read" }
         let float = has{ s = c, part = "ctx_float_" } or has{ s = c, part = "ctx_f2i_" }
@@ -269,6 +271,12 @@ namespace tool {
         let tmp_exe = cat3{ &heap, a = exe, b = ".", c = cat{ &heap, a = base{ path = scratch.dir }, b = ".tmp" } }
         try! list::push{ list = &argv, item = "-o" }
         try! list::push{ list = &argv, item = tmp_exe }
+        let mut at: usize = 0
+        while starts_with{ s = c[at..], prefix = "// link: " } {
+            let end = line_end{ s = c, from = at }
+            try! list::push{ list = &argv, item = c[at + 9..end] }
+            at = if end < c.len { end + 1 } else { end }
+        }
         for f in flags { try! list::push{ list = &argv, item = f } }
         try! list::push{ list = &argv, item = "-lm" }
         // glibc before 2.34 keeps threads in a library of their own.
@@ -337,6 +345,18 @@ namespace tool {
         let mut all = strs{ &heap }
         for e in env { try! list::push{ list = &all, item = e } }
         try! list::push{ list = &all, item = CTXC_STACK }
+        // The C compiler that looks for the archives a `#c_link` names (`-print-file-name`) is
+        // the one that links the program, unless the case's environment names another.
+        let mut named = false
+        for e in env { if starts_with{ s = e, prefix = "CTX_CC=" } { named = true } }
+        if not named {
+            let mut cc = list::new(u8){ realloc = arena::alloc, &heap }
+            for w at i in s.cc {
+                if i > 0 { try! list::push{ list = &cc, item = ' ' } }
+                for ch in w { try! list::push{ list = &cc, item = ch } }
+            }
+            try! list::push{ list = &all, item = cat{ &heap, a = "CTX_CC=", b = list::items{ list = cc } } }
+        }
         return run{ &fs, &proc, &heap, &scratch, argv = list::items{ list = argv }, env = list::items{ list = all }, dir, input = "", seconds = 0 }
     }
 

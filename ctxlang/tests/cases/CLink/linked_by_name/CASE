@@ -1,0 +1,16 @@
+// `#c_link{ lib }` links `-lLIB` (spec §18, Extern functions, rule 11), here a static library
+// made from lib/three.c, which the build program's build::lib_path says where to find, and
+// only for the executable that calls the capability's extern fn: `other` doesn't, and builds
+// though nothing would find the library for it.
+//# needs: ar
+//# $ cc -c {dir}/lib/three.c -o {dir}/lib/three.o
+//# exit: 0
+//# $ ar rcs {dir}/lib/libctxlinked.a {dir}/lib/three.o
+//# exit: 0
+//# project
+//# $ {three}
+//# stdout:
+//| 3
+//# $ {other}
+//# stdout:
+//| other

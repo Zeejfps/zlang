@@ -1,0 +1,9 @@
+// `#c_link{ lib, archive = true }` links the static archive libLIB.a by its path, which is
+// looked for in CTX_LIB_PATH's directories, where the C compiler finds it, and the attribute's
+// `dirs`, a relative one from its file's directory (spec §18, Extern functions, rule 11). There
+// is none here, so the build fails, naming the archive and each place it looked.
+//# $ ctxc exe src/archive.ctx -o archive{exe}
+//# env: CTX_LIB_PATH={dir}/libs
+//# exit: 1
+//# stderr:
+//| ctxc: no archive libctx_no_such_archive.a for `#c_link{ lib = "ctx_no_such_archive", archive = true }`: looked in {dir}/libs; where `{any} -print-file-name` looks; src/nowhere; /also/nowhere

@@ -1,0 +1,18 @@
+// A capability's `#c_link` names a C library that a program links only if it calls one of the
+// capability's extern fns (spec §18, Extern functions, rule 11). This one never calls
+// `ctx_no_such_fn`, so the library, which doesn't exist, isn't linked, and the program builds
+// and runs.
+
+namespace nolib {
+    #c_link{ lib = "ctx_no_such_library" }
+    capability Missing
+
+    extern fn ctx_no_such_fn { mut m: Missing } -> i32
+}
+
+fn main { mut io: Io, mut m: nolib::Missing } {
+    io::println{ &io, s = "built" }
+}
+
+//# stdout:
+//| built

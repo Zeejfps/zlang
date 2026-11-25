@@ -1,0 +1,31 @@
+namespace sys {
+    #c_link{ lib = "base" }
+    capability Base
+
+    #c_link{ lib = "first" }
+    #c_link{ lib = "first_dep", archive = true, dirs = ["/abs/dir", "rel"] }
+    capability First { ..Base }
+
+    #c_link{ lib = "second", framework = true }
+    #c_link{ lib = "base" }
+    capability Second
+
+    #c_link{ lib = "never" }
+    capability Never
+
+    #c_link{ lib = ":libvar.so.1" }
+    capability Vars { extern optind: i32 }
+
+    extern fn use_second { mut s: Second }
+    extern fn use_first { mut f: First }
+    extern fn use_never { mut n: Never }
+
+    fn index { mut v: Vars } -> i32 { return v.optind }
+}
+
+fn main { mut s: sys::Second, mut f: sys::First, mut v: sys::Vars } -> i32 {
+    sys::use_second{ &s }
+    sys::use_first{ &f }
+    sys::use_second{ &s }
+    return sys::index{ &v }
+}

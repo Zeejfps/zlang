@@ -1,0 +1,30 @@
+// The libraries a program links, in the typed IR (`ctxc ir`): each `#c_link` of each capability
+// that an extern fn the program calls takes, or one of whose C variables it reads, and of those
+// it includes (spec §18, Extern functions, rule 11). A capability's are in the order written,
+// the capabilities in the order the program first reaches them, each once: Second's, First's
+// and then Base's, which First includes, so `base` is there twice, once for each capability
+// that names it; then Vars', for its C variable. Never's extern fn isn't called, and its
+// library isn't there. A relative `dirs` entry is from its file's directory.
+//# build text: {home}/tests/helpers/text.ctx
+
+//# $ ctxc ir {std} -- main0.ctx
+//# exit: 0
+//# stdout has:
+//| (link "second" 0 1 [])
+//| (link "base" 0 0 [])
+//| (link "first" 0 0 [])
+//| (link "first_dep" 1 0 ["/abs/dir" "rel"])
+//| (link "base" 0 0 [])
+//| (link ":libvar.so.1" 0 0 [])
+//|
+//# stdout lacks:
+//| "never"
+
+// The IR reads back as it was written.
+//# $ {text} to p.ir {ctxc} ir {std} -- main0.ctx
+//# exit: 0
+//# $ {text} to q.ir {ctxc} roundtrip p.ir
+//# exit: 0
+//# $ {text} same p.ir q.ir
+//# stdout:
+//| same

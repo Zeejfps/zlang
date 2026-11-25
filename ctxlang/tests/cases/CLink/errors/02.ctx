@@ -1,0 +1,30 @@
+// `#c_link`'s fields are literals (spec §18, Extern functions, rule 11): `lib`, a string, which
+// it must have, `archive` and `framework`, booleans, and `dirs`, an array of strings, each once.
+
+const NAME: []u8 = "a"
+
+#c_link  //~ error at 1: `c_link` takes `lib = "name"`, a string literal, and, each of which may be left out, `archive = true` or `false`, `framework = true` or `false` and `dirs = ["dir", ...]`, string literals
+capability A
+
+#c_link{ archive = true }  //~ error at 1: `c_link` takes `lib = "name"`, a string literal, and, each of which may be left out, `archive = true` or `false`, `framework = true` or `false` and `dirs = ["dir", ...]`, string literals
+capability B
+
+#c_link{ lib = NAME }  //~ error at 10: `c_link` takes `lib = "name"`, a string literal, and, each of which may be left out, `archive = true` or `false`, `framework = true` or `false` and `dirs = ["dir", ...]`, string literals
+capability C
+
+#c_link{ lib = "a", archive = 1 }  //~ error at 21: `c_link` takes `lib = "name"`, a string literal, and, each of which may be left out, `archive = true` or `false`, `framework = true` or `false` and `dirs = ["dir", ...]`, string literals
+capability D
+
+#c_link{ lib = "a", path = "b" }  //~ error at 21: `c_link` takes `lib = "name"`, a string literal, and, each of which may be left out, `archive = true` or `false`, `framework = true` or `false` and `dirs = ["dir", ...]`, string literals
+capability E
+
+#c_link{ lib = "a", archive = true, dirs = "b" }  //~ error at 37: `c_link` takes `lib = "name"`, a string literal, and, each of which may be left out, `archive = true` or `false`, `framework = true` or `false` and `dirs = ["dir", ...]`, string literals
+capability F
+
+#c_link{ lib = "a", lib = "b" }  //~ error at 21: `lib` is given twice
+capability G
+
+#c_link{ lib = "a", archive = true, dirs = ["b", 3, ""] }  //~ error at 50: `dirs` holds string literals, each a directory an archive is looked for in //~ error at 53: `dirs` holds string literals, each a directory an archive is looked for in
+capability H
+
+fn main {} {}

@@ -316,6 +316,10 @@ the same call gives at run time. A program's own namespace of the same name (a `
 whole (§10, rule 4).
 C calls a fn through a pointer if it is `#c_callback`, and by name too if it is
 `#c_export{ name = "symbol" }`, one or the other (§18, Callbacks).
+`#c_link{ lib = "ws2_32" }` on a capability links that library into a program that calls one
+of the capability's extern fns, and into no other; `archive = true` links `libLIB.a` by its
+path, found in `CTX_LIB_PATH`, the C compiler's paths or `dirs = ["..."]`, and
+`framework = true` a macOS framework (§18, Extern functions, rule 11).
 
 ## Printing and text
 
