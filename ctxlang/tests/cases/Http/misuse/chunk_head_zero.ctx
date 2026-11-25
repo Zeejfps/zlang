@@ -6,7 +6,7 @@ fn main { mut io: Io } {
     _ = http::write_chunk_head{ into = line[..], size = 0 }
 }
 
-//# panic: std/http.ctx:330:24: panic: http::write_chunk_head: a chunk of 0 bytes ends the body: write LAST_CHUNK
+//# panic: std/http.ctx:366:24: panic: http::write_chunk_head: a chunk of 0 bytes ends the body: write LAST_CHUNK
 //# path:
-//|   at http::write_chunk_head (std/http.ctx:330:24)
+//|   at http::write_chunk_head (std/http.ctx:366:24)
 //|   at main (chunk_head_zero.ctx:6:31)

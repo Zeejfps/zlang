@@ -1,17 +1,21 @@
-// std: http. HTTP/1.1's sans-IO core (docs/todo/http.md, The core): message heads parsed in a
-// buffer into slices of it, how a message's body is framed, chunked bodies decoded and encoded,
-// and heads written into a buffer. There is no socket here: a connection reads bytes into a
-// buffer and asks this core what they are, so every rule is tested without a network.
+// std: http. HTTP/1.1 (docs/todo/http.md): a sans-IO core, and connections and a server that
+// drive it over net's sockets.
+//
+// The core (The core): message heads parsed in a buffer into slices of it, how a message's body
+// is framed, chunked bodies decoded and encoded, and heads written into a buffer. There is no
+// socket in it: a connection reads bytes into a buffer and asks the core what they are, so
+// every rule is tested without a network.
 //
 //   let mut fields: [100]http::Header
-//   let head = try http::parse_request_head{ buffer = received, headers = fields[..] } ifnull {
+//   let mut headers = fields[..]
+//   let head = try http::parse_request_head{ buffer = received, &headers } ifnull {
 //       // incomplete: receive more after `received`, and ask again
 //   }
 //   // head.method "GET", head.target "/a?b", head.version 11, head.headers, head.size
 //   let framing = http::frame_request{ head }                 // none, length{ n } or chunked
 //   let host = http::find_header{ headers = head.headers, name = "host" }
 //
-// It is pure, with no capability, so it runs in the interpreter and while compiling.
+// The core is pure, with no capability, so it runs in the interpreter and while compiling.
 //
 // What the parsers read (RFC 9112, with RFC 9110's fields):
 //
@@ -64,6 +68,32 @@
 // store there are slices of `buffer`, and the escape check (spec §14) can tell that a buffer
 // outlives the fields only for a place given to a `mut` field: through a read-only slice it
 // can't see where the fields go, and would refuse every buffer that is a local.
+//
+// Connections and the server (Connections, Serving) take `mut net: Net`. A Connection is a
+// stream, a socket, and a buffer of the caller's, which holds a head and what arrived past it;
+// nothing is allocated. A server's connection, in a task of the program's per connection:
+//
+//   fn connection { mut net: Net, mut threads: Threads, socket: net::Socket } -> ! {
+//       defer net::close{ &net, socket }
+//       let mut buffer: [16384]u8
+//       let mut fields: [100]http::Header
+//       let mut headers = fields[..]
+//       let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
+//       http::serve_connection{ &net, &threads, &conn, &headers, limits = http::Limits{ .. }, handle = answer } iferr {}
+//   }
+//
+//   fn answer { mut net: Net, exchange: http::Exchange } -> ! {
+//       return http::respond{ &net, exchange, status = 200, headers = [], body = "hello\n" }
+//   }
+//
+// serve_connection reads each request's head (read_request) with a deadline, a task it
+// cancels; the handler reads the body (read_body, discard_body) and answers (respond, or
+// send_response, write_body and finish_body for a body it streams); a request it can't read is
+// answered 400, 431, 501 or 505. Keep-alive, pipelining, HTTP/1.0 and Expect: 100-continue
+// are the connection's. A connection's calls block, and fail with task::cancelled in a task
+// asked to stop. The connection's misuse panics, as a task handle's does: a second response
+// to a request, a body written that the response said it hadn't, a request read while the
+// last one's body is unread.
 
 namespace http {
     // A header field: a name and a value, slices of the buffer the head was read into or of the
@@ -297,11 +327,17 @@ namespace http {
     // `input`, which ends at the chunk's end or the input's. A caller loops until `used` is
     // input.len or the body is done. Once done, it uses nothing more.
     fn decode { mut chunked: Chunked, input: []u8 } -> !Decoded {
+        return decode_most{ &chunked, input, most = input.len }
+    }
+
+    // As decode, giving at most `most` body bytes, which isn't 0: what a connection reads into a
+    // program's buffer of that length, so no body byte it consumed is left over.
+    fn decode_most { mut chunked: Chunked, input: []u8, most: usize } -> !Decoded {
         let mut i: usize = 0
         while i < input.len {
             if chunked.state is done { break }
             if chunked.state is data {
-                let have: u64 = input.len - i
+                let have: u64 = @min(input.len - i, most)
                 let take = @as(usize, @min(chunked.left, have))
                 chunked.left = chunked.left - take
                 chunked.offset = chunked.offset + take
@@ -392,6 +428,577 @@ namespace http {
         n = try put_fields{ into, n, headers, request = false }
         n = try put_framing{ into, n, framing, close = close or framing is until_close }
         return put{ into, n, s = "\r\n" }
+    }
+
+    // ---- connections
+
+    // What a connection reads and writes. The connection owns none of it: the program closes
+    // it. TLS joins as a second variant, `secure{ tls: *mut tls::Stream }`, with std's TLS
+    // (docs/todo/net.md, Order of work, 9 to 11), which each match over a Stream then reads
+    // and writes in an arm of its own; until it exists a connection is over a socket.
+    union Stream {
+        plain{ socket: net::Socket },
+    }
+
+    // One HTTP/1.1 connection, a client's or a server's, made by `open`. `buffer` is the
+    // caller's: it holds a message head, so its length is the longest head this connection
+    // takes, and what was received past the head, which a body reads from first and which may
+    // be the next head, as a pipelined request is. A request's head stays at its start while
+    // the request is answered, since the Incoming's slices point into it, and a server writes
+    // its response's head into the part that neither it nor received bytes hold: so the buffer
+    // is the longest request head a server takes plus the response head it sends with it.
+    // 16 KiB is a good size.
+    struct Connection {
+        stream: Stream,
+        buffer: []mut u8,
+        start: usize,                   // received bytes not yet consumed: buffer[start..end]
+        end: usize,
+        kept: usize,                    // the head being answered, buffer[..kept], which its message's slices point into
+        reading: Framing,               // what is left of the body being read: none once it is read
+        chunked: Chunked,               // its decoder's state, when it is chunked
+        writing: Framing,               // what is left of the body being written: none once it is finished
+        method_head: bool,              // the last request was HEAD: its response has no body
+        keep: bool,                     // whether the connection may carry another message after this one
+        version: u8,                    // the peer's last message's HTTP version, 10 or 11
+        responded: bool,                // a server's: the last request's response has begun
+        continue_due: bool,             // a server's: the last request expects 100 Continue, not yet sent
+    }
+
+    error ended_early                   // the connection ended inside a message, or a `length` body wasn't all written
+    error body_too_large                // past a `length` body's length
+    error timed_out                     // serve_connection: a head didn't arrive within its Limits
+
+    // A connection over `stream`, with `buffer` for heads and what arrives past them. An empty
+    // buffer panics.
+    fn open { stream: Stream, buffer: []mut u8 } -> Connection {
+        if buffer.len == 0 { @panic("http::open: the buffer is empty") }
+        return Connection{ stream, buffer, start = 0, end = 0, kept = 0, reading = Framing::none, chunked = Chunked{ .. },
+                           writing = Framing::none, method_head = false, keep = true, version = 11,
+                           responded = false, continue_due = false }
+    }
+
+    // Reads at most into.len bytes of the body being read: how many, 0 at its end (and for an
+    // empty `into`). A chunked body comes de-chunked. A server's request that expects 100
+    // Continue gets it first. A connection that ends inside the body is ended_early.
+    fn read_body { mut net: Net, mut conn: Connection, into: []mut u8 } -> !usize {
+        if into.len == 0 { return 0 }
+        try send_continue{ &net, &conn }
+        while true {
+            match conn.reading {
+                none => { return 0 }
+                length{ n } => {
+                    let want = @as(usize, @min(n, into.len))
+                    let got = try take_bytes{ &net, &conn, into = into[..want] }
+                    if got == 0 {
+                        conn.keep = false
+                        return ended_early
+                    }
+                    conn.reading = if got == n { Framing::none } else { Framing::length{ n = n - got } }
+                    return got
+                }
+                chunked => {
+                    if conn.start < conn.end {
+                        let d = try decode_most{ chunked = &conn.chunked, input = conn.buffer[conn.start..conn.end], most = into.len }
+                        conn.start = conn.start + d.used
+                        if d.body.len > 0 {
+                            slice::copy(u8){ dst = into[..d.body.len], src = d.body }
+                            return d.body.len
+                        }
+                        if d.done {
+                            conn.reading = Framing::none
+                            return 0
+                        }
+                    } else if conn.chunked.state is data {
+                        // A chunk's data goes straight into `into`, which the decoder then counts.
+                        let want = @as(usize, @min(conn.chunked.left, into.len))
+                        let got = try receive_from{ &net, stream = conn.stream, into = into[..want] }
+                        if got == 0 {
+                            conn.keep = false
+                            return ended_early
+                        }
+                        _ = try decode_most{ chunked = &conn.chunked, input = into[..got], most = got }
+                        return got
+                    } else if try receive_more{ &net, &conn } == 0 {
+                        conn.keep = false
+                        return ended_early
+                    }
+                }
+                until_close => {
+                    let got = try take_bytes{ &net, &conn, into }
+                    if got == 0 {
+                        conn.reading = Framing::none
+                        conn.keep = false
+                    }
+                    return got
+                }
+            }
+        }
+        return 0
+    }
+
+    // Reads the rest of the body and drops it, so that the connection can carry the next
+    // message.
+    fn discard_body { mut net: Net, mut conn: Connection } -> ! {
+        _ = try drop_body{ &net, &conn, most = 18446744073709551615 }
+    }
+
+    // Writes some of the body being written: all of `bytes`, as a chunk if it is chunked (none
+    // for no bytes, since a chunk of 0 ends the body). A `length` body fails with
+    // body_too_large past its length, having sent nothing. A response to HEAD sends none of it,
+    // counting it all the same. With no body being written it panics: send_response's `body`
+    // says whether one follows.
+    fn write_body { mut net: Net, mut conn: Connection, bytes: []u8 } -> ! {
+        match conn.writing {
+            none => { @panic("http::write_body: no body is being written: send it with Body::length or Body::chunked") }
+            length{ n } => {
+                if bytes.len > n { return body_too_large }
+                conn.writing = Framing::length{ n = n - bytes.len }
+                if not conn.method_head { try send_to{ &net, stream = conn.stream, bytes } }
+            }
+            chunked => {
+                if bytes.len == 0 or conn.method_head { return }
+                try send_chunk{ &net, &conn, bytes }
+            }
+            until_close => { try send_to{ &net, stream = conn.stream, bytes } }
+        }
+    }
+
+    // Ends the body being written: the last chunk of a chunked one, or a check that a `length`
+    // one was all written (a response to HEAD's always is), ended_early if it wasn't, after
+    // which the connection can't carry another message. A body that ends at a close ends when the program closes the
+    // connection, which may carry nothing after it. With no body being written it does
+    // nothing, so it may follow any response.
+    fn finish_body { mut net: Net, mut conn: Connection } -> ! {
+        let writing = conn.writing
+        conn.writing = Framing::none
+        match writing {
+            none => {}
+            length{ n } => {
+                if n > 0 and not conn.method_head {
+                    conn.keep = false
+                    return ended_early
+                }
+            }
+            chunked => {
+                if not conn.method_head { try send_to{ &net, stream = conn.stream, bytes = LAST_CHUNK } }
+            }
+            until_close => { conn.keep = false }
+        }
+    }
+
+    // ---- a server's
+
+    // A request's head, read by read_request: slices of the connection's buffer, and `headers`,
+    // a slice of the caller's array.
+    struct Incoming {
+        method: []u8,
+        target: []u8,
+        version: u8,                    // 10 or 11
+        headers: []Header,
+        framing: Framing,               // how its body ends: none, length{ n } or chunked
+        keep_alive: bool,               // whether it lets the connection carry another request after this one
+        expects_continue: bool,         // Expect: 100-continue, with a body: read_body sends 100 Continue first
+    }
+
+    // Reads a request's head into the connection's buffer and `headers`, receiving until it is
+    // whole. Null when the peer finished sending before a new request began, which is how a
+    // kept-alive connection ends; ended_early when it finished inside a head, and
+    // head_too_large when the head doesn't fit the buffer. The parser's errors are as
+    // parse_request_head's. The last request's body must have been read or discarded: if it
+    // wasn't, it panics, since whether to read a body nobody wants is the program's choice.
+    fn read_request { mut net: Net, mut conn: Connection, mut headers: []mut Header } -> !?Incoming {
+        if not (conn.reading is none) { @panic("http::read_request: the last request's body is unread: read or discard it first") }
+        release_head{ &conn }
+        while true {
+            let have = conn.buffer[conn.start..conn.end]
+            if let head = try parse_request_head{ buffer = have, &headers } {
+                return try begin_request{ &conn, head }
+            }
+            if conn.end == conn.buffer.len { return head_too_large }
+            if try receive_more{ &net, &conn } == 0 {
+                // Empty lines before a request are no request (RFC 9112 §2.2).
+                for c in conn.buffer[conn.start..conn.end] {
+                    if c != '\r' and c != '\n' { return ended_early }
+                }
+                conn.keep = false
+                return null
+            }
+        }
+        return null
+    }
+
+    // Writes "100 Continue", for a request that expects it, before its body is read; read_body
+    // writes it itself. It does nothing for a request that doesn't expect it, or once it is
+    // sent or a response has begun, which the client then reads instead.
+    fn send_continue { mut net: Net, mut conn: Connection } -> ! {
+        if not conn.continue_due or conn.responded { return }
+        conn.continue_due = false
+        try send_to{ &net, stream = conn.stream, bytes = "HTTP/1.1 100 Continue\r\n\r\n" }
+    }
+
+    // Writes a response's head, and its body if it is `bytes`. A body that is `length` or
+    // `chunked` follows with write_body and finish_body. `close` ends the connection after it;
+    // so does a request that asked to (Incoming.keep_alive), a `Connection: close` among
+    // `headers`, and a chunked body for an HTTP/1.0 client, which is sent as it is and ends at
+    // the close, since HTTP/1.0 has no chunks. A kept-alive HTTP/1.0 client is told
+    // `Connection: keep-alive`, as it must be. The head is written into the part of the
+    // connection's buffer that the request's head and received bytes don't hold:
+    // head_too_large if it doesn't fit there.
+    //
+    // A 1xx status other than 101 is informational: it is written with no body, it isn't the
+    // response, and an HTTP/1.0 client, which can't read one, isn't sent it (RFC 9110 §15.2).
+    // 101 switches the connection to another protocol (an Upgrade), so it carries no more
+    // HTTP. 204, 304 and 1xx have no body: another `body` than none panics, as a second
+    // response to one request does.
+    fn send_response { mut net: Net, mut conn: Connection, status: u16, headers: []Header, body: Body, close: bool } -> ! {
+        if status < 100 or status > 599 { @panic("http::send_response: a status is 100 to 599") }
+        if conn.responded { @panic("http::send_response: the request has its response already") }
+        let bodiless = status < 200 or status == 204 or status == 304
+        if bodiless and not (body is none) { @panic("http::send_response: a 1xx, 204 or 304 response has no body") }
+        if status < 200 and status != 101 {
+            if conn.version == 10 { return }
+            if status == 100 { conn.continue_due = false }
+            move_to_front{ &conn }
+            let n = try write_response_head{ into = conn.buffer[conn.end..], status, headers, framing = Framing::none, close = false }
+            return send_to{ &net, stream = conn.stream, bytes = conn.buffer[conn.end..conn.end + n] }
+        }
+        let mut framing = Framing::none
+        let mut sends: []u8 = ""
+        match body {
+            none => { if not bodiless { framing = Framing::length{ n = 0 } } }
+            bytes{ bytes } => {
+                framing = Framing::length{ n = bytes.len }
+                sends = bytes
+            }
+            length{ n } => { framing = Framing::length{ n } }
+            chunked => { framing = if conn.version == 10 { Framing::until_close } else { Framing::chunked } }
+        }
+        let said_close = is_closing{ headers }
+        conn.keep = conn.keep and not close and not said_close and not (framing is until_close) and status != 101
+        conn.responded = true
+        move_to_front{ &conn }
+        let free = conn.buffer[conn.end..]
+        // write_response_head writes Connection: close for until_close itself.
+        let mut n = try write_response_head{ into = free, status, headers, framing, close = not conn.keep and not said_close and status != 101 }
+        if conn.version == 10 and conn.keep {
+            // In place of the empty line that ends the head.
+            n = try put{ into = free, n = n - 2, s = "Connection: keep-alive\r\n\r\n" }
+        }
+        conn.writing = if body is length | chunked { framing } else { Framing::none }
+        if conn.method_head { sends = "" }
+        if sends.len > 0 and sends.len <= free.len - n {
+            // The body goes in the same send as the head.
+            slice::copy(u8){ dst = free[n..n + sends.len], src = sends }
+            return send_to{ &net, stream = conn.stream, bytes = free[..n + sends.len] }
+        }
+        try send_to{ &net, stream = conn.stream, bytes = free[..n] }
+        if sends.len > 0 { try send_to{ &net, stream = conn.stream, bytes = sends } }
+    }
+
+    // ---- serving
+
+    // What serve_connection allows a connection.
+    struct Limits {
+        head_ns: u64 = 30000000000,     // for the next request's head to arrive whole, from when the connection is ready for it: 30 s
+        requests: u32 = 0,              // requests per connection, the last answered with Connection: close; 0 for no limit
+    }
+
+    // What a handler gets: the request, and the connection to read its body from and send the
+    // response on (read_body, send_response, write_body and finish_body take `conn =
+    // exchange.conn`). It sends one response; serve_connection sends 500 if it didn't.
+    struct Exchange { conn: *mut Connection, request: Incoming }
+
+    // A request's body that serve_connection reads and drops after a handler that left it, so
+    // that the connection can carry the next request; past it, the connection ends instead.
+    const DISCARD_MOST: u64 = 65536
+
+    // Answers one connection's requests, each with `handle`, until the peer finishes sending
+    // between requests, a response ends the connection (`close`, the request's, an until_close
+    // body, `Limits.requests`), or a request's head doesn't arrive within `limits.head_ns`
+    // (timed_out). It returns then, and the program closes the connection's stream.
+    //
+    // A request it can't read is answered and ends the connection, with the error it read:
+    // 400 for malformed, 431 for head_too_large and too_many_headers (RFC 6585), 501 for
+    // unsupported_coding, 505 for unsupported_version. A handler that fails is answered 500 if
+    // it sent nothing, and its error returned. One that returns having sent nothing is answered
+    // 500, and the connection goes on; one that left its response's body unfinished ends it,
+    // ended_early. A request's body the handler didn't read is discarded, up to DISCARD_MOST
+    // bytes, before the next request; past that, or when it expected 100 Continue that wasn't
+    // sent (so its client may never send it), the connection ends instead. A connection that
+    // ends after a response does so in stages (linger), so that the client reads the response
+    // whatever it was still sending.
+    //
+    // A head's deadline is a task's (Limits.head_ns): when the buffer doesn't already hold the
+    // next head whole, the head is read in a task of its own (task::start_concurrent), which is
+    // waited for with task::wait_for and cancelled at the deadline. `handle` runs here, on the
+    // caller's thread, as a plain function value.
+    fn serve_connection { mut net: Net, mut threads: Threads, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, exchange: Exchange } -> ! } -> ! {
+        let mut served: u32 = 0
+        while true {
+            let got = read_request_within{ &net, &threads, &conn, &headers, nanoseconds = limits.head_ns } iferr err{ error } {
+                if refuse{ &net, &conn, error } { linger{ &net, &threads, &conn } }
+                return error
+            }
+            let request = got ifnull { return }
+            served = served + 1
+            if limits.requests != 0 and served >= limits.requests { conn.keep = false }
+            handle{ &net, exchange = Exchange{ conn = &conn, request } } iferr err{ error } {
+                if not conn.responded {
+                    conn.keep = false
+                    send_response{ &net, &conn, status = 500, headers = [], body = Body::none, close = true } iferr { return error }
+                    linger{ &net, &threads, &conn }
+                }
+                return error
+            }
+            if not conn.responded { try send_response{ &net, &conn, status = 500, headers = [], body = Body::none, close = false } }
+            // A response to HEAD has no body to finish, whatever its head said.
+            if not conn.method_head and not (conn.writing is none or conn.writing == Framing::length{ n = 0 }) {
+                conn.keep = false
+                return ended_early
+            }
+            if conn.keep and not (conn.reading is none) {
+                // A body nobody read: dropped, unless its client may be waiting for 100 Continue
+                // before it sends it, or it is too long to be worth reading.
+                if conn.continue_due or not try drop_body{ &net, &conn, most = DISCARD_MOST } { conn.keep = false }
+            }
+            if not conn.keep {
+                linger{ &net, &threads, &conn }
+                return
+            }
+        }
+    }
+
+    // A whole response, for a handler: `status`, `headers`, and `body`, with its Content-Length.
+    fn respond { mut net: Net, exchange: Exchange, status: u16, headers: []Header, body: []u8 } -> ! {
+        return send_response{ &net, conn = exchange.conn, status, headers, body = Body::bytes{ bytes = body }, close = false }
+    }
+
+    // ---- connections' parts
+
+    // Receives some bytes from the stream into `into`: how many, 0 once the peer finished sending.
+    fn receive_from { mut net: Net, stream: Stream, into: []mut u8 } -> !usize {
+        match stream {
+            plain{ socket } => { return net::receive{ &net, socket, into } }
+        }
+    }
+
+    // Sends all of `bytes` on the stream.
+    fn send_to { mut net: Net, stream: Stream, bytes: []u8 } -> ! {
+        match stream {
+            plain{ socket } => { _ = try net::send{ &net, socket, bytes } }
+        }
+    }
+
+    // Tells the peer this end has finished sending: a socket's sending side shut.
+    fn finish_sending { mut net: Net, stream: Stream } -> ! {
+        match stream {
+            plain{ socket } => { try net::shutdown{ &net, socket, how = net::Shutdown::send } }
+        }
+    }
+
+    // Moves the bytes not yet consumed to just after the head being answered (to the buffer's
+    // start between messages), so that what follows them is all the room there is. The head
+    // stays where it is: the message's slices point into it.
+    fn move_to_front { mut conn: Connection } {
+        if conn.start == conn.kept { return }
+        let k = conn.end - conn.start
+        // Forward, which is right for a move towards the start.
+        for i in 0..k { conn.buffer[conn.kept + i] = conn.buffer[conn.start + i] }
+        conn.start = conn.kept
+        conn.end = conn.kept + k
+    }
+
+    // Lets go of the last message's head, before the next is read: what follows it moves to
+    // the buffer's start.
+    fn release_head { mut conn: Connection } {
+        conn.kept = 0
+        move_to_front{ &conn }
+    }
+
+    // Receives into the buffer after the bytes it holds: how many, 0 once the peer finished
+    // sending. The buffer must have room after moving them next to the head.
+    fn receive_more { mut net: Net, mut conn: Connection } -> !usize {
+        move_to_front{ &conn }
+        let n = try receive_from{ &net, stream = conn.stream, into = conn.buffer[conn.end..] }
+        conn.end = conn.end + n
+        return n
+    }
+
+    // Body bytes into `into`: those the buffer holds, or else received straight into it.
+    fn take_bytes { mut net: Net, mut conn: Connection, into: []mut u8 } -> !usize {
+        if conn.start < conn.end {
+            let k = @min(conn.end - conn.start, into.len)
+            slice::copy(u8){ dst = into[..k], src = conn.buffer[conn.start..conn.start + k] }
+            conn.start = conn.start + k
+            return k
+        }
+        return receive_from{ &net, stream = conn.stream, into }
+    }
+
+    // Reads and drops the body, at most `most` bytes of it: whether it ended.
+    fn drop_body { mut net: Net, mut conn: Connection, most: u64 } -> !bool {
+        let mut scratch: [4096]u8
+        let mut dropped: u64 = 0
+        while true {
+            let n = try read_body{ &net, &conn, into = scratch[..] }
+            if n == 0 { return true }
+            dropped = dropped + n
+            if dropped > most { return false }
+        }
+        return true
+    }
+
+    // A chunk of `bytes`, which aren't empty: its size line, its data and its end, in one send
+    // when they fit the buffer's free part.
+    fn send_chunk { mut net: Net, mut conn: Connection, bytes: []u8 } -> ! {
+        move_to_front{ &conn }
+        let free = conn.buffer[conn.end..]
+        if free.len >= CHUNK_HEAD_MOST + bytes.len + CHUNK_END.len {
+            let mut n = write_chunk_head{ into = free, size = bytes.len }
+            slice::copy(u8){ dst = free[n..n + bytes.len], src = bytes }
+            n = n + bytes.len
+            slice::copy(u8){ dst = free[n..n + CHUNK_END.len], src = CHUNK_END }
+            return send_to{ &net, stream = conn.stream, bytes = free[..n + CHUNK_END.len] }
+        }
+        let mut line: [CHUNK_HEAD_MOST]u8
+        let n = write_chunk_head{ into = line[..], size = bytes.len }
+        try send_to{ &net, stream = conn.stream, bytes = line[..n] }
+        try send_to{ &net, stream = conn.stream, bytes }
+        try send_to{ &net, stream = conn.stream, bytes = CHUNK_END }
+    }
+
+    // Whether a message's Connection fields keep the connection open after it: HTTP/1.1's
+    // default unless one says `close`, and HTTP/1.0's only with `keep-alive` (RFC 9112 §9.3).
+    fn is_kept_alive { version: u8, headers: []Header } -> bool {
+        if is_closing{ headers } { return false }
+        if version != 10 { return true }
+        let mut i: usize = 0
+        while true {
+            let k = find_header_from{ headers, name = "connection", from = i } ifnull { return false }
+            if has_token{ value = headers[k].value, token = "keep-alive" } { return true }
+            i = k + 1
+        }
+        return false
+    }
+
+    // Whether a Connection field among `headers` says `close`.
+    fn is_closing { headers: []Header } -> bool {
+        let mut i: usize = 0
+        while true {
+            let k = find_header_from{ headers, name = "connection", from = i } ifnull { return false }
+            if has_token{ value = headers[k].value, token = "close" } { return true }
+            i = k + 1
+        }
+        return false
+    }
+
+    // The connection's state for a request whose head was just parsed at buffer[start..], and
+    // the request.
+    fn begin_request { mut conn: Connection, head: RequestHead } -> !Incoming {
+        // The head is at the buffer's start (release_head), and stays there while it is answered;
+        // the body and the response's head need room beside it.
+        if head.size == conn.buffer.len { return head_too_large }
+        conn.start = head.size
+        conn.kept = head.size
+        let framing = frame_request{ head }
+        let empty = framing is none or framing == Framing::length{ n = 0 }
+        conn.reading = if empty { Framing::none } else { framing }
+        conn.chunked = Chunked{ .. }
+        conn.writing = Framing::none
+        conn.method_head = slice::eq_bytes{ a = head.method, b = "HEAD" }
+        conn.version = head.version
+        conn.keep = is_kept_alive{ version = head.version, headers = head.headers }
+        conn.responded = false
+        // An HTTP/1.0 client can't read a 1xx response (RFC 9110 §10.1.1).
+        let expects = head.version == 11 and has_token{ value = find_header{ headers = head.headers, name = "expect" } ifnull { "" }, token = "100-continue" }
+        conn.continue_due = expects and not empty
+        return Incoming{ method = head.method, target = head.target, version = head.version, headers = head.headers, framing,
+                         keep_alive = conn.keep, expects_continue = conn.continue_due }
+    }
+
+    // read_request, with the head's deadline: a head the buffer already holds whole is read at
+    // once; otherwise it is read in a task, which is cancelled if it hasn't ended within
+    // `nanoseconds`, and then the request is timed_out.
+    fn read_request_within { mut net: Net, mut threads: Threads, mut conn: Connection, mut headers: []mut Header, nanoseconds: u64 } -> !?Incoming {
+        release_head{ &conn }
+        let have = conn.buffer[conn.start..conn.end]
+        if let head = try parse_request_head{ buffer = have, &headers } {
+            return try begin_request{ &conn, head }
+        }
+        let mut reading: task::Task(!?Incoming)
+        try task::start_concurrent{ &threads, task = &reading, run = read_request{ &net, &conn, &headers, _ } }
+        if task::wait_for{ &threads, task = &reading, nanoseconds } {
+            return task::wait{ &threads, task = &reading }
+        }
+        match task::cancel{ &threads, task = &reading } {
+            ok{ value } => { return value }         // it ended as the deadline came
+            err{ error } => {
+                match error {
+                    task::cancelled => {
+                        conn.keep = false
+                        return timed_out
+                    }
+                    else => { return error }
+                }
+            }
+        }
+    }
+
+    // The response to a request that couldn't be read, by what was wrong with it, which ends
+    // the connection: whether one was sent. An error of the stream gets none, and neither does
+    // ended_early, a peer that finished sending inside a head.
+    fn refuse { mut net: Net, mut conn: Connection, error: error } -> bool {
+        let status: u16 = match error {
+            malformed => 400
+            head_too_large | too_many_headers => 431
+            unsupported_coding => 501
+            unsupported_version => 505
+            else => 0
+        }
+        conn.keep = false
+        if status == 0 { return false }
+        // What was received is dropped with the request, and the response is written in its place:
+        // a head too large for the buffer leaves no room beside it.
+        conn.start = 0
+        conn.end = 0
+        conn.kept = 0
+        conn.responded = false
+        conn.method_head = false
+        conn.version = 11
+        send_response{ &net, &conn, status, headers = [], body = Body::none, close = true } iferr { return false }
+        return true
+    }
+
+    // How long serve_connection reads and drops what a client still sends once a response has
+    // ended the connection.
+    const LINGER_NS: u64 = 2000000000
+
+    // Ends a connection whose client may still be sending, as RFC 9112 §9.6 asks: closing a
+    // socket with bytes unread resets the connection, and a reset can destroy the response
+    // before the client has read it. So this end's sending side is shut, which the client
+    // reads as the response's end, and what arrives is read and dropped, in a task of its own,
+    // until the client finishes sending, LINGER_NS pass or DISCARD_MOST bytes have come. The
+    // program then closes the stream.
+    fn linger { mut net: Net, mut threads: Threads, mut conn: Connection } {
+        finish_sending{ &net, stream = conn.stream } iferr { return }
+        let mut draining: task::Task(!)
+        task::start_concurrent{ &threads, task = &draining, run = drain{ &net, stream = conn.stream, _ } } iferr { return }
+        if task::wait_for{ &threads, task = &draining, nanoseconds = LINGER_NS } {
+            _ = task::wait{ &threads, task = &draining }
+        } else {
+            _ = task::cancel{ &threads, task = &draining }
+        }
+    }
+
+    // Reads and drops what arrives until the peer finishes sending, or DISCARD_MOST bytes came.
+    fn drain { mut net: Net, stream: Stream } -> ! {
+        let mut scratch: [4096]u8
+        let mut total: u64 = 0
+        while total <= DISCARD_MOST {
+            let n = try receive_from{ &net, stream, into = scratch[..] }
+            if n == 0 { return }
+            total = total + n
+        }
     }
 
     // ---- reading

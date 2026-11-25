@@ -1,0 +1,11 @@
+// http::open panics for an empty buffer, which could hold no head.
+
+fn main {} {
+    let mut buf: [16]u8
+    _ = http::open{ stream = http::Stream::plain{ socket = net::Socket{ id = 0 } }, buffer = buf[..0] }
+}
+
+//# panic: std/http.ctx:474:30: panic: http::open: the buffer is empty
+//# path:
+//|   at http::open (std/http.ctx:474:30)
+//|   at main (open_empty.ctx:5:19)

@@ -1,0 +1,16 @@
+// read_request panics while the last request's body is unread: whether to read a body nobody
+// wants is the program's choice, which discard_body makes.
+
+fn main { mut net: Net } {
+    let mut buf: [64]u8
+    let mut fields: [4]http::Header
+    let mut headers = fields[..]
+    let mut conn = http::open{ stream = http::Stream::plain{ socket = net::Socket{ id = 0 } }, buffer = buf[..] }
+    conn.reading = http::Framing::length{ n = 3 }
+    _ = http::read_request{ &net, &conn, &headers }
+}
+
+//# panic: std/http.ctx:610:41: panic: http::read_request: the last request's body is unread: read or discard it first
+//# path:
+//|   at http::read_request (std/http.ctx:610:41)
+//|   at main (read_request_unread.ctx:10:27)

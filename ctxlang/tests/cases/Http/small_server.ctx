@@ -1,0 +1,185 @@
+// docs/todo/http.md's small server and its two ways of stopping (Serving, A small server and
+// Stopping), compiled and run: `connection`, `answer` and `serve` as the design writes them,
+// and `accept_into` and `serve_until` for a graceful stop. A client of raw sockets, which reads
+// the responses with http's own parser, has three requests answered on one connection; the
+// server that `serve` runs is then stopped at once by cancelling its task, which closes that
+// connection. `serve_until` then serves another, which is asked to stop: the connection it
+// keeps is still served during the grace period, and closed at its end.
+//# interp: cannot run
+//# timeout: 120
+//# stdout:
+//| GET / -> 200 <p>home</p>
+//| GET /missing -> 404 not found
+//| POST / -> 405 Allow: GET
+//| serve: cancelled
+//| at once: the connection closed
+//| GET /about -> 200 <p>about</p>
+//| asked to stop
+//| GET / during the grace period -> 200 <p>home</p>
+//| serve_until: ended
+//| after the grace period: the connection closed
+
+struct Site { home: []u8, about: []u8 }
+
+fn site_page { site: *Site, path: []u8 } -> ?[]u8 {
+    if slice::eq_bytes{ a = path, b = "/" } { return site.home }
+    if slice::eq_bytes{ a = path, b = "/about" } { return site.about }
+    return null
+}
+
+// What a program sets to stop serve_until, and how serve_until waits for it.
+struct Signal { raised: u32 }
+
+fn wait_for_signal { mut threads: Threads, stop: *Signal } {
+    while @atomic_load(&stop.raised) == 0 { thread::sleep{ &threads, nanoseconds = 1000000 } }
+}
+
+// ---- the design's server
+
+// A connection's task. Its error is dropped: a group's task that fails cancels the group's
+// others, and a client's misstep (a reset, a head that didn't arrive) is no reason to end
+// every connection.
+fn connection { mut net: Net, mut threads: Threads, socket: net::Socket, site: *Site } -> ! {
+    defer net::close{ &net, socket }
+    let mut buffer: [16384]u8
+    let mut fields: [100]http::Header
+    let mut headers = fields[..]
+    let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
+    http::serve_connection{ &net, &threads, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } } iferr {}
+}
+
+fn answer { site: *Site, mut net: Net, exchange: http::Exchange } -> ! {
+    let r = exchange.request
+    if not slice::eq_bytes{ a = r.method, b = "GET" } {
+        return http::respond{ &net, exchange, status = 405, headers = [http::Header{ name = "Allow", value = "GET" }], body = "" }
+    }
+    let page = site_page{ site, path = r.target } ifnull {
+        return http::respond{ &net, exchange, status = 404, headers = [], body = "not found\n" }
+    }
+    return http::respond{ &net, exchange, status = 200, headers = [http::Header{ name = "Content-Type", value = "text/html" }], body = page }
+}
+
+// Accepts until cancelled. The group is this function's local: however it returns, every
+// connection's task ends first.
+fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site } -> ! {
+    let mut connections: task::Group
+    while true {
+        let socket = net::accept{ &net, listener } iferr err{ error } {
+            match error {
+                net::aborted => { continue }                          // a client gave up while queued
+                net::too_many_open => {
+                    thread::sleep{ &threads, nanoseconds = 100000000 }  // let connections end
+                    continue
+                }
+                else => { return error }
+            }
+        }
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, &threads, socket, site, _ } } iferr {
+            net::close{ &net, socket }                                // no thread for it: refuse it
+        }
+    }
+}
+
+fn accept_into { mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site, mut connections: task::Group } -> ! {
+    while true {
+        let socket = try net::accept{ &net, listener }
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, &threads, socket, site, _ } } iferr {
+            net::close{ &net, socket }
+        }
+    }
+}
+
+fn serve_until { mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site, stop: *Signal, grace_ns: u64 } -> ! {
+    let mut connections: task::Group
+    let mut acceptor: task::Task(!)
+    try task::start_concurrent{ &threads, task = &acceptor, run = accept_into{ &net, &threads, listener, site, &connections, _ } }
+    wait_for_signal{ &threads, stop }                       // the program's: a condition, a console handler
+    _ = task::cancel{ &threads, task = &acceptor }          // no new connections
+    if task::wait_all_for{ &threads, group = &connections, nanoseconds = grace_ns } {
+        return task::wait_all{ &threads, group = &connections }     // at once: the first error of the connections
+    }
+    task::cancel_all{ &threads, group = &connections }      // the grace period is over
+}
+
+// ---- the client
+
+// Sends `request` and reads its response, which has a Content-Length, into `into`: its line.
+fn ask { mut io: Io, mut net: Net, socket: net::Socket, request: []u8, line: []u8 } -> ! {
+    _ = try net::send{ &net, socket, bytes = request }
+    let mut buffer: [4096]u8
+    let mut fields: [16]http::Header
+    let mut headers = fields[..]
+    let mut have: usize = 0
+    while true {
+        let got = try net::receive{ &net, socket, into = buffer[have..] }
+        if got == 0 { return net::closed }
+        have = have + got
+        let head = try http::parse_response_head{ buffer = buffer[..have], &headers } ifnull { continue }
+        let n = @as(usize, head.content_length ifnull { 0 })
+        while have < head.size + n {
+            let more = try net::receive{ &net, socket, into = buffer[have..] }
+            if more == 0 { return net::closed }
+            have = have + more
+        }
+        let body = buffer[head.size..head.size + n]
+        if let allow = http::find_header{ headers = head.headers, name = "allow" } {
+            _ = @fmt(&io, "{} -> {} Allow: {}\n", line, head.status, allow)
+        } else {
+            let mut shown = body.len
+            if shown > 0 and body[shown - 1] == '\n' { shown = shown - 1 }
+            _ = @fmt(&io, "{} -> {} {}\n", line, head.status, body[..shown])
+        }
+        return
+    }
+}
+
+// Whether the server closed `socket`: a receive gives 0, or reset.
+fn is_closed { mut net: Net, socket: net::Socket } -> bool {
+    let mut buf: [16]u8
+    let n = net::receive{ &net, socket, into = buf[..] } iferr { 0 }
+    return n == 0
+}
+
+fn report { mut io: Io, what: []u8, r: ! } {
+    match r {
+        ok => { _ = @fmt(&io, "{}: ended\n", what) }
+        err{ error } => {
+            match error {
+                task::cancelled => { _ = @fmt(&io, "{}: cancelled\n", what) }
+                else => { _ = @fmt(&io, "{}: {}\n", what, error) }
+            }
+        }
+    }
+}
+
+fn main { mut io: Io, mut net: Net, mut threads: Threads } -> i32 {
+    let site = Site{ home = "<p>home</p>\n", about = "<p>about</p>\n" }
+    let listener = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 1 }
+    defer net::close_listener{ &net, listener }
+    let at = net::listener_address{ &net, listener } iferr { return 1 }
+
+    // Stopping at once.
+    let mut server: task::Task(!)
+    task::start_concurrent{ &threads, task = &server, run = serve{ &net, &threads, listener, site = &site, _ } } iferr { return 2 }
+    let a = net::connect{ &net, address = at } iferr { return 3 }
+    defer net::close{ &net, socket = a }
+    ask{ &io, &net, socket = a, request = "GET / HTTP/1.1\r\nHost: x\r\n\r\n", line = "GET /" } iferr { return 4 }
+    ask{ &io, &net, socket = a, request = "GET /missing HTTP/1.1\r\nHost: x\r\n\r\n", line = "GET /missing" } iferr { return 4 }
+    ask{ &io, &net, socket = a, request = "POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\n\r\nabc", line = "POST /" } iferr { return 4 }
+    report{ &io, what = "serve", r = task::cancel{ &threads, task = &server } }
+    if is_closed{ &net, socket = a } { io::println{ &io, s = "at once: the connection closed" } }
+
+    // Stopping gracefully.
+    let mut stop = Signal{ raised = 0 }
+    let mut graceful: task::Task(!)
+    task::start_concurrent{ &threads, task = &graceful, run = serve_until{ &net, &threads, listener, site = &site, stop = &stop, grace_ns = 1000000000, _ } } iferr { return 5 }
+    let b = net::connect{ &net, address = at } iferr { return 6 }
+    defer net::close{ &net, socket = b }
+    ask{ &io, &net, socket = b, request = "GET /about HTTP/1.1\r\nHost: x\r\n\r\n", line = "GET /about" } iferr { return 7 }
+    @atomic_store(&stop.raised, 1)
+    io::println{ &io, s = "asked to stop" }
+    ask{ &io, &net, socket = b, request = "GET / HTTP/1.1\r\nHost: x\r\n\r\n", line = "GET / during the grace period" } iferr { return 8 }
+    report{ &io, what = "serve_until", r = task::wait{ &threads, task = &graceful } }
+    if is_closed{ &net, socket = b } { io::println{ &io, s = "after the grace period: the connection closed" } }
+    return 0
+}

@@ -1,7 +1,8 @@
 # HTTP: design
 
 Status: **design**, threads.md's item 1, after net.md. **Built: `url`** (Order of work, 1), as
-std/url.ctx, and **the core** (2 and 3), as std/http.ctx; nothing else here is. HTTP/1.1, client and
+std/url.ctx, **the core** (2 and 3), and **the server** (6) with the part of the connections it
+needs, as std/http.ctx; the client (4 and 5) and WebSocket (7 and 8) aren't. HTTP/1.1, client and
 server, written in ctxlang over `net` and `tls` (net.md), with URLs (`url`) and WebSocket
 (`websocket`) beside it.
 
@@ -235,6 +236,41 @@ namespace http {
     fn open { stream: Stream, buffer: []mut u8 } -> Connection
 }
 ```
+
+Built with the server (Order of work, 6): `Stream`, `Connection`, `open`, `read_body`,
+`discard_body`, `write_body` and `finish_body` as declared here and below, with keep-alive and
+pipelining (the next head is read from what the buffer already holds). It differs in these places:
+
+- **`Stream` has only `plain`.** `tls::Stream` doesn't exist until net.md's items 9 to 11; the
+  union and every match over it (std/http.ctx's `receive_from`, `send_to`, `finish_sending`) are
+  where `secure` joins, an arm each, and nothing else changes.
+- **`Connection` has four more fields**: `kept`, the head being answered (below); `version`, the peer's last message's (a server sends a
+  chunked body to an HTTP/1.0 client until the close); `responded`, whether the last request's
+  response has begun, which was `Exchange.responded` (Serving, Built); and `continue_due`, a
+  request's 100 Continue not yet sent. A client's `send_request` and `read_response` leave the
+  last two alone.
+- **A request's head stays at the buffer's start until the next is read**, since the `Incoming`'s
+  slices point into it: received bytes move next to it, never over it. A head that fills the whole
+  buffer is `head_too_large`, as it would leave no room for the rest. Building it found this: an
+  early version moved received bytes to the buffer's start and wrote the response there, and a
+  handler that read `exchange.request` after `send_response` read the response's bytes.
+- **A server's response head is written into the part of the buffer that the request's head and
+  received bytes don't hold**: the one buffer the design gives a connection also holds what a client
+  pipelined, which a response mustn't overwrite. A head that doesn't fit there is `head_too_large`,
+  so a buffer is the longest request head a server takes plus the response head it sends with it. A
+  client's buffer is empty when it sends (the last body is read first, Keep-alive and reuse), so the
+  whole buffer is its room.
+- **`finish_body` on a `length` body not all written is `ended_early`**, not `malformed`, whose
+  offset is into bytes the peer sent; the connection can't carry another message after it.
+  `ended_early` also covers a peer that finished sending inside a head or a body.
+- **`write_body` with no body being written panics** (after `Body::none` or `bytes`, which say no
+  body follows), as misusing a task handle does. `finish_body` with none does nothing, so it may
+  follow any response. A response to HEAD counts what `write_body` is given and sends none of it,
+  and is finished whether the handler wrote its body or not.
+- **`read_body` gives at most `into.len` bytes of a chunk** however much of it the buffer holds:
+  the core gained `decode_most`, `decode` with a bound on the body bytes it gives, so no byte the
+  decoder consumed is left over. A chunk's data with nothing buffered is received straight into
+  `into`. An empty `into` reads 0.
 
 ### A client's
 
@@ -528,33 +564,37 @@ server is busy), on Evented a fiber. A handler that reads a body slowly is the h
 same way; `serve_connection` doesn't time a body, whose size and pace only the handler knows.
 
 **The accept loop is the program's**, a task per connection in a `task::Group`, as net.md's server
-is (TCP, A server). `http` has no `serve` that accepts and starts tasks itself: a start's `run` must be a bind of a
-task fn written in the call (spec §15, Tasks, rule 3), so a `serve` of std's would start its own task fn
-around the program's handler, calling one function value from many tasks at once with whatever that
-value holds, which exclusivity can't check through a `&fn`. The loop is twenty lines, and shows what
-runs concurrently and what each connection costs.
+is (TCP, A server). `http` has no `serve` that accepts and starts tasks itself: a start's `run` must be
+a bind written in the call (spec §15, Tasks, rule 3), so a `serve` of std's would start its own bind
+around the program's handler, a function value whose borrows the start can't see, and call it from
+many tasks at once with whatever it holds: `&thread fn` keeps a thread-bound capability out of it,
+and nothing checks the places it holds. The loop is twenty lines, and shows what runs concurrently
+and what each connection costs.
 
 ### A small server
 
 ```
+// A connection's task. Its error is dropped: a group's task that fails cancels the group's
+// others, and a client's misstep (a reset, a head that didn't arrive) is no reason to end
+// every connection.
 fn connection { mut net: Net, mut threads: Threads, socket: net::Socket, site: *Site } -> ! {
     defer net::close{ &net, socket }
     let mut buffer: [16384]u8
     let mut fields: [100]http::Header
     let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-    try http::serve_connection{ &net, &threads, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } }
+    http::serve_connection{ &net, &threads, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } } iferr {}
 }
 
-fn answer { site: *Site, mut net: Net, mut exchange: http::Exchange } -> ! {
+fn answer { site: *Site, mut net: Net, exchange: http::Exchange } -> ! {
     let r = exchange.request
     if not slice::eq_bytes{ a = r.method, b = "GET" } {
-        return http::respond{ &net, &exchange, status = 405, headers = [http::Header{ name = "Allow", value = "GET" }], body = "" }
+        return http::respond{ &net, exchange, status = 405, headers = [http::Header{ name = "Allow", value = "GET" }], body = "" }
     }
     let page = site_page{ site, path = r.target } ifnull {
-        return http::respond{ &net, &exchange, status = 404, headers = [], body = "not found\n" }
+        return http::respond{ &net, exchange, status = 404, headers = [], body = "not found\n" }
     }
-    return http::respond{ &net, &exchange, status = 200, headers = [http::Header{ name = "Content-Type", value = "text/html" }], body = page }
+    return http::respond{ &net, exchange, status = 200, headers = [http::Header{ name = "Content-Type", value = "text/html" }], body = page }
 }
 
 // Accepts until cancelled. The group is this function's local: however it returns, every
@@ -581,7 +621,9 @@ fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, site: *S
 
 Each connection's buffers are its task's locals, on the worker's stack: nothing is allocated per
 connection, and nothing needs returning to a free list. `site` is shared read-only through a pointer
-(spec §3.1, rule 6); a site that changes while served puts its state behind a mutex.
+(spec §3.1, rule 6); a site that changes while served puts its state behind a mutex. This server, and
+`serve_until` below, are compiled and run as tests/cases/Http/small_server.ctx, with `site_page` and
+`wait_for_signal` of its own.
 
 ### Stopping
 
@@ -620,6 +662,107 @@ The connections' tasks finish their exchange and then wait for the next request'
 that keeps its connection idle holds it until the grace period ends, when the cancel reaches it. A
 handler that should end kept-alive connections sooner sends `close = true` once the program says it is
 stopping (a flag it reads with atomics).
+
+### Built
+
+Built (Order of work, 6) in std/http.ctx, whose header says it in full:
+
+```text
+namespace http {
+    struct Incoming { method: []u8, target: []u8, version: u8, headers: []Header, framing: Framing, keep_alive: bool, expects_continue: bool }
+    fn read_request { mut net: Net, mut conn: Connection, mut headers: []mut Header } -> !?Incoming
+    fn send_continue { mut net: Net, mut conn: Connection } -> !
+    fn send_response { mut net: Net, mut conn: Connection, status: u16, headers: []Header, body: Body, close: bool } -> !
+
+    struct Limits { head_ns: u64 = 30000000000, requests: u32 = 0 }
+    struct Exchange { conn: *mut Connection, request: Incoming }
+    const DISCARD_MOST: u64 = 65536
+    const LINGER_NS: u64 = 2000000000
+    fn serve_connection { mut net: Net, mut threads: Threads, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, exchange: Exchange } -> ! } -> !
+    fn respond { mut net: Net, exchange: Exchange, status: u16, headers: []Header, body: []u8 } -> !
+}
+```
+
+The design predates `&thread fn` (spec §5, rule 5; §15, Tasks), which replaced `#task` fns. Against it:
+
+- **The handler is a plain `&fn`**, `handle: &fn{ mut net: Net, exchange: Exchange } -> !`. It
+  runs in `serve_connection`, on the thread of the connection's task, which the program started
+  with a bind it wrote, where `&thread fn` checked it (rule 1). Only the head's read runs in a task
+  `serve_connection` starts, and that bind holds no handler. A `&thread fn` handler would refuse
+  one that holds a thread-bound capability for no reason, and a program's handler binds what it
+  wants (`answer{ site, _ }`, or `&threads` to sleep), as a `&fn` local may.
+- **The head's deadline task borrows `serve_connection`'s own `mut` fields.** A helper,
+  `read_request_within`, declares `let mut reading: task::Task(!?Incoming)` and starts
+  `run = read_request{ &net, &conn, &headers, _ }`, a bind written in the call (rule 3) whose
+  places are the `conn` and `headers` its caller passed through `mut` fields (rule 8). While the
+  loan lasts the helper touches neither (rule 9); `task::wait` after a `wait_for` that saw the end,
+  or `task::cancel` at the deadline, ends it on every path, so the request it gives may be used.
+  The checker accepted this as written. A task that ended just as the deadline came gives its
+  request from `cancel`, and is served. A head the buffer already holds whole, as a pipelined one
+  is, is parsed at once, without a task: the deadline is for waiting, and costs a worker per head
+  only when there is waiting to do. A start that fails (`out_of_resources`) ends the connection
+  with its error, rather than read a head without a deadline.
+- **`Exchange` is `{ conn, request }`, and handlers take it read-only.** `responded` moved to the
+  connection: a handler that answers with `send_response{ conn = exchange.conn, ... }`, to stream
+  a body, never touches the Exchange, so only the connection can know whether a response began.
+  `respond` takes `exchange` read-only too (`respond{ &net, exchange, ... }`).
+- **`Limits` has no `headers`**: the caller's array is the field limit, as everywhere (Decision 2),
+  and a second number could only disagree with it.
+- **The examples changed in two places to compile and run**: `answer` and `respond` take the
+  exchange read-only, and `connection` drops `serve_connection`'s error (`iferr {}`) instead of
+  `try`: a group's task that fails cancels its others (std/task.ctx, `start_in`), so a client's
+  reset or a head that didn't arrive in time would have ended every connection of the server
+  (docs/todo/friction.md, 40).
+
+And what building it settled:
+
+- **A head's deadline ends the connection silently**: `serve_connection` returns `timed_out`, and
+  the program's `defer` closes the stream. No 408 is sent: on an idle kept-alive connection a
+  client may send a request as the deadline comes, and would read a 408 as that request's answer.
+- **Error responses** are 400, 431, 501 and 505 as designed, with `Content-Length: 0` and
+  `Connection: close`. What was received is dropped first, since a head that filled the buffer
+  leaves no room beside it for the response's head. A peer that finished sending inside a head
+  (`ended_early`) or a stream error gets none.
+- **A connection that ends after a response ends in stages** (RFC 9112 §9.6): its sending side is
+  shut, and what the client still sends is read and dropped, in a task of its own, until the
+  client finishes, `LINGER_NS` (2 s) pass or `DISCARD_MOST` bytes came. Closing a socket with
+  bytes unread resets the connection, and a reset can destroy the response before the client reads
+  it, as for a 431 to a head larger than the buffer, whose rest is still arriving.
+- **A handler that sends nothing is answered 500 and the connection goes on**, since nothing about
+  the connection is wrong; one that fails is answered 500 if it sent nothing, the connection ends,
+  and its error is `serve_connection`'s; one that left its body unfinished (a `length` body short, a
+  chunked one without `finish_body`) ends the connection with `ended_early`, so the client sees the
+  body cut short rather than complete.
+- **`Limits.requests`'s last response says `Connection: close`**, so the client knows, rather than
+  find the connection closed.
+- **100 Continue**: `read_body` sends it when the request expects it, so a handler that reads the
+  body needn't call `send_continue`; a handler that answers without reading the body leaves it
+  unsent, and the connection then ends rather than wait for a body the client may never send (RFC
+  9110 §10.1.1). An HTTP/1.0 request's Expect is ignored, since it can't read a 1xx, and so is any
+  expectation but `100-continue`, which the RFC allows (its 417 is a MAY).
+- **HTTP/1.0**: a kept-alive client is answered `Connection: keep-alive`, which it needs to keep the
+  connection; a chunked body goes to it as it is, until the close.
+- **Statuses**: a 1xx other than 101 is informational, written with no body and not the response,
+  and never sent to an HTTP/1.0 client; 101 ends HTTP on the connection, so `serve_connection`
+  returns after its handler; a body on a 1xx, 204 or 304, and a second response to a request, panic,
+  as the program's own mistakes.
+- **`http::Error`, the set, isn't declared yet**: each function infers its set (spec §8, Errors,
+  rule 5), and none of the server's declares one. Most of the set is `fetch`'s and `tls`'s (Order
+  of work, 5), which it is written with.
+
+Tested in tests/cases/Http (Testing 3): server_python_peers, against Python's http.client and raw
+sockets (tests/helpers/http_peer.py): keep-alive across requests on one connection; chunked and
+length request bodies, a chunked one read 3 bytes at a time; a chunked response and HEAD, also of a `length` body
+the handler doesn't write; a handler
+that sends nothing and one that fails; four requests pipelined in one send, one with a body its
+handler doesn't read; Expect: 100-continue, read and unread; 400 for a broken field, no Host and
+both lengths, 431 for a head larger than the buffer and for too many fields, 501 for gzip, 505 for
+HTTP/2.0; `Connection: close` from either end; HTTP/1.0, closed and kept alive, with a chunked body
+sent until the close; and on a server with a 500 ms head deadline and two requests a connection,
+the limit, a client that sends nothing and one that sends half a head, each closed after the
+deadline. small_server runs the design's server and both ways of stopping, with a kept connection
+served during the grace period and closed at its end. misuse/ holds the connection's panics. The
+socket cases passed 5 runs in a row with `--fresh`.
 
 ## WebSocket
 
@@ -770,7 +913,9 @@ After net.md's packages 1 to 8 (1, `task::wait_all_for`, for 6), and its 9 to 11
    Testing 2 whole.
 6. **The server.** `read_request`, `send_continue`, `send_response`, `serve_connection` with `Limits`
    and its head deadline, `respond`, the error responses. Verified: Testing 3, and the small server
-   above compiled as a test.
+   above compiled as a test. **Built** (Serving, Built), with the connection level it needs (`Stream`
+   plain, `Connection`, `open`, `read_body`, `write_body`, `finish_body`, `discard_body`; Connections,
+   Built).
 7. **base64 and sha1.** std/base64.ctx, std/sha1.ctx. Verified: RFC 4648's and FIPS 180's test vectors,
    interpreted and compiled.
 8. **WebSocket.** std/websocket.ctx. Verified: Testing 4.
@@ -794,7 +939,9 @@ Each package also updates spec §17's table for what it adds.
 6. **Deadlines are tasks**, in `fetch`'s callers and inside `serve_connection`. Rejected: socket
    deadlines (net.md, Timeouts).
 7. **The accept loop is the program's** (Serving). Rejected: `http::serve` taking a handler, which
-   would call one function value from many tasks at once.
+   would call one function value from many tasks at once. Kept with `&thread fn`, which checks a
+   value's capabilities and not the places it holds; a later step revisits it with a real program's
+   server.
 8. **WebSocket in; HTTP/2, HTTP/3, compression out** (Out of scope).
 9. **A URL's parts are slices of its text**, with no storage in `Url`: a zone is a field of its own,
    and empty and absent parts differ by optionals (URLs, Built). Rejected: a `Url` holding a buffer
@@ -811,6 +958,20 @@ Each package also updates spec §17's table for what it adds.
    every buffer that is a local.
 13. **The parsers check framing; `frame_*` can't fail** (The core, Built). Rejected: refusals in
    `frame_request`, which has no offsets to give.
+14. **A handler is a `&fn`, run on the connection's task** (Serving, Built). Rejected: a `&thread fn`
+   handler, which would refuse thread-bound capabilities in a handler that never leaves its thread.
+15. **A head's deadline task borrows the connection the caller passed**, and runs only when the
+   head isn't already in the buffer (Serving, Built). Rejected: a task per connection that serves
+   it whole, which would put the handler on another thread; and a socket deadline (Decision 6).
+16. **Whether a response began is the connection's** (Serving, Built). Rejected:
+   `Exchange.responded`, which a handler that streams with `send_response` bypasses.
+17. **A connection ends after a response in stages**, a lingering close (Serving, Built).
+   Rejected: closing at once, whose reset can destroy the response.
+18. **A server's response head goes into the buffer's free part, beside the request's head, which
+   stays put** (Connections, Built). Rejected:
+   a second buffer, which every connection would pay for to serve a client that pipelines more than
+   its buffer less a head; and a buffer on `send_response`'s stack, a limit of its own besides the
+   caller's.
 
 ## Open questions
 

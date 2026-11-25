@@ -1,0 +1,111 @@
+// A ctxlang HTTP server for tests/helpers/http_peer.py: two listeners, each with its accept
+// loop in a task and a task per connection, the second with a short head deadline and two
+// requests a connection. The program starts the peer with both ports, prints what it printed
+// once it has ended, and stops the servers.
+
+error failed_here
+
+const SHORT_HEAD_NS: u64 = 500000000
+
+fn is_path { target: []u8, path: []u8 } -> bool {
+    return slice::eq_bytes{ a = target, b = path }
+}
+
+// Answers by the request's path.
+fn answer { mut net: Net, exchange: http::Exchange } -> ! {
+    let target = exchange.request.target
+    if is_path{ target, path = "/hello" } {
+        return http::respond{ &net, exchange, status = 200, headers = [], body = "hello\n" }
+    }
+    // /echo3 reads the body 3 bytes at a time, so a chunk is given in parts.
+    let small = is_path{ target, path = "/echo3" }
+    if small or is_path{ target, path = "/echo" } {
+        let mut body: [65536]u8
+        let mut n: usize = 0
+        while true {
+            let end = if small { @min(n + 3, body.len) } else { body.len }
+            let got = try http::read_body{ &net, conn = exchange.conn, into = body[n..end] }
+            if got == 0 { break }
+            n = n + got
+        }
+        // The request's slices still point at its head, whatever reading the body moved.
+        if not (is_path{ target = exchange.request.target, path = "/echo" } or is_path{ target = exchange.request.target, path = "/echo3" }) {
+            return http::respond{ &net, exchange, status = 500, headers = [], body = "the head moved\n" }
+        }
+        return http::respond{ &net, exchange, status = 200, headers = [], body = body[..n] }
+    }
+    if is_path{ target, path = "/stream" } {
+        try http::send_response{ &net, conn = exchange.conn, status = 200, headers = [], body = http::Body::chunked, close = false }
+        try http::write_body{ &net, conn = exchange.conn, bytes = "one," }
+        try http::write_body{ &net, conn = exchange.conn, bytes = "two," }
+        try http::write_body{ &net, conn = exchange.conn, bytes = "three" }
+        return http::finish_body{ &net, conn = exchange.conn }
+    }
+    // /sized writes its body only for GET: a response to HEAD is finished without it.
+    if is_path{ target, path = "/sized" } {
+        try http::send_response{ &net, conn = exchange.conn, status = 200, headers = [], body = http::Body::length{ n = 6 }, close = false }
+        if slice::eq_bytes{ a = exchange.request.method, b = "GET" } { try http::write_body{ &net, conn = exchange.conn, bytes = "sized\n" } }
+        return http::finish_body{ &net, conn = exchange.conn }
+    }
+    if is_path{ target, path = "/close" } {
+        return http::send_response{ &net, conn = exchange.conn, status = 200, headers = [], body = http::Body::bytes{ bytes = "bye\n" }, close = true }
+    }
+    if is_path{ target, path = "/nothing" } { return }
+    if is_path{ target, path = "/fail" } { return failed_here }
+    return http::respond{ &net, exchange, status = 404, headers = [], body = "not found\n" }
+}
+
+// A connection's task, whose error is dropped: one client's is no reason to end the others.
+fn connection { mut net: Net, mut threads: Threads, socket: net::Socket, limits: http::Limits } -> ! {
+    defer net::close{ &net, socket }
+    let mut buffer: [16384]u8
+    let mut fields: [100]http::Header
+    let mut headers = fields[..]
+    let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
+    http::serve_connection{ &net, &threads, &conn, &headers, limits, handle = answer } iferr {}
+}
+
+fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, limits: http::Limits } -> ! {
+    let mut connections: task::Group
+    while true {
+        let socket = try net::accept{ &net, listener }
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, &threads, socket, limits, _ } } iferr {
+            net::close{ &net, socket }
+        }
+    }
+}
+
+fn main { mut io: Io, mut net: Net, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {
+    let listener = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 1 }
+    defer net::close_listener{ &net, listener }
+    let short = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 1 }
+    defer net::close_listener{ &net, listener = short }
+    let at = net::listener_address{ &net, listener } iferr { return 1 }
+    let short_at = net::listener_address{ &net, listener = short } iferr { return 1 }
+
+    let mut plain: task::Task(!)
+    task::start_concurrent{ &threads, task = &plain, run = serve{ &net, &threads, listener, limits = http::Limits{ .. }, _ } } iferr { return 2 }
+    let mut limited: task::Task(!)
+    task::start_concurrent{ &threads, task = &limited, run = serve{ &net, &threads, listener = short, limits = http::Limits{ head_ns = SHORT_HEAD_NS, requests = 2 }, _ } } iferr { return 2 }
+
+    let mut text: [20]u8
+    let port = utf8::fmt_u64{ n = at.port, into = text[..] }
+    let mut short_text: [20]u8
+    let short_port = utf8::fmt_u64{ n = short_at.port, into = short_text[..] }
+    let options = proc::Options{ stdout = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = ["python", args[0], port.bytes, short_port.bytes], options } iferr { return 3 }
+    let out = child.stdout ifnull { return 3 }
+    let mut said: [8192]u8
+    let mut n: usize = 0
+    while n < said.len {
+        let got = proc::read{ &proc, pipe = out, into = said[n..] } iferr { return 4 }
+        if got == 0 { break }
+        n = n + got
+    }
+    let code = proc::wait{ &proc, &child } iferr { -1 }
+    _ = task::cancel{ &threads, task = &plain }
+    _ = task::cancel{ &threads, task = &limited }
+    _ = @fmt(&io, "{}", said[..n])
+    _ = @fmt(&io, "python ended: {}\n", code)
+    return 0
+}

@@ -1,0 +1,13 @@
+// send_response panics for a request whose response has begun: a request has one.
+
+fn main { mut net: Net } {
+    let mut buf: [64]u8
+    let mut conn = http::open{ stream = http::Stream::plain{ socket = net::Socket{ id = 0 } }, buffer = buf[..] }
+    conn.responded = true
+    _ = http::send_response{ &net, &conn, status = 200, headers = [], body = http::Body::none, close = false }
+}
+
+//# panic: std/http.ctx:655:29: panic: http::send_response: the request has its response already
+//# path:
+//|   at http::send_response (std/http.ctx:655:29)
+//|   at main (respond_twice.ctx:7:28)

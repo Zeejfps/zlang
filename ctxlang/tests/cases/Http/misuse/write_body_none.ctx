@@ -1,0 +1,14 @@
+// write_body panics with no body being written: the response's `body` says whether one
+// follows, so a write after Body::none or Body::bytes is the program's mistake. It panics
+// before it touches the socket.
+
+fn main { mut net: Net } {
+    let mut buf: [64]u8
+    let mut conn = http::open{ stream = http::Stream::plain{ socket = net::Socket{ id = 0 } }, buffer = buf[..] }
+    _ = http::write_body{ &net, &conn, bytes = "more" }
+}
+
+//# panic: std/http.ctx:552:23: panic: http::write_body: no body is being written: send it with Body::length or Body::chunked
+//# path:
+//|   at http::write_body (std/http.ctx:552:23)
+//|   at main (write_body_none.ctx:8:25)

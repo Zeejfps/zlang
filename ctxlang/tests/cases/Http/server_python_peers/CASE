@@ -1,0 +1,47 @@
+// std's HTTP server against Python's clients (docs/todo/http.md, Testing 3): http.client and
+// raw sockets from tests/helpers/http_peer.py, which the program starts as
+// `python http_peer.py PORT SHORT_PORT` and whose lines it prints. Keep-alive across several
+// requests on one connection; chunked and length request bodies; a chunked response, and HEAD;
+// a handler that sends nothing (500, and the connection goes on) and one that fails (500, and
+// it ends); pipelined requests in one send, one with a body the handler doesn't read; Expect:
+// 100-continue, read and unread; each error response (400 for a broken field, no Host and both
+// lengths, 431 for a head larger than the buffer and too many fields, 501 for gzip, 505 for
+// HTTP/2.0); Connection: close from the client and from the server; HTTP/1.0, closed and kept
+// alive, with a chunked body sent until the close; and on a server with a short head deadline
+// and two requests a connection, the limit, and clients that send nothing or half a head.
+//# needs: python
+//# build program: main.ctx
+//# $ {program} {home}/tests/helpers/http_peer.py
+//# timeout: 120
+//# exit: 0
+//# stdout:
+//| keep-alive: ['hello', 'hello', 'hello'], one connection: True
+//| chunked request: 200 'Hello, chunks'
+//| length request: 200 'a length body'
+//| chunked, read 3 at a time: 200 'read three bytes at a time'
+//| chunked response: 200 chunked 'one,two,three'
+//| HEAD: 200 Content-Length 6 ''
+//| after HEAD: 200 'hello\n'
+//| HEAD of a length body unwritten: 200 Content-Length 6
+//| then GET: 200 'sized\n'
+//| sent nothing: 500 ''
+//| then: 200 'hello\n'
+//| handler failed: 500 '' (Connection: close), closed: True
+//| pipelined: 200 'hello\n'; 200 'ping'; 200 'hello\n'; 200 'hello\n'
+//| 100-continue: 100, then 200 'hello'
+//| unread with 100-continue: 200 'hello\n', closed: True
+//| bad field: 400 '' (Connection: close), closed: True
+//| no Host: 400 '' (Connection: close), closed: True
+//| both lengths: 400 '' (Connection: close), closed: True
+//| head too large: 431 '' (Connection: close), closed: True
+//| too many fields: 431 '' (Connection: close), closed: True
+//| gzip: 501 '' (Connection: close), closed: True
+//| HTTP/2.0: 505 '' (Connection: close), closed: True
+//| client's close: 200 'hello\n' (Connection: close), closed: True
+//| server's close: 200 'bye\n' (Connection: close), closed: True
+//| HTTP/1.0: 200 'hello\n' (Connection: close), closed: True
+//| HTTP/1.0 keep-alive: 200 'hello\n' (Connection: keep-alive), then 200 'one,two,three' (Connection: close) (no chunks)
+//| 2 requests a connection: 200 'hello\n', then 200 'hello\n' (Connection: close), closed: True
+//| sends nothing: closed: True, after the deadline: True
+//| sends half a head: closed: True, after the deadline: True
+//| python ended: 0
