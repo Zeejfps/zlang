@@ -2,71 +2,30 @@
 
 Profiled 2026-11-25 on Windows (MinGW gcc, 32 processors), with a sampler that suspends ctxc's
 thread every millisecond and walks its frame pointers (ctxc built with
-`-fno-omit-frame-pointer`; gprof records nothing on MinGW x64). Baseline: `ctxc check` of KOTOR
-(140K lines and std) took 14.8 s, and of ctxc 2.8 s. Each item gives what was measured on a
-prototype, or what the profile says it costs now. Prototypes 1 to 3 wrote byte-identical C for
-ctxc.
+`-fno-omit-frame-pointer`; gprof records nothing on MinGW x64). `ctxc check` of KOTOR (140K
+lines and std) takes 0.99 s, and of ctxc 0.81 s, from 14.8 s and 2.8 s before the work from
+e0732e58 to a1acbae2, whose commits say what each did. What an item costs is from the profile
+then.
 
-## Measured
-
-- [x] **1. `handles_own` is a scan of every declaration.** It copies each `Decl` (about 300
-  bytes) to test `task_handle`, and runs for every call with type arguments (`braced_as`), for
-  every local holding a handle (`handle_local`), and once per declaration in `task_decls`, which
-  makes that quadratic. 80% of KOTOR's check, 56% of ctxc's. Keep the namespaces that declare a
-  `#task_handle` struct, filled in `handle_attr`. KOTOR 14.8 s to 1.87 s, ctxc 2.8 s to 1.16 s.
-- [x] **2. Windows' `os::commit` asks `VirtualQuery` at every MiB an arena reaches.** `analyze`
-  reserves `64 MiB + 512 × the source's bytes`, several GB for KOTOR, and the query's cost grows
-  with what is reserved after the address: 10% of KOTOR's check, 8% of ctxc's. Commit to the
-  end of the MiB at once (`VirtualAlloc` with `MEM_COMMIT` succeeds on committed pages), and ask
-  only if that fails. KOTOR 1.88 s to 1.69 s, ctxc 1.16 s to 1.07 s.
-- [x] **3. Side tables keyed by `key{ file, id }` as arrays.** Node ids are 0 to `ids - 1` in
-  each file (`syntax::File.ids`), so a table is a slot per node, at the file's base plus the id,
-  with a map for any other key (ctxc/nodes.ctx). Done for `expr_ty`, `refs`, `type_of`, `access`, `convs`,
-  `decl_of` and `local_of`: KOTOR 1.70 s to 1.42 s, ctxc 1.10 s to 0.99 s.
-
-## From the profile
-
-After 1 to 3, KOTOR's check is about 1.4 s: the first body pass about 28%, borrow inference 16%,
-the second body pass 22%, lexing and parsing 15%, maps still 16% of the time in functions
-themselves.
-
-- [x] **4. Bodies are checked twice.** `check::program` ran `Phase::bodies` over every fn again
-  after `infer_borrows`, so that eight `borrow_ready` places (`escape_error`, `derives` through
-  `direct_borrow`, `check_order`, `check_keeps`, the `fn_values`) saw the summaries. The second
-  check gave the same types as the first (441K expressions of KOTOR compared). Now a body is
-  checked once, and what its check does that the summaries change (check.ctx, `Late`) is
-  recorded in order and done again once they are made (`replay_bodies`). KOTOR 1.47 s to
-  1.21 s, ctxc 1.00 s to 0.86 s, the C the same. Its errors are the same but for errors that
-  followed from another the second check had reported already, which it didn't count, as
-  `[200 + 100]`'s "couldn't be computed" after its overflow (the suite's
-  ArrayLiteralViews/constants_fold/01), and `@atomic_load(&n, o)`'s "must be a constant" after
-  "unknown name `o`": no other difference in about 97,000 checks of the corpus's programs and
-  their mutants against the compiler before.
-- [x] **5. Lexing and parsing, one file at a time.** About 15% of the check, and the files are
-  independent. Now ctxc takes `Threads`, and `analyze` parses the files on tasks (main.ctx,
-  `parse_files`): chunks of about equal bytes, four for each processor, each with an arena of
-  its own, and each file's diagnostics added to the program's in the files' order, so the
-  output is the same. KOTOR 1.19 s to 0.99 s; ctxc 0.85 s to 0.81 s, most of whose source is
-  check.ctx, one file. A threaded program's stack check reads a thread's slot: within the noise
-  on Windows (the TEB), and on Linux a `_Thread_local`; macOS's isn't measured. Still to do:
-  the lexer's keywords are found with `slice::eq_bytes` (about 2%).
-- [ ] **6. The other side tables, as `nodes::Table`s.** `uses` (iterated with `map::next` for `ctxc api` and
-  `where`, so it needs a way to walk it), `literal`, `spreads`, `narrowed`, `braces`,
-  `forwards`, `is_vars`, `filled`, `holds`; and the maps keyed by a declaration's index
-  (`borrows`, `borrow_low`, `borrow_index`, `foldable`, `values`, ...) as arrays by index.
-- [ ] **7. Memory.** A check of KOTOR peaks at 850 to 900 MB, a build at 1.2 GB, with about
+- [ ] **1. The other side tables, as `nodes::Table`s.** `uses` (iterated with `map::next` for
+  `ctxc api` and `where`, so it needs a way to walk it), `literal`, `spreads`, `narrowed`,
+  `braces`, `forwards`, `is_vars`, `filled`, `holds`; and the maps keyed by a declaration's
+  index (`borrows`, `borrow_low`, `borrow_index`, `foldable`, `values`, ...) as arrays by
+  index. Maps were about 16% of the time spent in functions themselves.
+- [ ] **2. The lexer's keywords** are found with `slice::eq_bytes` (about 2%).
+- [ ] **3. Memory.** A check of KOTOR peaks at 850 to 900 MB, a build at 1.2 GB, with about
   220K page faults. The largest: the parser's lists of `Stmt` by value (93 MB), name paths'
   `Seg`s (73 MB), `add_branch`'s states (68 MB), the lexer's tokens (59 MB), and 130 MB of
   blocks an arena list or map left behind when it grew.
-- [ ] **8. An edit recompiles units that only copy a function of the file.** A comment line at
+- [ ] **4. An edit recompiles units that only copy a function of the file.** A comment line at
   the top of KOTOR's lib/engine/fight.ctx recompiled 28 of 117 units (3.7 s, against 2.2 s with
   nothing to compile): 3 hold fight's functions, 25 hold copies of its small ones (emit_c.ctx,
   `share`), whose `CTX_AT` and panic positions are absolute lines. Positions relative to the
   fn's first line, with the line in a `ctx_where` that a copy declares `extern` from its own
   unit, would leave the copies' C unchanged.
-- [ ] **9. `ctxc exe -o` links every time**, though nothing changed (7% of a build with every
+- [ ] **5. `ctxc exe -o` links every time**, though nothing changed (7% of a build with every
   unit cached): copy the cached executable instead.
-- [ ] **10. The build program is compiled on every check.** A check of KOTOR checks build.ctx
+- [ ] **6. The build program is compiled on every check.** A check of KOTOR checks build.ctx
   with std and ctxc's lexer and parser first, about 5%. Its graph could be kept, keyed by a hash
   of the build program's files.
 
@@ -81,10 +40,11 @@ themselves.
 - The recovery test (`tools/recover.py --sample 25`, 2026-11-25) fails 6 of 117,738 damaged
   copies, all inside `check::new`'s `Checker{ ... }` literal (check.ctx, about lines 570 to
   585): deleting or duplicating a token there makes the parser report more errors than its
-  cap. It did before item 3 too (the same literal, at the commit before it), so it is the
-  parser's recovery in a long struct literal, not the tables.
-
+  cap. It did before the side tables became arrays too (the same literal, at 46a1474f), so it
+  is the parser's recovery in a long struct literal. The test last ran at 87ab2738.
 - `comptime` runs each const in a new `arena::new` over the same scratch memory
   (comptime.ctx, `scratch`), so what `eval` allocates there isn't zero, as an arena promises
   past `handed`, but the last run's bytes. Harmless only if `eval` never reads memory it hasn't
   written.
+- A threaded program's stack check reads a thread's slot: within the noise on Windows (the
+  TEB), and on Linux a `_Thread_local`; macOS's, which ctxc now pays, isn't measured.
