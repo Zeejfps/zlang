@@ -1227,6 +1227,27 @@ namespace os {
         return @as(u64, t.sec) * 1000000000 + @as(u64, t.nsec)
     }
 
+    // ---- for std's clock: clock_gettime
+
+    // What std's Clock holds on Linux and macOS: nothing.
+    capability Clock
+
+    #c_symbol{ name = "clock_gettime" }
+    extern fn clock_read { mut clock: Clock, clock_id: i32, mut now: Timespec } -> i32
+
+    fn clock_monotonic { mut clock: Clock } -> u64 {
+        let mut t = Timespec{ sec = 0, nsec = 0 }
+        _ = clock_read{ &clock, clock_id = sys::CLOCK_MONOTONIC, now = &t }
+        return @as(u64, t.sec) * 1000000000 + @as(u64, t.nsec)
+    }
+
+    // CLOCK_REALTIME, 0 on Linux and macOS alike.
+    fn clock_wall { mut clock: Clock } -> i64 {
+        let mut t = Timespec{ sec = 0, nsec = 0 }
+        _ = clock_read{ &clock, clock_id = sys::CLOCK_REALTIME, now = &t }
+        return t.sec * 1000000000 + t.nsec
+    }
+
     // ---- threads (std/task.ctx, std/thread.ctx): pthreads
 
     // Permission to start threads, which std's Threads includes.

@@ -1,0 +1,38 @@
+// std's clock::to_utc (spec §17, clock): Unix nanoseconds as a UTC date and time of day, with
+// the weekday. The epoch, a moment before it (floor division: 1969's last nanosecond), the
+// leap day of 2000 (a 400-year leap) and the day after it, 2024's, 1900's lack of one, a time
+// with its nanoseconds, and the ends of i64's range. Pure, so the interpreter runs it too.
+//# stdout:
+//| 1970-01-01T00:00:00.000000000Z Thursday
+//| 1969-12-31T23:59:59.999999999Z Wednesday
+//| 2000-02-29T12:00:00.000000000Z Tuesday
+//| 2000-03-01T00:00:00.000000000Z Wednesday
+//| 2024-02-29T23:59:59.000000000Z Thursday
+//| 1900-03-01T00:00:00.000000000Z Thursday
+//| 2026-12-06T22:14:03.123456789Z Sunday
+//| 2262-04-11T23:47:16.854775807Z Friday
+//| 1677-09-21T00:12:43.145224192Z Tuesday
+
+fn name_of { weekday: u8 } -> []u8 {
+    return match weekday {
+        0 => "Sunday", 1 => "Monday", 2 => "Tuesday", 3 => "Wednesday",
+        4 => "Thursday", 5 => "Friday", 6 => "Saturday", else => "?",
+    }
+}
+
+fn show { mut io: Io, unix_ns: i64 } {
+    let t = clock::to_utc{ unix_ns }
+    _ = @fmt(&io, "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:09}Z {}\n", t.year, t.month, t.day, t.hour, t.minute, t.second, t.nanosecond, name_of{ weekday = t.weekday })
+}
+
+fn main { mut io: Io } {
+    show{ &io, unix_ns = 0 }
+    show{ &io, unix_ns = -1 }
+    show{ &io, unix_ns = 951825600000000000 }
+    show{ &io, unix_ns = 951868800000000000 }
+    show{ &io, unix_ns = 1709251199000000000 }
+    show{ &io, unix_ns = -2203891200000000000 }
+    show{ &io, unix_ns = 1796595243123456789 }
+    show{ &io, unix_ns = 9223372036854775807 }
+    show{ &io, unix_ns = -9223372036854775807 - 1 }
+}

@@ -1,0 +1,48 @@
+// std's clock over each platform's layer (std/os/PLATFORM, spec §17), as Stop/every_layer
+// builds stop's: main.ctx reads both clocks, and is built here for each layer from any
+// machine; the C written for Linux and macOS is compiled as far as C's syntax and types go,
+// without their system headers, since the generated C declares each C function itself. Reading
+// a clock starts no thread, so a program that does isn't threaded (spec §15, Entry point,
+// rule 8).
+
+// windows: the performance counter, and the precise system time.
+//# $ ctxc build windows.c {std:windows} -- main.ctx
+//# exit: 0
+//# file windows.c has:
+//| CTX_SYMBOL("QueryPerformanceCounter")
+//# file windows.c has:
+//| CTX_SYMBOL("QueryPerformanceFrequency")
+//# file windows.c has:
+//| CTX_SYMBOL("GetSystemTimePreciseAsFileTime")
+//# $ ctxc ir {std:windows} -- main.ctx
+//# exit: 0
+//# stdout lacks:
+//| (threaded)
+
+// linux: clock_gettime, for CLOCK_MONOTONIC and CLOCK_REALTIME.
+//# $ ctxc build linux.c {std:linux} -- main.ctx
+//# exit: 0
+//# file linux.c has:
+//| CTX_SYMBOL("clock_gettime")
+//# $ cc {cflags} -fsyntax-only -I {home}/ctxc/rt linux.c
+//# exit: 0
+//# $ ctxc ir {std:linux} -- main.ctx
+//# exit: 0
+//# stdout lacks:
+//| (threaded)
+
+// macos: the same.
+//# $ ctxc build macos.c {std:macos} -- main.ctx
+//# exit: 0
+//# file macos.c has:
+//| CTX_SYMBOL("clock_gettime")
+//# $ cc {cflags} -fsyntax-only -I {home}/ctxc/rt macos.c
+//# exit: 0
+
+// interp: the readings stop the run, so it declares no C clock.
+//# $ ctxc build interp.c {std:interp} -- main.ctx
+//# exit: 0
+//# file interp.c lacks:
+//| CTX_SYMBOL("clock_gettime")
+//# file interp.c lacks:
+//| CTX_SYMBOL("QueryPerformanceCounter")

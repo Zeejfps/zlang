@@ -1,0 +1,281 @@
+// load: a load generator for serve (serve/PLAN.md, Findings).
+//
+//   load ADDRESS [--idle N] [--clients C] [--seconds S] [--target PATH] [--hold S]
+//
+// Opens N kept-alive connections to ADDRESS (as 127.0.0.1:8080), each asking for PATH once and
+// then left idle, so that the server holds them as a browser's idle connections are held. It
+// then waits S seconds (--hold, 0 unless given: time for something outside to look at the
+// server), and floods the server with C clients for S seconds (--seconds), each a task with a
+// kept-alive connection of its own that asks for PATH, reads the response, and asks again. It
+// prints the requests answered, per second, and the latency of each request (from its first
+// byte sent to its response's last byte read) at the 50th, 90th, 99th and 99.9th percentile
+// and its most. The idle connections are closed last.
+//
+// A response that isn't 200, or a connection that fails, counts as an error; the client then
+// connects again. Latencies are kept for the first SAMPLES requests of the flood, spread over
+// the clients; the counts take every request.
+
+const USAGE: []u8 = "usage: load ADDRESS [--idle N] [--clients C] [--seconds S] [--target PATH] [--hold S]\n"
+
+// Latencies kept in all, over the clients.
+const SAMPLES: usize = 8388608
+
+struct Options {
+    address: net::Address,
+    idle: usize,
+    clients: usize,
+    seconds: u64,
+    target: []u8,
+    hold: u64,
+}
+
+// What a client did, written by its task only, and read once the flood has ended.
+struct Client {
+    requests: u64,
+    errors: u64,
+    kept: usize,                // latencies in its part of the samples
+}
+
+error bad_usage{ why: []u8 }
+
+fn parse_number { text: []u8, why: []u8 } -> !u64 {
+    return utf8::parse_u64{ s = utf8::of{ chars = text } } ifnull { return bad_usage{ why } }
+}
+
+fn parse_options { args: Args } -> !Options {
+    if args.len == 0 { return bad_usage{ why = "no address" } }
+    let address = net::parse_address{ text = args[0] } iferr { return bad_usage{ why = "the address is an IP address and a port, as 127.0.0.1:8080" } }
+    let mut o = Options{ address, idle = 0, clients = 16, seconds = 10, target = "/", hold = 0 }
+    let mut i: usize = 1
+    while i + 1 < args.len {
+        let a = args[i]
+        let v = args[i + 1]
+        if slice::eq_bytes{ a, b = "--idle" } {
+            o.idle = @as(usize, try parse_number{ text = v, why = "--idle takes a number" })
+        } else if slice::eq_bytes{ a, b = "--clients" } {
+            o.clients = @as(usize, try parse_number{ text = v, why = "--clients takes a number" })
+        } else if slice::eq_bytes{ a, b = "--seconds" } {
+            o.seconds = try parse_number{ text = v, why = "--seconds takes a number" }
+        } else if slice::eq_bytes{ a, b = "--hold" } {
+            o.hold = try parse_number{ text = v, why = "--hold takes a number" }
+        } else if slice::eq_bytes{ a, b = "--target" } {
+            o.target = v
+        } else {
+            return bad_usage{ why = "unknown option" }
+        }
+        i = i + 2
+    }
+    if i != args.len { return bad_usage{ why = "an option without its value" } }
+    if o.clients == 0 or o.clients > 4096 { return bad_usage{ why = "--clients is 1 to 4096" } }
+    if o.target.len == 0 or o.target[0] != '/' or o.target.len > 1024 { return bad_usage{ why = "--target is a path from /" } }
+    return o
+}
+
+// Says a line now: the measurement outside reads it as it comes.
+fn say { mut io: Io, text: []u8 } {
+    io::println{ &io, s = utf8::of{ chars = text } }
+    io::flush{ &io }
+}
+
+fn main { mut io: Io, mut mem: Mem, mut net: Net, mut threads: Threads, mut clock: Clock, args: Args } -> i32 {
+    let mut err = io::to_stderr{ &io }
+    let o = parse_options{ args } iferr err{ error } {
+        if error is bad_usage{ why } { _ = @fmt(&err, "load: {}\n", why) }
+        _ = @fmt(&err, "{}", USAGE)
+        return 2
+    }
+    let memory = mem::reserve{ &mem, size = SAMPLES * 8 + 1048576 } ifnull {
+        _ = @fmt(&err, "load: no memory\n")
+        return 1
+    }
+    let mut heap = arena::new{ buf = memory }
+    let samples = try! alloc::make(u64, arena::Arena){ realloc = arena::alloc, &heap, count = SAMPLES }
+    let clients = try! alloc::make(Client, arena::Arena){ realloc = arena::alloc, &heap, count = o.clients }
+    let idle = try! alloc::make(net::Socket, arena::Arena){ realloc = arena::alloc, &heap, count = o.idle }
+
+    let mut request: [1100]u8
+    let request_size = write_request{ target = o.target, into = request[..] }
+
+    // The idle connections: each asks once, so the server has served it and waits for its next
+    // request.
+    let mut opened: usize = 0
+    defer for k in 0..opened { net::close{ &net, socket = idle[k] } }
+    let mut buffer: [65536]u8
+    for i in 0..o.idle {
+        let socket = net::connect{ &net, address = o.address } iferr err{ error } {
+            _ = @fmt(&err, "load: idle connection {}: {}\n", i, error)
+            return 1
+        }
+        idle[i] = socket
+        opened = opened + 1
+        let status = ask{ &net, socket, request = request[..request_size], buffer = buffer[..] } iferr err{ error } {
+            _ = @fmt(&err, "load: idle connection {}: {}\n", i, error)
+            return 1
+        }
+        if status != 200 {
+            _ = @fmt(&err, "load: idle connection {}: status {}\n", i, status)
+            return 1
+        }
+    }
+    _ = @fmt(&io, "idle: {} connections held\n", opened)
+    io::flush{ &io }
+    if o.hold > 0 {
+        say{ &io, text = "holding" }
+        thread::sleep{ &threads, nanoseconds = o.hold * 1000000000 }
+    }
+
+    // The flood.
+    say{ &io, text = "flooding" }
+    let per = SAMPLES / o.clients
+    let began = clock::read_monotonic{ &clock }
+    let until = began + o.seconds * 1000000000
+    {
+        let mut group: task::Group
+        for i in 0..o.clients {
+            clients[i] = Client{ requests = 0, errors = 0, kept = 0 }
+            task::start_concurrent_in{ &threads, &group, run = run_client{ &net, &clock, address = o.address, request = request[..request_size], until, samples = samples[i * per..(i + 1) * per], client = &clients[i], _ } } iferr {
+                _ = @fmt(&err, "load: no thread for client {}\n", i)
+                return 1
+            }
+        }
+        task::wait_all{ &threads, &group } iferr err{ error } {
+            _ = @fmt(&err, "load: {}\n", error)
+            return 1
+        }
+    }
+    let took = clock::read_monotonic{ &clock } - began
+
+    // Every client's latencies together, sorted.
+    let mut requests: u64 = 0
+    let mut errors: u64 = 0
+    let mut n: usize = 0
+    for i in 0..o.clients {
+        let c = clients[i]
+        requests = requests + c.requests
+        errors = errors + c.errors
+        for k in 0..c.kept {
+            samples[n] = samples[i * per + k]
+            n = n + 1
+        }
+    }
+    let kept = samples[..n]
+    sort_u64{ s = kept }
+    let seconds = @as(f64, took) / 1000000000.0
+    _ = @fmt(&io, "flood: {} clients for {:.2} s: {} requests, {:.0} requests/s, {} errors\n", o.clients, seconds, requests, @as(f64, requests) / seconds, errors)
+    if n > 0 {
+        _ = @fmt(&io, "latency ms: p50 {:.3}, p90 {:.3}, p99 {:.3}, p99.9 {:.3}, max {:.3} (of {} requests)\n",
+            millis{ ns = find_percentile{ sorted = kept, per_mille = 500 } },
+            millis{ ns = find_percentile{ sorted = kept, per_mille = 900 } },
+            millis{ ns = find_percentile{ sorted = kept, per_mille = 990 } },
+            millis{ ns = find_percentile{ sorted = kept, per_mille = 999 } },
+            millis{ ns = kept[n - 1] }, n)
+    }
+    io::flush{ &io }
+    return 0
+}
+
+fn millis { ns: u64 } -> f64 { return @as(f64, ns) / 1000000.0 }
+
+// The sample at `per_mille` of the way through `sorted`, which isn't empty: the nearest rank.
+fn find_percentile { sorted: []u64, per_mille: usize } -> u64 {
+    let rank = (sorted.len * per_mille + 999) / 1000
+    return sorted[@max(rank, 1) - 1]
+}
+
+// "GET TARGET HTTP/1.1" with a Host, into `into`: its length.
+fn write_request { target: []u8, into: []mut u8 } -> usize {
+    let mut n: usize = 0
+    for part in ["GET ", target, " HTTP/1.1\r\nHost: load\r\n\r\n"] {
+        slice::copy(u8){ dst = into[n..n + part.len], src = part }
+        n = n + part.len
+    }
+    return n
+}
+
+// Sends `request` and reads its response whole: its status. The response has a Content-Length,
+// as serve's do, and nothing follows it until the next request.
+fn ask { mut net: Net, socket: net::Socket, request: []u8, buffer: []mut u8 } -> !u16 {
+    _ = try net::send{ &net, socket, bytes = request }
+    let mut fields: [32]http::Header
+    let mut headers = fields[..]
+    let mut have: usize = 0
+    while true {
+        let got = try net::receive{ &net, socket, into = buffer[have..] }
+        if got == 0 { return net::closed }
+        have = have + got
+        let head = try http::parse_response_head{ buffer = buffer[..have], &headers } ifnull {
+            if have == buffer.len { return http::head_too_large }
+            continue
+        }
+        let n = head.content_length ifnull { 0 }
+        let mut left = n - @min(n, @as(u64, have - head.size))
+        while left > 0 {
+            let more = try net::receive{ &net, socket, into = buffer }
+            if more == 0 { return net::closed }
+            left = left - @min(left, @as(u64, more))
+        }
+        return head.status
+    }
+    return net::closed
+}
+
+// A client of the flood: asks again and again on one kept-alive connection until `until`,
+// connecting again after an error. Its results are its Client's.
+fn run_client { mut net: Net, mut clock: Clock, address: net::Address, request: []u8, until: u64, samples: []mut u64, client: *mut Client } -> ! {
+    let mut buffer: [65536]u8
+    while clock::read_monotonic{ &clock } < until {
+        let socket = net::connect{ &net, address } iferr {
+            client.errors = client.errors + 1
+            continue
+        }
+        defer net::close{ &net, socket }
+        while true {
+            let t0 = clock::read_monotonic{ &clock }
+            if t0 >= until { break }
+            let status = ask{ &net, socket, request, buffer = buffer[..] } iferr {
+                client.errors = client.errors + 1
+                break
+            }
+            let t1 = clock::read_monotonic{ &clock }
+            client.requests = client.requests + 1
+            if status != 200 { client.errors = client.errors + 1 }
+            if client.kept < samples.len {
+                samples[client.kept] = t1 - t0
+                client.kept = client.kept + 1
+            }
+        }
+    }
+}
+
+// Sorts `s` ascending: a heap sort, since std has no sort (docs/todo/friction.md, 47).
+fn sort_u64 { s: []mut u64 } {
+    let n = s.len
+    if n < 2 { return }
+    let mut start = n / 2
+    while start > 0 {
+        start = start - 1
+        sift_down{ s, root = start, end = n }
+    }
+    let mut end = n
+    while end > 1 {
+        end = end - 1
+        let top = s[0]
+        s[0] = s[end]
+        s[end] = top
+        sift_down{ s, root = 0, end }
+    }
+}
+
+fn sift_down { s: []mut u64, root: usize, end: usize } {
+    let mut r = root
+    while true {
+        let mut child = 2 * r + 1
+        if child >= end { return }
+        if child + 1 < end and s[child] < s[child + 1] { child = child + 1 }
+        if s[r] >= s[child] { return }
+        let t = s[r]
+        s[r] = s[child]
+        s[child] = t
+        r = child
+    }
+}

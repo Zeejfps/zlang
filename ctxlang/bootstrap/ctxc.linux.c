@@ -32920,9 +32920,9 @@ static t309 f_sys__await_exit(CTX_UP t40 l0, t0 l1, t9 l2, t9 l3) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_sys__await_exit);
     {
-        l4 = ({ t40 _t0 = (&(*l0)); t57 _t1 = ((t57)(434ULL)); t57 _t2 = ((t57)(ctx_as_s((int64_t)(l1), INT64_MIN, INT64_MAX, "i64", 311, 63, &w_sys__await_exit, CTX_UPV))); t57 _t3 = ((t57)(0ULL)); CTX_AT(311, 25); e865(CTX_ME _t0, _t1, _t2, _t3); });
+        l4 = ({ t40 _t0 = (&(*l0)); t57 _t1 = ((t57)(434ULL)); t57 _t2 = ((t57)(ctx_as_s((int64_t)(l1), INT64_MIN, INT64_MAX, "i64", 312, 63, &w_sys__await_exit, CTX_UPV))); t57 _t3 = ((t57)(0ULL)); CTX_AT(312, 25); e865(CTX_ME _t0, _t1, _t2, _t3); });
         if ((l4 < ((t57)(0ULL)))) {
-            return ({ t309 _t4; t560 _t5 = ({ t0 _t6 = (*(CTX_AT(312, 62), e849(CTX_ME (&(*l0))))); CTX_AT(312, 43); f_os__proc_failedu8_c46acba1(CTX_ME _t6); }); if ((_t5.tag == 0)) { l5 = _t5.p.v0.m_value; {
+            return ({ t309 _t4; t560 _t5 = ({ t0 _t6 = (*(CTX_AT(313, 62), e849(CTX_ME (&(*l0))))); CTX_AT(313, 43); f_os__proc_failedu8_c46acba1(CTX_ME _t6); }); if ((_t5.tag == 0)) { l5 = _t5.p.v0.m_value; {
                 _t4 = ((t309){ .tag = 0, .p.v0 = { .m_value = l5, } });
             } } else if ((_t5.tag == 1)) { l6 = _t5.p.v1.m_error; {
                 _t4 = ((t309){ .tag = 1, .p.v1 = { .m_error = ({ t176 _t7; t547 _t8 = l6; if ((_t8.tag == 0)) { {
@@ -32936,32 +32936,32 @@ static t309 f_sys__await_exit(CTX_UP t40 l0, t0 l1, t9 l2, t9 l3) {
                 } } _t7; }), } });
             } } _t4; });
         }
-        l8 = ({ t561 _t9 = ((t561){ .m_fd = ((t0)(ctx_as_s((int64_t)(l4), INT32_MIN, INT32_MAX, "i32", 313, 55, &w_sys__await_exit, CTX_UPV))), .m_events = ((t562)(1ULL)), .m_revents = ((t562)(0ULL)), }); t561 _t10 = ((t561){ .m_fd = ({ t0 _t11; if ((l3 != ((t9)(0ULL)))) {
-            _t11 = ((t0)(ctx_as_u((uint64_t)(l3), INT32_MAX, "i32", 313, 139, &w_sys__await_exit, CTX_UPV)));
+        l8 = ({ t561 _t9 = ((t561){ .m_fd = ((t0)(ctx_as_s((int64_t)(l4), INT32_MIN, INT32_MAX, "i32", 314, 55, &w_sys__await_exit, CTX_UPV))), .m_events = ((t562)(1ULL)), .m_revents = ((t562)(0ULL)), }); t561 _t10 = ((t561){ .m_fd = ({ t0 _t11; if ((l3 != ((t9)(0ULL)))) {
+            _t11 = ((t0)(ctx_as_u((uint64_t)(l3), INT32_MAX, "i32", 314, 139, &w_sys__await_exit, CTX_UPV)));
         } else {
             _t11 = ((t0)((-(int64_t)0LL - 1)));
         } _t11; }), .m_events = ((t562)(1ULL)), .m_revents = ((t562)(0ULL)), }); ((t559){{ _t9, _t10 }}); });
         /* defer */
-        l9 = (CTX_AT(315, 36), f_os__deadline(CTX_ME (&(*l0)), l2));
+        l9 = (CTX_AT(316, 36), f_os__deadline(CTX_ME (&(*l0)), l2));
         while (((bool)1)) {
-            l10 = (CTX_AT(317, 37), f_os__remaining(CTX_ME (&(*l0)), l9));
-            l11 = ({ t40 _t12 = (&(*l0)); t563 _t13 = (&(l8).a[ctx_idx(((t15)(0ULL)), 2, 318, 52, &w_sys__await_exit, CTX_UPV)]); t9 _t14 = ((t9)(2ULL)); t0 _t15 = (CTX_AT(318, 88), f_os__poll_millis(CTX_ME l10)); CTX_AT(318, 34); e870(CTX_ME _t12, _t13, _t14, _t15); });
+            l10 = (CTX_AT(318, 37), f_os__remaining(CTX_ME (&(*l0)), l9));
+            l11 = ({ t40 _t12 = (&(*l0)); t563 _t13 = (&(l8).a[ctx_idx(((t15)(0ULL)), 2, 319, 52, &w_sys__await_exit, CTX_UPV)]); t9 _t14 = ((t9)(2ULL)); t0 _t15 = (CTX_AT(319, 88), f_os__poll_millis(CTX_ME l10)); CTX_AT(319, 34); e870(CTX_ME _t12, _t13, _t14, _t15); });
             if ((l11 > ((t0)(0ULL)))) {
-                if ((((l8).a[ctx_idx(((t15)(0ULL)), 2, 320, 22, &w_sys__await_exit, CTX_UPV)]).m_revents != ((t562)(0ULL)))) {
+                if ((((l8).a[ctx_idx(((t15)(0ULL)), 2, 321, 22, &w_sys__await_exit, CTX_UPV)]).m_revents != ((t562)(0ULL)))) {
                     { t309 _t16 = ((t309){ .tag = 0, .p.v0 = { .m_value = ((t16)(1ULL)), } });
                     {
-                        (void)({ t40 _t17 = (&(*l0)); t0 _t18 = ((l8).a[ctx_idx(((t15)(0ULL)), 2, 314, 47, &w_sys__await_exit, CTX_UPV)]).m_fd; CTX_AT(314, 31); e853(CTX_ME _t17, _t18); });
+                        (void)({ t40 _t17 = (&(*l0)); t0 _t18 = ((l8).a[ctx_idx(((t15)(0ULL)), 2, 315, 47, &w_sys__await_exit, CTX_UPV)]).m_fd; CTX_AT(315, 31); e853(CTX_ME _t17, _t18); });
                     } return _t16; }
                 }
                 { t309 _t19 = ((t309){ .tag = 0, .p.v0 = { .m_value = ((t16)(2ULL)), } });
                 {
-                    (void)({ t40 _t20 = (&(*l0)); t0 _t21 = ((l8).a[ctx_idx(((t15)(0ULL)), 2, 314, 47, &w_sys__await_exit, CTX_UPV)]).m_fd; CTX_AT(314, 31); e853(CTX_ME _t20, _t21); });
+                    (void)({ t40 _t20 = (&(*l0)); t0 _t21 = ((l8).a[ctx_idx(((t15)(0ULL)), 2, 315, 47, &w_sys__await_exit, CTX_UPV)]).m_fd; CTX_AT(315, 31); e853(CTX_ME _t20, _t21); });
                 } return _t19; }
             }
             if ((l11 < ((t0)(0ULL)))) {
-                l12 = (*(CTX_AT(324, 35), e849(CTX_ME (&(*l0)))));
+                l12 = (*(CTX_AT(325, 35), e849(CTX_ME (&(*l0)))));
                 if ((l12 != ((t0)(4ULL)))) {
-                    { t309 _t22 = ({ t309 _t23; t560 _t24 = (CTX_AT(325, 59), f_os__proc_failedu8_c46acba1(CTX_ME l12)); if ((_t24.tag == 0)) { l13 = _t24.p.v0.m_value; {
+                    { t309 _t22 = ({ t309 _t23; t560 _t24 = (CTX_AT(326, 59), f_os__proc_failedu8_c46acba1(CTX_ME l12)); if ((_t24.tag == 0)) { l13 = _t24.p.v0.m_value; {
                         _t23 = ((t309){ .tag = 0, .p.v0 = { .m_value = l13, } });
                     } } else if ((_t24.tag == 1)) { l14 = _t24.p.v1.m_error; {
                         _t23 = ((t309){ .tag = 1, .p.v1 = { .m_error = ({ t176 _t25; t547 _t26 = l14; if ((_t26.tag == 0)) { {
@@ -32975,20 +32975,20 @@ static t309 f_sys__await_exit(CTX_UP t40 l0, t0 l1, t9 l2, t9 l3) {
                         } } _t25; }), } });
                     } } _t23; });
                     {
-                        (void)({ t40 _t27 = (&(*l0)); t0 _t28 = ((l8).a[ctx_idx(((t15)(0ULL)), 2, 314, 47, &w_sys__await_exit, CTX_UPV)]).m_fd; CTX_AT(314, 31); e853(CTX_ME _t27, _t28); });
+                        (void)({ t40 _t27 = (&(*l0)); t0 _t28 = ((l8).a[ctx_idx(((t15)(0ULL)), 2, 315, 47, &w_sys__await_exit, CTX_UPV)]).m_fd; CTX_AT(315, 31); e853(CTX_ME _t27, _t28); });
                     } return _t22; }
                 }
             } else {
                 if ((l10 == ((t9)(0ULL)))) {
                     { t309 _t29 = ((t309){ .tag = 0, .p.v0 = { .m_value = ((t16)(0ULL)), } });
                     {
-                        (void)({ t40 _t30 = (&(*l0)); t0 _t31 = ((l8).a[ctx_idx(((t15)(0ULL)), 2, 314, 47, &w_sys__await_exit, CTX_UPV)]).m_fd; CTX_AT(314, 31); e853(CTX_ME _t30, _t31); });
+                        (void)({ t40 _t30 = (&(*l0)); t0 _t31 = ((l8).a[ctx_idx(((t15)(0ULL)), 2, 315, 47, &w_sys__await_exit, CTX_UPV)]).m_fd; CTX_AT(315, 31); e853(CTX_ME _t30, _t31); });
                     } return _t29; }
                 }
             }
         }
         {
-            (void)({ t40 _t32 = (&(*l0)); t0 _t33 = ((l8).a[ctx_idx(((t15)(0ULL)), 2, 314, 47, &w_sys__await_exit, CTX_UPV)]).m_fd; CTX_AT(314, 31); e853(CTX_ME _t32, _t33); });
+            (void)({ t40 _t32 = (&(*l0)); t0 _t33 = ((l8).a[ctx_idx(((t15)(0ULL)), 2, 315, 47, &w_sys__await_exit, CTX_UPV)]).m_fd; CTX_AT(315, 31); e853(CTX_ME _t32, _t33); });
         }
     }
     __builtin_unreachable();
@@ -43245,7 +43245,7 @@ static t0 f_sys__fcntl(CTX_UP t40 l0, t0 l1, t0 l2, t57 l3) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_sys__fcntl);
     {
-        return (CTX_AT(143, 23), e1364(CTX_ME (&(*l0)), l1, l2, l3));
+        return (CTX_AT(144, 23), e1364(CTX_ME (&(*l0)), l1, l2, l3));
     }
     __builtin_unreachable();
 }
@@ -43276,7 +43276,7 @@ static t0 f_sys__open_null(CTX_UP t40 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_sys__open_null);
     {
-        return (CTX_AT(155, 25), e1365(CTX_ME (&(*l0)), ((t43)("/dev/null")), ((t0)((((t0)(2ULL)) | ((t0)(524288ULL))))), ((t23)(0ULL))));
+        return (CTX_AT(156, 25), e1365(CTX_ME (&(*l0)), ((t43)("/dev/null")), ((t0)((((t0)(2ULL)) | ((t0)(524288ULL))))), ((t23)(0ULL))));
     }
     __builtin_unreachable();
 }
@@ -43315,7 +43315,7 @@ static t0 f_sys__make_pipe(CTX_UP t40 l0, t248 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_sys__make_pipe);
     {
-        return (CTX_AT(149, 21), e1366(CTX_ME (&(*l0)), l1, ((t0)(524288ULL))));
+        return (CTX_AT(150, 21), e1366(CTX_ME (&(*l0)), l1, ((t0)(524288ULL))));
     }
     __builtin_unreachable();
 }
@@ -43367,10 +43367,10 @@ static t175 f_sys__spawn(CTX_UP t40 l0, t43 l1, t38 l2, t38 l3, t114 l4, t43 l5,
     CTX_STACK_CHECK();
     CTX_FRAME(&w_sys__spawn);
     {
-        l10 = (CTX_AT(183, 32), e1367(CTX_ME (&(*l0))));
+        l10 = (CTX_AT(184, 32), e1367(CTX_ME (&(*l0))));
         l11 = ((t548){{ ((t0)((-(int64_t)0LL - 1))), ((t0)((-(int64_t)0LL - 1))) }});
-        if ((({ t40 _t0 = (&(*l0)); t248 _t1 = (&(l11).a[ctx_idx(((t15)(0ULL)), 2, 185, 39, &w_sys__spawn, CTX_UPV)]); t0 _t2 = ((t0)(524288ULL)); CTX_AT(185, 17); e1366(CTX_ME _t0, _t1, _t2); }) != ((t0)(0ULL)))) {
-            return ({ t175 _t3; t776 _t4 = ({ t0 _t5 = (*(CTX_AT(185, 112), e849(CTX_ME (&(*l0))))); CTX_AT(185, 93); f_os__proc_failedi32_90c4dade(CTX_ME _t5); }); if ((_t4.tag == 0)) { l12 = _t4.p.v0.m_value; {
+        if ((({ t40 _t0 = (&(*l0)); t248 _t1 = (&(l11).a[ctx_idx(((t15)(0ULL)), 2, 186, 39, &w_sys__spawn, CTX_UPV)]); t0 _t2 = ((t0)(524288ULL)); CTX_AT(186, 17); e1366(CTX_ME _t0, _t1, _t2); }) != ((t0)(0ULL)))) {
+            return ({ t175 _t3; t776 _t4 = ({ t0 _t5 = (*(CTX_AT(186, 112), e849(CTX_ME (&(*l0))))); CTX_AT(186, 93); f_os__proc_failedi32_90c4dade(CTX_ME _t5); }); if ((_t4.tag == 0)) { l12 = _t4.p.v0.m_value; {
                 _t3 = ((t175){ .tag = 0, .p.v0 = { .m_value = l12, } });
             } } else if ((_t4.tag == 1)) { l13 = _t4.p.v1.m_error; {
                 _t3 = ((t175){ .tag = 1, .p.v1 = { .m_error = ({ t176 _t6; t547 _t7 = l13; if ((_t7.tag == 0)) { {
@@ -43384,11 +43384,11 @@ static t175 f_sys__spawn(CTX_UP t40 l0, t43 l1, t38 l2, t38 l3, t114 l4, t43 l5,
                 } } _t6; }), } });
             } } _t3; });
         }
-        l15 = ({ t40 _t8 = (&(*l0)); t0 _t9 = (l11).a[ctx_idx(((t15)(0ULL)), 2, 188, 54, &w_sys__spawn, CTX_UPV)]; CTX_AT(188, 34); f_os__above(CTX_ME _t8, _t9); });
+        l15 = ({ t40 _t8 = (&(*l0)); t0 _t9 = (l11).a[ctx_idx(((t15)(0ULL)), 2, 189, 54, &w_sys__spawn, CTX_UPV)]; CTX_AT(189, 34); f_os__above(CTX_ME _t8, _t9); });
         if ((l15 < ((t0)(0ULL)))) {
-            l16 = (*(CTX_AT(190, 31), e849(CTX_ME (&(*l0)))));
-            (void)({ t40 _t10 = (&(*l0)); t0 _t11 = (l11).a[ctx_idx(((t15)(1ULL)), 2, 191, 49, &w_sys__spawn, CTX_UPV)]; CTX_AT(191, 29); e853(CTX_ME _t10, _t11); });
-            return ({ t175 _t12; t776 _t13 = (CTX_AT(192, 35), f_os__proc_failedi32_90c4dade(CTX_ME l16)); if ((_t13.tag == 0)) { l17 = _t13.p.v0.m_value; {
+            l16 = (*(CTX_AT(191, 31), e849(CTX_ME (&(*l0)))));
+            (void)({ t40 _t10 = (&(*l0)); t0 _t11 = (l11).a[ctx_idx(((t15)(1ULL)), 2, 192, 49, &w_sys__spawn, CTX_UPV)]; CTX_AT(192, 29); e853(CTX_ME _t10, _t11); });
+            return ({ t175 _t12; t776 _t13 = (CTX_AT(193, 35), f_os__proc_failedi32_90c4dade(CTX_ME l16)); if ((_t13.tag == 0)) { l17 = _t13.p.v0.m_value; {
                 _t12 = ((t175){ .tag = 0, .p.v0 = { .m_value = l17, } });
             } } else if ((_t13.tag == 1)) { l18 = _t13.p.v1.m_error; {
                 _t12 = ((t175){ .tag = 1, .p.v1 = { .m_error = ({ t176 _t14; t547 _t15 = l18; if ((_t15.tag == 0)) { {
@@ -43402,11 +43402,11 @@ static t175 f_sys__spawn(CTX_UP t40 l0, t43 l1, t38 l2, t38 l3, t114 l4, t43 l5,
                 } } _t14; }), } });
             } } _t12; });
         }
-        l20 = ({ t40 _t16 = (&(*l0)); t0 _t17 = (l11).a[ctx_idx(((t15)(1ULL)), 2, 194, 55, &w_sys__spawn, CTX_UPV)]; CTX_AT(194, 35); f_os__above(CTX_ME _t16, _t17); });
+        l20 = ({ t40 _t16 = (&(*l0)); t0 _t17 = (l11).a[ctx_idx(((t15)(1ULL)), 2, 195, 55, &w_sys__spawn, CTX_UPV)]; CTX_AT(195, 35); f_os__above(CTX_ME _t16, _t17); });
         if ((l20 < ((t0)(0ULL)))) {
-            l21 = (*(CTX_AT(196, 31), e849(CTX_ME (&(*l0)))));
-            (void)(CTX_AT(197, 29), e853(CTX_ME (&(*l0)), l15));
-            return ({ t175 _t18; t776 _t19 = (CTX_AT(198, 35), f_os__proc_failedi32_90c4dade(CTX_ME l21)); if ((_t19.tag == 0)) { l22 = _t19.p.v0.m_value; {
+            l21 = (*(CTX_AT(197, 31), e849(CTX_ME (&(*l0)))));
+            (void)(CTX_AT(198, 29), e853(CTX_ME (&(*l0)), l15));
+            return ({ t175 _t18; t776 _t19 = (CTX_AT(199, 35), f_os__proc_failedi32_90c4dade(CTX_ME l21)); if ((_t19.tag == 0)) { l22 = _t19.p.v0.m_value; {
                 _t18 = ((t175){ .tag = 0, .p.v0 = { .m_value = l22, } });
             } } else if ((_t19.tag == 1)) { l23 = _t19.p.v1.m_error; {
                 _t18 = ((t175){ .tag = 1, .p.v1 = { .m_error = ({ t176 _t20; t547 _t21 = l23; if ((_t21.tag == 0)) { {
@@ -43420,32 +43420,32 @@ static t175 f_sys__spawn(CTX_UP t40 l0, t43 l1, t38 l2, t38 l3, t114 l4, t43 l5,
                 } } _t20; }), } });
             } } _t18; });
         }
-        l25 = (CTX_AT(200, 23), e1369(CTX_ME (&(*l0))));
+        l25 = (CTX_AT(201, 23), e1369(CTX_ME (&(*l0))));
         if ((l25 == ((t0)(0ULL)))) {
             l26 = ((t0)(0ULL));
             if (l9) {
-                if (((CTX_AT(204, 25), e1370(CTX_ME (&(*l0)), ((t0)(1ULL)), ((t9)(9ULL)), ((t9)(0ULL)), ((t9)(0ULL)), ((t9)(0ULL)))) != ((t0)(0ULL)))) {
-                    l26 = (*(CTX_AT(204, 126), e849(CTX_ME (&(*l0)))));
+                if (((CTX_AT(205, 25), e1370(CTX_ME (&(*l0)), ((t0)(1ULL)), ((t9)(9ULL)), ((t9)(0ULL)), ((t9)(0ULL)), ((t9)(0ULL)))) != ((t0)(0ULL)))) {
+                    l26 = (*(CTX_AT(205, 126), e849(CTX_ME (&(*l0)))));
                 }
-                if (({ t0 _t22 = (CTX_AT(205, 27), e1371(CTX_ME (&(*l0)))); t0 _t23 = l10; (_t22 != _t23); })) {
-                    (CTX_AT(205, 57), e1372(CTX_ME (&(*l0)), ((t0)(127ULL))));
+                if (({ t0 _t22 = (CTX_AT(206, 27), e1371(CTX_ME (&(*l0)))); t0 _t23 = l10; (_t22 != _t23); })) {
+                    (CTX_AT(206, 57), e1372(CTX_ME (&(*l0)), ((t0)(127ULL))));
                 }
             }
-            if ((((l26 == ((t0)(0ULL))) && l8) && ((CTX_AT(207, 47), e1373(CTX_ME (&(*l0)), ((t0)(0ULL)), ((t0)(0ULL)))) != ((t0)(0ULL))))) {
-                l26 = (*(CTX_AT(207, 101), e849(CTX_ME (&(*l0)))));
+            if ((((l26 == ((t0)(0ULL))) && l8) && ((CTX_AT(208, 47), e1373(CTX_ME (&(*l0)), ((t0)(0ULL)), ((t0)(0ULL)))) != ((t0)(0ULL))))) {
+                l26 = (*(CTX_AT(208, 101), e849(CTX_ME (&(*l0)))));
             }
             l27 = ((t15)(0ULL));
             while (((l26 == ((t0)(0ULL))) && (l27 < ((t15)(3ULL))))) {
                 l28 = (*(l6 + l27));
                 l29 = ((t0)(l27));
                 if ((l28 == l29)) {
-                    if (((CTX_AT(214, 31), e1364(CTX_ME (&(*l0)), l28, ((t0)(2ULL)), ((t57)(0ULL)))) < ((t0)(0ULL)))) {
-                        l26 = (*(CTX_AT(214, 96), e849(CTX_ME (&(*l0)))));
+                    if (((CTX_AT(215, 31), e1364(CTX_ME (&(*l0)), l28, ((t0)(2ULL)), ((t57)(0ULL)))) < ((t0)(0ULL)))) {
+                        l26 = (*(CTX_AT(215, 96), e849(CTX_ME (&(*l0)))));
                     }
                 } else {
                     if ((l28 >= ((t0)(0ULL)))) {
-                        while (((l26 == ((t0)(0ULL))) && ((CTX_AT(216, 45), e1374(CTX_ME (&(*l0)), l28, l29)) < ((t0)(0ULL))))) {
-                            l30 = (*(CTX_AT(217, 43), e849(CTX_ME (&(*l0)))));
+                        while (((l26 == ((t0)(0ULL))) && ((CTX_AT(217, 45), e1374(CTX_ME (&(*l0)), l28, l29)) < ((t0)(0ULL))))) {
+                            l30 = (*(CTX_AT(218, 43), e849(CTX_ME (&(*l0)))));
                             if ((l30 != ((t0)(4ULL)))) {
                                 l26 = l30;
                             }
@@ -43456,8 +43456,8 @@ static t175 f_sys__spawn(CTX_UP t40 l0, t43 l1, t38 l2, t38 l3, t114 l4, t43 l5,
             }
             if ((l26 == ((t0)(0ULL)))) {
                 { t114 _t24 = l7; if ((_t24 != 0)) { l31 = _t24; {
-                    if (((CTX_AT(225, 29), e1375(CTX_ME (&(*l0)), l31)) != ((t0)(0ULL)))) {
-                        l26 = (*(CTX_AT(225, 73), e849(CTX_ME (&(*l0)))));
+                    if (((CTX_AT(226, 29), e1375(CTX_ME (&(*l0)), l31)) != ((t0)(0ULL)))) {
+                        l26 = (*(CTX_AT(226, 73), e849(CTX_ME (&(*l0)))));
                     }
                 } } else if ((_t24 == 0)) { {
                 } } }
@@ -43493,8 +43493,8 @@ static t175 f_sys__spawn(CTX_UP t40 l0, t43 l1, t38 l2, t38 l3, t114 l4, t43 l5,
                                 l39 = ((t15)((uint64_t)l39 + (uint64_t)((t15)(1ULL))));
                             }
                             (*(l5 + ((t15)((uint64_t)l38 + (uint64_t)l36)))) = ((t16)(0ULL));
-                            (void)(CTX_AT(262, 39), e1376(CTX_ME (&(*l0)), l5, l2, l3));
-                            l40 = (*(CTX_AT(263, 47), e849(CTX_ME (&(*l0)))));
+                            (void)(CTX_AT(263, 39), e1376(CTX_ME (&(*l0)), l5, l2, l3));
+                            l40 = (*(CTX_AT(264, 47), e849(CTX_ME (&(*l0)))));
                             if ((l40 == ((t0)(13ULL)))) {
                                 l34 = ((bool)1);
                             } else {
@@ -43514,21 +43514,21 @@ static t175 f_sys__spawn(CTX_UP t40 l0, t43 l1, t38 l2, t38 l3, t114 l4, t43 l5,
                         l26 = ((t0)(13ULL));
                     }
                 } } else if ((_t25 == 0)) { {
-                    (void)(CTX_AT(275, 31), e1376(CTX_ME (&(*l0)), l1, l2, l3));
-                    l26 = (*(CTX_AT(276, 38), e849(CTX_ME (&(*l0)))));
+                    (void)(CTX_AT(276, 31), e1376(CTX_ME (&(*l0)), l1, l2, l3));
+                    l26 = (*(CTX_AT(277, 38), e849(CTX_ME (&(*l0)))));
                 } } }
             }
-            (void)(CTX_AT(279, 29), e1377(CTX_ME (&(*l0)), l20, ((t43)((&l26))), ((t15)(4ULL))));
-            (CTX_AT(280, 21), e1372(CTX_ME (&(*l0)), ((t0)(127ULL))));
+            (void)(CTX_AT(280, 29), e1377(CTX_ME (&(*l0)), l20, ((t43)((&l26))), ((t15)(4ULL))));
+            (CTX_AT(281, 21), e1372(CTX_ME (&(*l0)), ((t0)(127ULL))));
             return ((t175){ .tag = 1, .p.v1 = { .m_error = ({ t176 _t26; t549 _t27 = ((t549){ .tag = 0, .p.v0 = { .m_code = ((t57)(0ULL)), } }); if ((_t27.tag == 0)) { l41 = _t27.p.v0.m_code; {
                 _t26 = ((t176){ .tag = 3, .p.v3 = { .m_code = l41, } });
             } } _t26; }), } });
         }
-        l42 = (*(CTX_AT(283, 32), e849(CTX_ME (&(*l0)))));
-        (void)(CTX_AT(284, 25), e853(CTX_ME (&(*l0)), l20));
+        l42 = (*(CTX_AT(284, 32), e849(CTX_ME (&(*l0)))));
+        (void)(CTX_AT(285, 25), e853(CTX_ME (&(*l0)), l20));
         if ((l25 < ((t0)(0ULL)))) {
-            (void)(CTX_AT(286, 29), e853(CTX_ME (&(*l0)), l15));
-            return ({ t175 _t28; t776 _t29 = (CTX_AT(287, 35), f_os__proc_failedi32_90c4dade(CTX_ME l42)); if ((_t29.tag == 0)) { l43 = _t29.p.v0.m_value; {
+            (void)(CTX_AT(287, 29), e853(CTX_ME (&(*l0)), l15));
+            return ({ t175 _t28; t776 _t29 = (CTX_AT(288, 35), f_os__proc_failedi32_90c4dade(CTX_ME l42)); if ((_t29.tag == 0)) { l43 = _t29.p.v0.m_value; {
                 _t28 = ((t175){ .tag = 0, .p.v0 = { .m_value = l43, } });
             } } else if ((_t29.tag == 1)) { l44 = _t29.p.v1.m_error; {
                 _t28 = ((t175){ .tag = 1, .p.v1 = { .m_error = ({ t176 _t30; t547 _t31 = l44; if ((_t31.tag == 0)) { {
@@ -43543,22 +43543,22 @@ static t175 f_sys__spawn(CTX_UP t40 l0, t43 l1, t38 l2, t38 l3, t114 l4, t43 l5,
             } } _t28; });
         }
         if (l8) {
-            (void)(CTX_AT(291, 31), e1373(CTX_ME (&(*l0)), l25, l25));
+            (void)(CTX_AT(292, 31), e1373(CTX_ME (&(*l0)), l25, l25));
         }
         l46 = ((t0)(0ULL));
         l47 = ((t57)((-(int64_t)0LL - 1)));
         while ((l47 < ((t57)(0ULL)))) {
-            l47 = (CTX_AT(295, 30), e1378(CTX_ME (&(*l0)), l15, ((t43)((&l46))), ((t15)(4ULL))));
-            if (((l47 < ((t57)(0ULL))) && ((*(CTX_AT(296, 38), e849(CTX_ME (&(*l0))))) != ((t0)(4ULL))))) {
+            l47 = (CTX_AT(296, 30), e1378(CTX_ME (&(*l0)), l15, ((t43)((&l46))), ((t15)(4ULL))));
+            if (((l47 < ((t57)(0ULL))) && ((*(CTX_AT(297, 38), e849(CTX_ME (&(*l0))))) != ((t0)(4ULL))))) {
                 l47 = ((t57)(0ULL));
             }
         }
-        (void)(CTX_AT(298, 25), e853(CTX_ME (&(*l0)), l15));
+        (void)(CTX_AT(299, 25), e853(CTX_ME (&(*l0)), l15));
         if ((l47 == ((t57)(0ULL)))) {
             return ((t175){ .tag = 0, .p.v0 = { .m_value = l25, } });
         }
-        (void)(CTX_AT(301, 21), f_os__reap(CTX_ME (&(*l0)), l25, ((t0)(0ULL))));
-        return ({ t175 _t32; t776 _t33 = (CTX_AT(302, 31), f_os__proc_failedi32_90c4dade(CTX_ME l46)); if ((_t33.tag == 0)) { l48 = _t33.p.v0.m_value; {
+        (void)(CTX_AT(302, 21), f_os__reap(CTX_ME (&(*l0)), l25, ((t0)(0ULL))));
+        return ({ t175 _t32; t776 _t33 = (CTX_AT(303, 31), f_os__proc_failedi32_90c4dade(CTX_ME l46)); if ((_t33.tag == 0)) { l48 = _t33.p.v0.m_value; {
             _t32 = ((t175){ .tag = 0, .p.v0 = { .m_value = l48, } });
         } } else if ((_t33.tag == 1)) { l49 = _t33.p.v1.m_error; {
             _t32 = ((t175){ .tag = 1, .p.v1 = { .m_error = ({ t176 _t34; t547 _t35 = l49; if ((_t35.tag == 0)) { {
@@ -43763,7 +43763,7 @@ static const ctx_where w_os__event_waitable = { "os::event_waitable", 2834000043
 static t9 f_os__event_waitable(CTX_UP t9 l0) {
     CTX_STACK_CHECK();
     {
-        return ctx_sub_u64(((t9)((l0 & ((t9)(4294967295ULL))))), ((t9)(1ULL)), 1248, 75, &w_os__event_waitable, CTX_UPV);
+        return ctx_sub_u64(((t9)((l0 & ((t9)(4294967295ULL))))), ((t9)(1ULL)), 1269, 75, &w_os__event_waitable, CTX_UPV);
     }
     __builtin_unreachable();
 }
@@ -61121,7 +61121,7 @@ static t29 f_os__mutex_lock(CTX_UP t571 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__mutex_lock);
     {
-        (void)(CTX_AT(1368, 64), e1934(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1389, 64), e1934(CTX_ME (&(*l0))));
     }
 }
 
@@ -61131,7 +61131,7 @@ static t29 f_os__mutex_unlock(CTX_UP t571 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__mutex_unlock);
     {
-        (void)(CTX_AT(1370, 68), e1935(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1391, 68), e1935(CTX_ME (&(*l0))));
     }
 }
 
@@ -61207,8 +61207,8 @@ static t9 f_os__now(CTX_UP t781 l0) {
     CTX_FRAME(&w_os__now);
     {
         l1 = ((t971){ .m_sec = ((t57)(0ULL)), .m_nsec = ((t57)(0ULL)), });
-        (void)(CTX_AT(1253, 26), e1939(CTX_ME (&(*l0)), ((t0)(1ULL)), (&l1)));
-        return ({ t9 _t0 = ctx_mul_u64(((t9)(ctx_as_s((int64_t)((l1).m_sec), 0, INT64_MAX, "u64", 1254, 16, &w_os__now, CTX_UPV))), ((t9)(1000000000ULL)), 1254, 32, &w_os__now, CTX_UPV); t9 _t1 = ((t9)(ctx_as_s((int64_t)((l1).m_nsec), 0, INT64_MAX, "u64", 1254, 47, &w_os__now, CTX_UPV))); ctx_add_u64(_t0, _t1, 1254, 45, &w_os__now, CTX_UPV); });
+        (void)(CTX_AT(1274, 26), e1939(CTX_ME (&(*l0)), ((t0)(1ULL)), (&l1)));
+        return ({ t9 _t0 = ctx_mul_u64(((t9)(ctx_as_s((int64_t)((l1).m_sec), 0, INT64_MAX, "u64", 1275, 16, &w_os__now, CTX_UPV))), ((t9)(1000000000ULL)), 1275, 32, &w_os__now, CTX_UPV); t9 _t1 = ((t9)(ctx_as_s((int64_t)((l1).m_nsec), 0, INT64_MAX, "u64", 1275, 47, &w_os__now, CTX_UPV))); ctx_add_u64(_t0, _t1, 1275, 45, &w_os__now, CTX_UPV); });
     }
     __builtin_unreachable();
 }
@@ -61240,7 +61240,7 @@ static t9 f_os__event_make(CTX_UP t781 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__event_make);
     {
-        return (CTX_AT(1243, 75), f_sys__event_make(CTX_ME (&(*l0))));
+        return (CTX_AT(1264, 75), f_sys__event_make(CTX_ME (&(*l0))));
     }
     __builtin_unreachable();
 }
@@ -61251,7 +61251,7 @@ static t29 f_os__event_reset(CTX_UP t781 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__event_reset);
     {
-        (CTX_AT(1245, 75), f_sys__event_reset(CTX_ME (&(*l0)), l1));
+        (CTX_AT(1266, 75), f_sys__event_reset(CTX_ME (&(*l0)), l1));
     }
 }
 
@@ -79861,7 +79861,7 @@ static t29 f_os__event_signal(CTX_UP t781 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__event_signal);
     {
-        (CTX_AT(1244, 77), f_sys__event_signal(CTX_ME (&(*l0)), l1));
+        (CTX_AT(1265, 77), f_sys__event_signal(CTX_ME (&(*l0)), l1));
     }
 }
 
@@ -79906,17 +79906,17 @@ static t7 f_os__condition_wait_for(CTX_UP t781 l0, t783 l1, t571 l2, t9 l3) {
     CTX_FRAME(&w_os__condition_wait_for);
     {
         l4 = ((t971){ .m_sec = ((t57)(0ULL)), .m_nsec = ((t57)(0ULL)), });
-        (void)(CTX_AT(1382, 26), e1939(CTX_ME (&(*l0)), ((t0)(0ULL)), (&l4)));
-        l5 = ({ t9 _t0 = ((t9)(ctx_as_s((int64_t)((l4).m_nsec), 0, INT64_MAX, "u64", 1383, 18, &w_os__condition_wait_for, CTX_UPV))); t9 _t1 = ctx_rem_u64(l3, ((t9)(1000000000ULL)), 1383, 51, &w_os__condition_wait_for, CTX_UPV); ctx_add_u64(_t0, _t1, 1383, 37, &w_os__condition_wait_for, CTX_UPV); });
-        l6 = ({ t9 _t2 = ctx_div_u64(l3, ((t9)(1000000000ULL)), 1384, 32, &w_os__condition_wait_for, CTX_UPV); t9 _t3 = ctx_div_u64(l5, ((t9)(1000000000ULL)), 1384, 50, &w_os__condition_wait_for, CTX_UPV); ctx_add_u64(_t2, _t3, 1384, 45, &w_os__condition_wait_for, CTX_UPV); });
+        (void)(CTX_AT(1403, 26), e1939(CTX_ME (&(*l0)), ((t0)(0ULL)), (&l4)));
+        l5 = ({ t9 _t0 = ((t9)(ctx_as_s((int64_t)((l4).m_nsec), 0, INT64_MAX, "u64", 1404, 18, &w_os__condition_wait_for, CTX_UPV))); t9 _t1 = ctx_rem_u64(l3, ((t9)(1000000000ULL)), 1404, 51, &w_os__condition_wait_for, CTX_UPV); ctx_add_u64(_t0, _t1, 1404, 37, &w_os__condition_wait_for, CTX_UPV); });
+        l6 = ({ t9 _t2 = ctx_div_u64(l3, ((t9)(1000000000ULL)), 1405, 32, &w_os__condition_wait_for, CTX_UPV); t9 _t3 = ctx_div_u64(l5, ((t9)(1000000000ULL)), 1405, 50, &w_os__condition_wait_for, CTX_UPV); ctx_add_u64(_t2, _t3, 1405, 45, &w_os__condition_wait_for, CTX_UPV); });
         l7 = ((t9)(9223372036854775807ULL));
-        l8 = ({ t9 _t4; if (({ t9 _t5 = l6; t9 _t6 = ({ t9 _t7 = l7; t9 _t8 = ((t9)(ctx_as_s((int64_t)((l4).m_sec), 0, INT64_MAX, "u64", 1386, 35, &w_os__condition_wait_for, CTX_UPV))); ctx_sub_u64(_t7, _t8, 1386, 33, &w_os__condition_wait_for, CTX_UPV); }); (_t5 > _t6); })) {
+        l8 = ({ t9 _t4; if (({ t9 _t5 = l6; t9 _t6 = ({ t9 _t7 = l7; t9 _t8 = ((t9)(ctx_as_s((int64_t)((l4).m_sec), 0, INT64_MAX, "u64", 1407, 35, &w_os__condition_wait_for, CTX_UPV))); ctx_sub_u64(_t7, _t8, 1407, 33, &w_os__condition_wait_for, CTX_UPV); }); (_t5 > _t6); })) {
             _t4 = l7;
         } else {
-            _t4 = ({ t9 _t9 = ((t9)(ctx_as_s((int64_t)((l4).m_sec), 0, INT64_MAX, "u64", 1386, 68, &w_os__condition_wait_for, CTX_UPV))); t9 _t10 = l6; ctx_add_u64(_t9, _t10, 1386, 86, &w_os__condition_wait_for, CTX_UPV); });
+            _t4 = ({ t9 _t9 = ((t9)(ctx_as_s((int64_t)((l4).m_sec), 0, INT64_MAX, "u64", 1407, 68, &w_os__condition_wait_for, CTX_UPV))); t9 _t10 = l6; ctx_add_u64(_t9, _t10, 1407, 86, &w_os__condition_wait_for, CTX_UPV); });
         } _t4; });
-        l9 = ({ t57 _t11 = ((t57)(ctx_as_u((uint64_t)(l8), INT64_MAX, "i64", 1387, 37, &w_os__condition_wait_for, CTX_UPV))); t57 _t12 = ((t57)(ctx_as_u((uint64_t)(ctx_rem_u64(l5, ((t9)(1000000000ULL)), 1387, 71, &w_os__condition_wait_for, CTX_UPV)), INT64_MAX, "i64", 1387, 59, &w_os__condition_wait_for, CTX_UPV))); ((t971){ .m_sec = _t11, .m_nsec = _t12, }); });
-        return ((CTX_AT(1388, 38), e2536(CTX_ME (&(*l0)), (&(*l1)), (&(*l2)), (&l9))) == ((t0)(0ULL)));
+        l9 = ({ t57 _t11 = ((t57)(ctx_as_u((uint64_t)(l8), INT64_MAX, "i64", 1408, 37, &w_os__condition_wait_for, CTX_UPV))); t57 _t12 = ((t57)(ctx_as_u((uint64_t)(ctx_rem_u64(l5, ((t9)(1000000000ULL)), 1408, 71, &w_os__condition_wait_for, CTX_UPV)), INT64_MAX, "i64", 1408, 59, &w_os__condition_wait_for, CTX_UPV))); ((t971){ .m_sec = _t11, .m_nsec = _t12, }); });
+        return ((CTX_AT(1409, 38), e2536(CTX_ME (&(*l0)), (&(*l1)), (&(*l2)), (&l9))) == ((t0)(0ULL)));
     }
     __builtin_unreachable();
 }
@@ -79927,7 +79927,7 @@ static t29 f_os__condition_wait(CTX_UP t783 l0, t571 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_wait);
     {
-        (void)(CTX_AT(1376, 30), e2537(CTX_ME (&(*l0)), (&(*l1))));
+        (void)(CTX_AT(1397, 30), e2537(CTX_ME (&(*l0)), (&(*l1))));
     }
 }
 
@@ -79938,11 +79938,11 @@ static t9 f_sys__event_make(CTX_UP t781 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_sys__event_make);
     {
-        l1 = (CTX_AT(349, 25), e2538(CTX_ME (&(*l0)), ((t23)(0ULL)), ((t0)((((t0)(524288ULL)) | ((t0)(2048ULL)))))));
+        l1 = (CTX_AT(350, 25), e2538(CTX_ME (&(*l0)), ((t23)(0ULL)), ((t0)((((t0)(524288ULL)) | ((t0)(2048ULL)))))));
         if ((l1 < ((t0)(0ULL)))) {
             return ((t9)(0ULL));
         }
-        return ctx_add_u64(((t9)(ctx_as_s((int64_t)(l1), 0, INT64_MAX, "u64", 351, 16, &w_sys__event_make, CTX_UPV))), ((t9)(1ULL)), 351, 29, &w_sys__event_make, CTX_UPV);
+        return ctx_add_u64(((t9)(ctx_as_s((int64_t)(l1), 0, INT64_MAX, "u64", 352, 16, &w_sys__event_make, CTX_UPV))), ((t9)(1ULL)), 352, 29, &w_sys__event_make, CTX_UPV);
     }
     __builtin_unreachable();
 }
@@ -79955,7 +79955,7 @@ static t29 f_sys__event_reset(CTX_UP t781 l0, t9 l1) {
     CTX_FRAME(&w_sys__event_reset);
     {
         l2 = ((t9)(0ULL));
-        (void)({ t781 _t0 = (&(*l0)); t0 _t1 = ((t0)(ctx_as_u((uint64_t)(ctx_sub_u64(l1, ((t9)(1ULL)), 361, 55, &w_sys__event_reset, CTX_UPV)), INT32_MAX, "i32", 361, 40, &w_sys__event_reset, CTX_UPV))); t885 _t2 = (&l2); t15 _t3 = ((t15)(8ULL)); CTX_AT(361, 23); e2539(CTX_ME _t0, _t1, _t2, _t3); });
+        (void)({ t781 _t0 = (&(*l0)); t0 _t1 = ((t0)(ctx_as_u((uint64_t)(ctx_sub_u64(l1, ((t9)(1ULL)), 362, 55, &w_sys__event_reset, CTX_UPV)), INT32_MAX, "i32", 362, 40, &w_sys__event_reset, CTX_UPV))); t885 _t2 = (&l2); t15 _t3 = ((t15)(8ULL)); CTX_AT(362, 23); e2539(CTX_ME _t0, _t1, _t2, _t3); });
     }
 }
 
@@ -79965,7 +79965,7 @@ static t29 f_os__condition_signal(CTX_UP t783 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_signal);
     {
-        (void)(CTX_AT(1391, 79), e2540(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1412, 79), e2540(CTX_ME (&(*l0))));
     }
 }
 
@@ -79979,30 +79979,30 @@ static t97 f_os__thread_create(CTX_UP t781 l0, t43 l1, t15 l2) {
     CTX_FRAME(&w_os__thread_create);
     {
         l3 = ((t1083){ .m_bytes = ({ t9 _t0 = ((t9)(0ULL)); t1084 _t1; for (uint64_t _i = 0; _i < 8; _i++) _t1.a[_i] = _t0; _t1; }), });
-        if (((CTX_AT(1302, 29), e2541(CTX_ME (&(*l0)), (&l3))) != ((t0)(0ULL)))) {
+        if (((CTX_AT(1323, 29), e2541(CTX_ME (&(*l0)), (&l3))) != ((t0)(0ULL)))) {
             return ((t97){0});
         }
         /* defer */
-        l4 = ctx_mul_u64(ctx_div_u64(ctx_add_u64(l2, ((t15)(65535ULL)), 1304, 32, &w_os__thread_create, CTX_UPV), ((t15)(65536ULL)), 1304, 41, &w_os__thread_create, CTX_UPV), ((t15)(65536ULL)), 1304, 49, &w_os__thread_create, CTX_UPV);
-        if (((CTX_AT(1305, 37), e2542(CTX_ME (&(*l0)), (&l3), l4)) != ((t0)(0ULL)))) {
+        l4 = ctx_mul_u64(ctx_div_u64(ctx_add_u64(l2, ((t15)(65535ULL)), 1325, 32, &w_os__thread_create, CTX_UPV), ((t15)(65536ULL)), 1325, 41, &w_os__thread_create, CTX_UPV), ((t15)(65536ULL)), 1325, 49, &w_os__thread_create, CTX_UPV);
+        if (((CTX_AT(1326, 37), e2542(CTX_ME (&(*l0)), (&l3), l4)) != ((t0)(0ULL)))) {
             { t97 _t2 = ((t97){0});
             {
-                (void)(CTX_AT(1303, 39), e2543(CTX_ME (&(*l0)), (&l3)));
+                (void)(CTX_AT(1324, 39), e2543(CTX_ME (&(*l0)), (&l3)));
             } return _t2; }
         }
         l5 = ((t9)(0ULL));
-        if (((CTX_AT(1307, 26), e2544(CTX_ME (&(*l0)), (&l5), (&l3), k_os__thread_entry, l1)) != ((t0)(0ULL)))) {
+        if (((CTX_AT(1328, 26), e2544(CTX_ME (&(*l0)), (&l5), (&l3), k_os__thread_entry, l1)) != ((t0)(0ULL)))) {
             { t97 _t3 = ((t97){0});
             {
-                (void)(CTX_AT(1303, 39), e2543(CTX_ME (&(*l0)), (&l3)));
+                (void)(CTX_AT(1324, 39), e2543(CTX_ME (&(*l0)), (&l3)));
             } return _t3; }
         }
         { t97 _t4 = ((t97){ .tag = 1, .p.v1.m_value = l5 });
         {
-            (void)(CTX_AT(1303, 39), e2543(CTX_ME (&(*l0)), (&l3)));
+            (void)(CTX_AT(1324, 39), e2543(CTX_ME (&(*l0)), (&l3)));
         } return _t4; }
         {
-            (void)(CTX_AT(1303, 39), e2543(CTX_ME (&(*l0)), (&l3)));
+            (void)(CTX_AT(1324, 39), e2543(CTX_ME (&(*l0)), (&l3)));
         }
     }
     __builtin_unreachable();
@@ -80014,7 +80014,7 @@ static t29 f_os__thread_yield(CTX_UP t781 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_yield);
     {
-        (void)(CTX_AT(1327, 24), e2545(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1348, 24), e2545(CTX_ME (&(*l0))));
     }
 }
 
@@ -80024,7 +80024,7 @@ static t29 f_os__thread_detach(CTX_UP t781 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_detach);
     {
-        (void)(CTX_AT(1313, 27), e2546(CTX_ME (&(*l0)), l1));
+        (void)(CTX_AT(1334, 27), e2546(CTX_ME (&(*l0)), l1));
     }
 }
 
@@ -99552,7 +99552,7 @@ static t29 f_sys__event_signal(CTX_UP t781 l0, t9 l1) {
     CTX_FRAME(&w_sys__event_signal);
     {
         l2 = ((t9)(1ULL));
-        (void)({ t781 _t0 = (&(*l0)); t0 _t1 = ((t0)(ctx_as_u((uint64_t)(ctx_sub_u64(l1, ((t9)(1ULL)), 356, 56, &w_sys__event_signal, CTX_UPV)), INT32_MAX, "i32", 356, 41, &w_sys__event_signal, CTX_UPV))); t885 _t2 = (&l2); t15 _t3 = ((t15)(8ULL)); CTX_AT(356, 24); e2972(CTX_ME _t0, _t1, _t2, _t3); });
+        (void)({ t781 _t0 = (&(*l0)); t0 _t1 = ((t0)(ctx_as_u((uint64_t)(ctx_sub_u64(l1, ((t9)(1ULL)), 357, 56, &w_sys__event_signal, CTX_UPV)), INT32_MAX, "i32", 357, 41, &w_sys__event_signal, CTX_UPV))); t885 _t2 = (&l2); t15 _t3 = ((t15)(8ULL)); CTX_AT(357, 24); e2972(CTX_ME _t0, _t1, _t2, _t3); });
     }
 }
 
@@ -99562,7 +99562,7 @@ static t29 f_os__condition_broadcast(CTX_UP t783 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_broadcast);
     {
-        (void)(CTX_AT(1392, 85), e2973(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1413, 85), e2973(CTX_ME (&(*l0))));
     }
 }
 
@@ -99603,7 +99603,7 @@ static t114 f_os__thread_entry(CTX_UP t43 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_entry);
     {
-        (CTX_AT(1294, 22), f_thread__entry(CTX_ME l0));
+        (CTX_AT(1315, 22), f_thread__entry(CTX_ME l0));
         return ((t114)(0));
     }
     __builtin_unreachable();
@@ -142461,8 +142461,8 @@ static t29 f_os__thread_name(CTX_UP t781 l0, t8 l1) {
         } else {
             _t2 = (l1).m_len;
         } _t2; });
-        ({ t8 _t3 = ({ t8 _t5 = (((t8){ .m_ptr = ((t43)((&l2))), .m_len = ((t15)(64ULL)), })); uint64_t _t6 = ((t15)(0ULL)); uint64_t _t7 = l3; ctx_range(_t6, _t7, _t5.m_len, 1339, 35, &w_os__thread_name, CTX_UPV); (t8){ .m_ptr = _t5.m_ptr + _t6, .m_len = _t7 - _t6 }; }); t8 _t4 = ({ t8 _t8 = (l1); uint64_t _t9 = ((t15)(0ULL)); uint64_t _t10 = l3; ctx_range(_t9, _t10, _t8.m_len, 1339, 52, &w_os__thread_name, CTX_UPV); (t8){ .m_ptr = _t8.m_ptr + _t9, .m_len = _t10 - _t9 }; }); CTX_AT(1339, 24); f_slice__copyu8_aae5a9c4(CTX_ME _t3, _t4); });
-        ({ t781 _t11 = (&(*l0)); t43 _t12 = (&(l2).a[ctx_idx(((t15)(0ULL)), 64, 1340, 52, &w_os__thread_name, CTX_UPV)]); CTX_AT(1340, 29); f_sys__set_thread_name(CTX_ME _t11, _t12); });
+        ({ t8 _t3 = ({ t8 _t5 = (((t8){ .m_ptr = ((t43)((&l2))), .m_len = ((t15)(64ULL)), })); uint64_t _t6 = ((t15)(0ULL)); uint64_t _t7 = l3; ctx_range(_t6, _t7, _t5.m_len, 1360, 35, &w_os__thread_name, CTX_UPV); (t8){ .m_ptr = _t5.m_ptr + _t6, .m_len = _t7 - _t6 }; }); t8 _t4 = ({ t8 _t8 = (l1); uint64_t _t9 = ((t15)(0ULL)); uint64_t _t10 = l3; ctx_range(_t9, _t10, _t8.m_len, 1360, 52, &w_os__thread_name, CTX_UPV); (t8){ .m_ptr = _t8.m_ptr + _t9, .m_len = _t10 - _t9 }; }); CTX_AT(1360, 24); f_slice__copyu8_aae5a9c4(CTX_ME _t3, _t4); });
+        ({ t781 _t11 = (&(*l0)); t43 _t12 = (&(l2).a[ctx_idx(((t15)(0ULL)), 64, 1361, 52, &w_os__thread_name, CTX_UPV)]); CTX_AT(1361, 29); f_sys__set_thread_name(CTX_ME _t11, _t12); });
     }
 }
 
@@ -157580,7 +157580,7 @@ static t29 f_os__condition_free(CTX_UP t783 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_free);
     {
-        (void)(CTX_AT(1393, 78), e4296(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1414, 78), e4296(CTX_ME (&(*l0))));
     }
 }
 

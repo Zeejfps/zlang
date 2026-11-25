@@ -1,0 +1,99 @@
+// std: clock. What time it is: a monotonic clock, for how long something took, and the wall
+// clock, for when it happened.
+//
+//   fn main { mut io: Io, mut clock: Clock } {
+//       let began = clock::read_monotonic{ &clock }
+//       work{}
+//       let took = clock::read_monotonic{ &clock } - began          // nanoseconds
+//       let t = clock::to_utc{ unix_ns = clock::read_wall{ &clock } }
+//       _ = @fmt(&io, "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z took {} ns\n", t.year, t.month, t.day, t.hour, t.minute, t.second, took)
+//   }
+//
+// The monotonic clock never goes back and doesn't follow changes to the system's time, so the
+// difference of two readings is how long passed between them; its zero means nothing. It reads
+// QueryPerformanceCounter on Windows and CLOCK_MONOTONIC on Linux and macOS, to the
+// nanosecond or the counter's tick, whichever is coarser (100 ns on most Windows machines).
+//
+// The wall clock is the system's time, in nanoseconds since 1970-01-01T00:00:00Z, without leap
+// seconds, as Unix time counts them: it may jump either way when the system's time is set.
+// It reads GetSystemTimePreciseAsFileTime on Windows and CLOCK_REALTIME on Linux and macOS.
+// `to_utc` splits it into a calendar date and a time of day, pure, for a log line or an HTTP
+// Date field.
+//
+// Reading either clock takes a Clock, which starts no thread: a program that takes one isn't
+// threaded for it (spec §15, Entry point, rule 8). The interpreter has no clock: a reading
+// stops the run, as not supported by interp, since a run there is the same each time.
+
+// Permission to read the clocks. It includes what its platform's layer needs, os::Clock
+// (std/os).
+capability Clock { ..os::Clock }
+
+namespace clock {
+    // A moment in UTC on the proleptic Gregorian calendar, as `to_utc` splits it.
+    struct Utc {
+        year: i64,
+        month: u8,                  // 1 to 12
+        day: u8,                    // 1 to 31
+        hour: u8,                   // 0 to 23
+        minute: u8,                 // 0 to 59
+        second: u8,                 // 0 to 59: Unix time has no leap second
+        nanosecond: u32,            // 0 to 999999999
+        weekday: u8,                // 0 Sunday to 6 Saturday, as C's tm_wday
+    }
+
+    // Now on the monotonic clock, in nanoseconds from a start that means nothing: only the
+    // difference of two readings does.
+    fn read_monotonic { mut clock: Clock } -> u64 {
+        return os::clock_monotonic{ &clock }
+    }
+
+    // Now on the wall clock: nanoseconds since 1970-01-01T00:00:00Z, negative before it.
+    fn read_wall { mut clock: Clock } -> i64 {
+        return os::clock_wall{ &clock }
+    }
+
+    const NS_PER_SECOND: i64 = 1000000000
+    const SECONDS_PER_DAY: i64 = 86400
+
+    // `unix_ns`, nanoseconds since 1970-01-01T00:00:00Z, as a date and a time of day in UTC.
+    // Every i64 has one: the years go from about 1677 to 2262.
+    fn to_utc { unix_ns: i64 } -> Utc {
+        // Floor division, so a moment before 1970 falls in the day and second it is in.
+        let mut seconds = unix_ns / NS_PER_SECOND
+        let mut nanos = unix_ns % NS_PER_SECOND
+        if nanos < 0 {
+            nanos = nanos + NS_PER_SECOND
+            seconds = seconds - 1
+        }
+        let mut days = seconds / SECONDS_PER_DAY
+        let mut of_day = seconds % SECONDS_PER_DAY
+        if of_day < 0 {
+            of_day = of_day + SECONDS_PER_DAY
+            days = days - 1
+        }
+        // 1970-01-01 was a Thursday.
+        let mut weekday = (days + 4) % 7
+        if weekday < 0 { weekday = weekday + 7 }
+        // Howard Hinnant's civil_from_days: eras of 400 years, from 0000-03-01, so that a leap
+        // day is the last of its year.
+        let z = days + 719468
+        let era = (if z >= 0 { z } else { z - 146096 }) / 146097
+        let doe = z - era * 146097                                  // 0 to 146096
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365   // 0 to 399
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100)           // 0 to 365
+        let mp = (5 * doy + 2) / 153                                // 0 to 11, from March
+        let day = doy - (153 * mp + 2) / 5 + 1
+        let month = if mp < 10 { mp + 3 } else { mp - 9 }
+        let year = yoe + era * 400 + (if month <= 2 { 1 } else { 0 })
+        return Utc{
+            year,
+            month = @as(u8, month),
+            day = @as(u8, day),
+            hour = @as(u8, of_day / 3600),
+            minute = @as(u8, of_day % 3600 / 60),
+            second = @as(u8, of_day % 60),
+            nanosecond = @as(u32, nanos),
+            weekday = @as(u8, weekday),
+        }
+    }
+}

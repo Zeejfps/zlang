@@ -1,0 +1,122 @@
+// A request's target as a path under the served directory: what a client may name, and what it
+// may not. Pure, so it is tested without a socket (paths_test.ctx).
+//
+// The target's path (before any `?` or `#`) is percent-decoded first, then split at `/`, and
+// its dot segments resolved as RFC 3986 §5.2.4 resolves them: so `%2e%2e` is `..` and `%2f` a
+// separator, and no spelling of a segment escapes the check. Then:
+//
+//   - `..` above the root is `outside` (403): the client named something outside the directory.
+//   - A segment that holds `\`, `:` or a zero byte, or is only dots and spaces past `.` and `..`,
+//     or names a Windows device (CON, NUL, COM1, LPT1 and the rest, with or without an
+//     extension), is `unservable` (404): on Windows `\` separates, `:` opens a drive or a
+//     file's alternate stream, and a device name opens the device wherever it is, so none of
+//     them names a file under the directory. They are refused on every platform, so the same
+//     directory serves the same files everywhere.
+//   - A target that isn't a path from `/` (`*`, an absolute URL) or a bad escape is `bad_target`
+//     (400).
+//
+// Symbolic links under the directory are followed, as the system follows them: what the
+// directory holds is its owner's to decide, as for any static server.
+namespace paths {
+    error bad_target
+    error outside
+    error unservable
+
+    // A target resolved: the path under the root, its segments joined by `/` with no `/` at
+    // either end ("" for the root itself), and whether the target ended in `/` (or in a dot
+    // segment), which asks for a directory.
+    struct Resolved { path: []u8, slash: bool }
+
+    // The part of `target` before its query or fragment.
+    fn find_path { target: []u8 } -> []u8 {
+        for c at i in target {
+            if c == '?' or c == '#' { return target[..i] }
+        }
+        return target
+    }
+
+    // Resolves `target` into `into`, which must be at least target.len bytes: the result's path
+    // is a slice of it.
+    fn resolve { target: []u8, into: []mut u8 } -> !Resolved {
+        let path = find_path{ target }
+        if path.len == 0 or path[0] != '/' { return bad_target }
+        let decoded = url::decode_percent{ text = path, into } iferr { return bad_target }
+        // Segments are copied forward over the decoded bytes: what is written never passes
+        // what is read.
+        let mut n: usize = 0
+        let mut i: usize = 1
+        let mut slash = false
+        while i <= decoded {
+            let mut j = i
+            while j < decoded and into[j] != '/' { j = j + 1 }
+            let segment: []u8 = into[i..j]
+            let last = j >= decoded
+            if segment.len == 0 or is_dots{ segment, count = 1 } {
+                if last { slash = true }
+            } else if is_dots{ segment, count = 2 } {
+                if n == 0 { return outside }
+                // Back to the `/` before the last segment written, or to the start.
+                while n > 0 and into[n - 1] != '/' { n = n - 1 }
+                if n > 0 { n = n - 1 }
+                if last { slash = true }
+            } else {
+                if not is_servable{ segment } { return unservable }
+                if n > 0 {
+                    into[n] = '/'
+                    n = n + 1
+                }
+                for k in 0..segment.len { into[n + k] = into[i + k] }
+                n = n + segment.len
+                slash = false
+            }
+            i = j + 1
+        }
+        let out: []u8 = into[..n]
+        return Resolved{ path = out, slash }
+    }
+
+    // Whether `segment` is `count` dots.
+    fn is_dots { segment: []u8, count: usize } -> bool {
+        if segment.len != count { return false }
+        for c in segment {
+            if c != '.' { return false }
+        }
+        return true
+    }
+
+    // Whether a segment, not `.` or `..`, may name a file under the root (the header says why).
+    fn is_servable { segment: []u8 } -> bool {
+        let mut only_dots = true
+        for c in segment {
+            if c == '\\' or c == ':' or c == 0 { return false }
+            if c != '.' and c != ' ' { only_dots = false }
+        }
+        if only_dots { return false }
+        return not is_device{ segment }
+    }
+
+    // Whether the segment's name before its first `.`, without spaces at its end, is one of
+    // Windows' device names, in any case.
+    fn is_device { segment: []u8 } -> bool {
+        let mut end: usize = 0
+        while end < segment.len and segment[end] != '.' { end = end + 1 }
+        while end > 0 and segment[end - 1] == ' ' { end = end - 1 }
+        let base = segment[..end]
+        if base.len == 3 {
+            return is_named{ base, name = "con" } or is_named{ base, name = "prn" } or is_named{ base, name = "aux" } or is_named{ base, name = "nul" }
+        }
+        if base.len == 4 and (is_named{ base = base[..3], name = "com" } or is_named{ base = base[..3], name = "lpt" }) {
+            return base[3] is '0'..='9'
+        }
+        return false
+    }
+
+    // Whether `base` is `name`, which is lower case, in any case.
+    fn is_named { base: []u8, name: []u8 } -> bool {
+        if base.len != name.len { return false }
+        for c at i in base {
+            if ascii::to_lower{ c } != name[i] { return false }
+        }
+        return true
+    }
+}

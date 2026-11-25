@@ -1746,6 +1746,42 @@ namespace os {
         return 1
     }
 
+    // ---- for std's clock: kernel32's counters
+
+    // What std's Clock holds on Windows: nothing.
+    capability Clock
+
+    extern fn QueryPerformanceCounter { mut clock: Clock, mut count: i64 } -> i32
+    extern fn QueryPerformanceFrequency { mut clock: Clock, mut frequency: i64 } -> i32
+    extern fn GetSystemTimePreciseAsFileTime { mut clock: Clock, mut time: FileTime }
+
+    // FILETIME: 100-nanosecond intervals since 1601-01-01T00:00:00Z, in two halves.
+    struct FileTime { low: u32, high: u32 }
+
+    // FILETIME's count at 1970-01-01T00:00:00Z.
+    const UNIX_EPOCH_FILETIME: i64 = 116444736000000000
+
+    // The performance counter in nanoseconds. Its frequency is fixed at boot, and both calls
+    // succeed on every Windows since XP. The count is split by the frequency first, so that the
+    // product doesn't overflow however long the machine has been up.
+    fn clock_monotonic { mut clock: Clock } -> u64 {
+        let mut count: i64 = 0
+        let mut frequency: i64 = 0
+        _ = QueryPerformanceCounter{ &clock, &count }
+        _ = QueryPerformanceFrequency{ &clock, &frequency }
+        let c = @as(u64, count)
+        let f = @as(u64, frequency)
+        return c / f * 1000000000 + c % f * 1000000000 / f
+    }
+
+    // The system's time in nanoseconds since 1970, to the 100 ns of a FILETIME.
+    fn clock_wall { mut clock: Clock } -> i64 {
+        let mut t = FileTime{ low = 0, high = 0 }
+        GetSystemTimePreciseAsFileTime{ &clock, time = &t }
+        let ticks = @as(i64, (@as(u64, t.high) << 32) | @as(u64, t.low))
+        return (ticks - UNIX_EPOCH_FILETIME) * 100
+    }
+
     // ---- threads (std/task.ctx, std/thread.ctx): kernel32's
 
     // Permission to start threads, which std's Threads includes.

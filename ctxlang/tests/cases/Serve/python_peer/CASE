@@ -1,0 +1,93 @@
+// serve, the static file server at the repository's top (serve/PLAN.md), built by its build
+// program and run against Python's http.client and raw sockets, from
+// tests/helpers/serve_peer.py, which serves a temporary directory and sends Ctrl-Break as
+// tests/helpers/console_break.py does. Its own tests (`ctxc test serve`: targets resolved and
+// refused, log lines, dates, content types) run first.
+//
+// Fetched: a file, and its HEAD; 3 MiB sent in chunks, the same bytes; a listing, its links
+// percent-encoded and its names escaped as HTML; a directory without its `/` redirected, and
+// its index.html; a name with a space and `&`; an empty directory's listing; a content type by
+// extension; 404; `..` above the root, spelled plainly, percent-encoded and from below,
+// refused with 403; a `\`, which Windows would read as a separator, and a device name, 404;
+// POST, 405 with Allow; a head with a broken field, which serve_connection answers 400 and the
+// connection's task logs; and /stats, counted across connections. Each request's access log
+// line is read before the next request is sent, so the log is in order here.
+//
+// Stopping: after a Ctrl-Break the server stops accepting; a kept-alive connection's request is
+// answered with Connection: close, and an idle one is cancelled at the end of the 2-second
+// grace period; it exits with 0. A server of one connection at most (--connections 1) closes
+// a second at once, and counts it refused; a second Ctrl-Break during its 60-second grace
+// period ends it at once, as std's stop does.
+//# only: windows: GenerateConsoleCtrlEvent is Windows'; serve's Linux and macOS layers are std's, compiled by Net/tcp_every_layer and Stop/every_layer
+//# needs: python
+//# $ ctxc test {repo}/serve
+//# exit: 0
+//# stdout:
+//| tests: 11 run, 11 passed, 0 failed, 0 skipped, 0 not selected, 76 checks
+//# $ ctxc exe {repo}/serve -o {dir}/serve{exe}
+//# exit: 0
+//# build driver: main.ctx
+//# $ {driver} {home}/tests/helpers/serve_peer.py {dir}/serve{exe}
+//# timeout: 180
+//# exit: 0
+//# stdout:
+//| started: yes
+//| GET /hello.txt: 200, Content-Type: text/plain; charset=utf-8, Content-Length: 6, 'hello\n'
+//|   log: "GET /hello.txt HTTP/1.1" 200 6
+//| HEAD /hello.txt: 200, Content-Type: text/plain; charset=utf-8, Content-Length: 6, ''
+//|   log: "HEAD /hello.txt HTTP/1.1" 200 0
+//| GET /big.bin: 200, Content-Type: application/octet-stream, Content-Length: 3145728
+//|   log: "GET /big.bin HTTP/1.1" 200 3145728
+//|   3 MiB: the same bytes
+//| GET /: 200, Content-Type: text/html; charset=utf-8, Content-Length: 324
+//|   log: "GET / HTTP/1.1" 200 324
+//|   links: a%20b%26c.txt big.bin docs/ empty%20dir/ hello.txt style.css
+//|   texts: a b&amp;c.txt | big.bin | docs/ | empty dir/ | hello.txt | style.css
+//| GET /docs: 301, Content-Type: text/plain; charset=utf-8, Content-Length: 6, Location: /docs/, 'moved\n'
+//|   log: "GET /docs HTTP/1.1" 301 6
+//| GET /docs/: 200, Content-Type: text/html; charset=utf-8, Content-Length: 12, '<p>docs</p>\n'
+//|   log: "GET /docs/ HTTP/1.1" 200 12
+//| GET /a%20b%26c.txt: 200, Content-Type: text/plain; charset=utf-8, Content-Length: 7, 'spaces\n'
+//|   log: "GET /a%20b%26c.txt HTTP/1.1" 200 7
+//| GET /empty%20dir/: 200, Content-Type: text/html; charset=utf-8, Content-Length: 146
+//|   log: "GET /empty%20dir/ HTTP/1.1" 200 146
+//|   links: ../
+//| GET /style.css: 200, Content-Type: text/css; charset=utf-8, Content-Length: 8, 'body {}\n'
+//|   log: "GET /style.css HTTP/1.1" 200 8
+//| GET /missing.txt: 404, Content-Type: text/plain; charset=utf-8, Content-Length: 10, 'not found\n'
+//|   log: "GET /missing.txt HTTP/1.1" 404 10
+//| GET /../secret.txt: 403, Content-Type: text/plain; charset=utf-8, Content-Length: 10, 'forbidden\n'
+//|   log: "GET /../secret.txt HTTP/1.1" 403 10
+//| GET /%2e%2e/secret.txt: 403, Content-Type: text/plain; charset=utf-8, Content-Length: 10, 'forbidden\n'
+//|   log: "GET /%2e%2e/secret.txt HTTP/1.1" 403 10
+//| GET /docs/%2e%2e/%2e%2e/secret.txt: 403, Content-Type: text/plain; charset=utf-8, Content-Length: 10, 'forbidden\n'
+//|   log: "GET /docs/%2e%2e/%2e%2e/secret.txt HTTP/1.1" 403 10
+//| GET /..%5csecret.txt: 404, Content-Type: text/plain; charset=utf-8, Content-Length: 10, 'not found\n'
+//|   log: "GET /..%5csecret.txt HTTP/1.1" 404 10
+//| GET /nul: 404, Content-Type: text/plain; charset=utf-8, Content-Length: 10, 'not found\n'
+//|   log: "GET /nul HTTP/1.1" 404 10
+//| POST /hello.txt: 405, Content-Type: text/plain; charset=utf-8, Content-Length: 19, Allow: GET, HEAD, 'method not allowed\n'
+//|   log: "POST /hello.txt HTTP/1.1" 405 19
+//| broken head: HTTP/1.1 400 Bad Request
+//|   log: "-" 400 0
+//| GET /stats: 200, Content-Type: application/json, Content-Length: {n}
+//|   log: "GET /stats HTTP/1.1" 200 {n}
+//|   stats: {"bytes_sent": 3146316, "connections": {"accepted": 3, "refused": 0}, "requests": {"2xx": 8, "3xx": 1, "4xx": 8, "5xx": 0, "total": 17}}
+//| GET /hello.txt: 200, Content-Type: text/plain; charset=utf-8, Content-Length: 6, 'hello\n'
+//|   log: "GET /hello.txt HTTP/1.1" 200 6
+//| GET /hello.txt: 200, Content-Type: text/plain; charset=utf-8, Content-Length: 6, 'hello\n'
+//|   log: "GET /hello.txt HTTP/1.1" 200 6
+//| Ctrl-Break: stopping: 2 connections open
+//| GET /hello.txt: 200, Content-Type: text/plain; charset=utf-8, Content-Length: 6, Connection: close, 'hello\n'
+//|   log: "GET /hello.txt HTTP/1.1" 200 6
+//| then: grace period over: cancelling 1 connections
+//| then: stopped after 21 requests
+//| server: exit code 0
+//| HEAD /: 200, Content-Type: text/html; charset=utf-8, Content-Length: 324, ''
+//|   log: "HEAD / HTTP/1.1" 200 0
+//| a second connection, past --connections 1: closed
+//| GET /stats: 200, Content-Type: application/json, Content-Length: {n}
+//|   log: "GET /stats HTTP/1.1" 200 {n}
+//|   refused: 1
+//| Ctrl-Break: stopping: 1 connections open
+//| again: ended by Ctrl-Break (0xC000013A)

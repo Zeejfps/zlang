@@ -1,0 +1,78 @@
+// paths::resolve: what a target may name under the root, and what it may not.
+namespace paths_tests {
+    fn check_resolves { mut t: Test, target: []u8, path: []u8, slash: bool } {
+        let mut into: [256]u8
+        let r = paths::resolve{ target, into = into[..] } iferr err{ error } {
+            @expect(&t, target == path)
+            return
+        }
+        @expect(&t, r.path == path)
+        @expect(&t, r.slash == slash)
+    }
+
+    #test
+    fn plain_paths_resolve { mut t: Test } {
+        check_resolves{ &t, target = "/", path = "", slash = true }
+        check_resolves{ &t, target = "/index.html", path = "index.html", slash = false }
+        check_resolves{ &t, target = "/a/b/c.txt", path = "a/b/c.txt", slash = false }
+        check_resolves{ &t, target = "/a/b/", path = "a/b", slash = true }
+        check_resolves{ &t, target = "/a//b", path = "a/b", slash = false }
+        check_resolves{ &t, target = "/a.txt?x=1#y", path = "a.txt", slash = false }
+        check_resolves{ &t, target = "/a%20b.txt", path = "a b.txt", slash = false }
+        check_resolves{ &t, target = "/%e2%9c%93", path = "\xe2\x9c\x93", slash = false }
+    }
+
+    #test
+    fn dot_segments_resolve_inside { mut t: Test } {
+        check_resolves{ &t, target = "/a/./b", path = "a/b", slash = false }
+        check_resolves{ &t, target = "/a/../b", path = "b", slash = false }
+        check_resolves{ &t, target = "/a/b/..", path = "a", slash = true }
+        check_resolves{ &t, target = "/a/.", path = "a", slash = true }
+        check_resolves{ &t, target = "/a/b/../../c", path = "c", slash = false }
+        check_resolves{ &t, target = "/a/%2e%2e/b", path = "b", slash = false }
+        check_resolves{ &t, target = "/a%2fb", path = "a/b", slash = false }
+        check_resolves{ &t, target = "/a/..", path = "", slash = true }
+    }
+
+    #test
+    fn escapes_from_the_root_are_outside { mut t: Test } {
+        let mut into: [256]u8
+        @expect(&t, paths::resolve{ target = "/..", into = into[..] } is paths::outside)
+        @expect(&t, paths::resolve{ target = "/../etc/passwd", into = into[..] } is paths::outside)
+        @expect(&t, paths::resolve{ target = "/a/../../b", into = into[..] } is paths::outside)
+        @expect(&t, paths::resolve{ target = "/%2e%2e/x", into = into[..] } is paths::outside)
+        @expect(&t, paths::resolve{ target = "/%2E%2E%2fx", into = into[..] } is paths::outside)
+        @expect(&t, paths::resolve{ target = "/a/%2e%2e%2f%2e%2e/x", into = into[..] } is paths::outside)
+    }
+
+    #test
+    fn segments_no_file_has_are_unservable { mut t: Test } {
+        let mut into: [256]u8
+        @expect(&t, paths::resolve{ target = "/..%5c..%5cwindows", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/a%5cb", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/c:/x", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/a.txt::$DATA", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/a%00.txt", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/...", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/. .", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/CON", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/x/nul.txt", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/com1", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/Lpt9.log", into = into[..] } is paths::unservable)
+        @expect(&t, paths::resolve{ target = "/aux%20.c", into = into[..] } is paths::unservable)
+        // Names that only begin like a device are files.
+        check_resolves{ &t, target = "/console.txt", path = "console.txt", slash = false }
+        check_resolves{ &t, target = "/com10", path = "com10", slash = false }
+        check_resolves{ &t, target = "/.hidden", path = ".hidden", slash = false }
+    }
+
+    #test
+    fn targets_that_are_no_path_are_bad { mut t: Test } {
+        let mut into: [256]u8
+        @expect(&t, paths::resolve{ target = "*", into = into[..] } is paths::bad_target)
+        @expect(&t, paths::resolve{ target = "http://example.com/", into = into[..] } is paths::bad_target)
+        @expect(&t, paths::resolve{ target = "/a%2", into = into[..] } is paths::bad_target)
+        @expect(&t, paths::resolve{ target = "/a%zz", into = into[..] } is paths::bad_target)
+        @expect(&t, paths::resolve{ target = "?x", into = into[..] } is paths::bad_target)
+    }
+}

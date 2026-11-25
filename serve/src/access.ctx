@@ -1,0 +1,204 @@
+// The access log, and the times it and the responses carry.
+//
+// A line for each request answered, written by the task that answered it:
+//
+//   2026-11-25T22:14:03.123Z 127.0.0.1:54321 "GET /index.html HTTP/1.1" 200 1234 0.153ms
+//
+// the time it was answered (UTC, to the millisecond), the client, the request line (its bytes
+// below 0x20, from 0x7F, `"` and `\` written as \xNN), the status, the body's bytes sent, and
+// how long the answer took from its head having been read. A request the server refused before
+// it had a request line (serve_connection's 400, 431, 501 and 505) is logged with `-` for it.
+// A line that failed after its response began ends in `failed: ERROR`.
+//
+// Each line is built whole in a buffer of the task's, then appended to the Journal, a buffer
+// that every task shares under a mutex, which one task, the writer, writes out: everything
+// appended since its last write, in one write, as soon as there is something. So lines are
+// whole and in the order their answers ended; one waiting line is written at once, and under
+// load each write takes many. A task can't simply write its line to standard output itself:
+// each thread's standard output is a buffer of its own (spec §17, io), written out when it
+// fills or the thread ends, and a worker lives on for 10 seconds after its task, so the lines
+// would come out late and in any order; and flushing after each line costs a write of the
+// platform's per request, which threads then queue for (serve/PLAN.md, Findings: it cut the
+// server's requests per second to a sixth). When the buffer is full, a task waits for room:
+// the server goes at the pace its log is written.
+namespace access {
+    // The shared buffer of lines, and the writer's state.
+    struct Journal {
+        lock: mutex::Mutex,
+        ready: condition::Condition,    // signalled when lines are appended, or closing is set
+        room: condition::Condition,     // broadcast when the writer has taken the lines
+        pending: []mut u8,              // lines appended and not yet taken: pending[..len]
+        len: usize,
+        closing: bool,                  // the writer writes what is left and ends
+    }
+
+    // How long a wait for a condition lasts before it looks again whether its task is asked
+    // to stop: std's condition::wait can't be cancelled.
+    const WAKE_NS: u64 = 100000000
+
+    // A journal over `buffer`, which holds the lines not yet written.
+    fn make_journal { buffer: []mut u8 } -> Journal {
+        return Journal{ lock = mutex::make{}, ready = condition::make{}, room = condition::make{}, pending = buffer, len = 0, closing = false }
+    }
+
+    // Appends `bytes`, whole lines, waiting for room while the buffer is too full for them. The
+    // writer takes every line before it ends, so the wait ends.
+    fn append { journal: *mut Journal, bytes: []u8 } {
+        if bytes.len > journal.pending.len { rt::fail{ msg = "access::append: a line longer than the journal" } }
+        mutex::lock{ mutex = &journal.lock }
+        while journal.len + bytes.len > journal.pending.len {
+            condition::wait{ condition = &journal.room, mutex = &journal.lock }
+        }
+        slice::copy(u8){ dst = journal.pending[journal.len..journal.len + bytes.len], src = bytes }
+        journal.len = journal.len + bytes.len
+        condition::signal{ condition = &journal.ready }
+        mutex::unlock{ mutex = &journal.lock }
+    }
+
+    // Asks the writer to write what is left and end.
+    fn close_journal { journal: *mut Journal } {
+        mutex::lock{ mutex = &journal.lock }
+        journal.closing = true
+        condition::signal{ condition = &journal.ready }
+        mutex::unlock{ mutex = &journal.lock }
+    }
+
+    // The writer, a task: takes what was appended into `batch`, its own buffer as large as the
+    // journal's, and writes it to standard output, until the journal is closing and empty, or
+    // the task is asked to stop, when it writes what is left first.
+    fn run_writer { mut io: Io, mut threads: Threads, journal: *mut Journal, batch: []mut u8 } -> ! {
+        while true {
+            mutex::lock{ mutex = &journal.lock }
+            let mut stopping = false
+            while journal.len == 0 and not journal.closing and not stopping {
+                if not condition::wait_for{ &threads, condition = &journal.ready, mutex = &journal.lock, nanoseconds = WAKE_NS } {
+                    stopping = task::check_cancelled{ &threads } is err
+                }
+            }
+            let n = journal.len
+            let last = journal.closing or stopping
+            slice::copy(u8){ dst = batch[..n], src = journal.pending[..n] }
+            journal.len = 0
+            condition::broadcast{ condition = &journal.room }
+            mutex::unlock{ mutex = &journal.lock }
+            if n > 0 {
+                io::write{ &io, to = io::Stream::out, bytes = batch[..n] }
+                io::flush{ &io }
+            }
+            if last and n == 0 { return }
+        }
+    }
+    // What a line says of its answer.
+    struct Line {
+        unix_ns: i64,               // when it was answered, on the wall clock
+        peer: net::Address,
+        method: []u8,               // empty for a request refused before its request line
+        target: []u8,
+        version: u8,                // 10 or 11
+        status: u16,
+        bytes: u64,                 // body bytes sent
+        took_ns: u64,
+        failure: ?error,            // what ended the answer after it began
+    }
+
+    // A line's longest target: past it, the target is cut and ends in `...`.
+    const TARGET_MOST: usize = 1024
+
+    // A line's longest text: the target and the method escaped, 4 bytes for each of their bytes,
+    // and room for the rest (the time, an address, the numbers, an error). A method is cut to
+    // METHOD_MOST bytes, as a target to TARGET_MOST.
+    const LINE_MOST: usize = 4 * TARGET_MOST + 4 * METHOD_MOST + 1024
+    const METHOD_MOST: usize = 64
+
+    // Appends `line`'s text and a line break to the journal.
+    fn write_line { journal: *mut Journal, line: Line } {
+        let mut buf: [2 * LINE_MOST]u8
+        let mut heap = arena::new{ buf = buf[..] }
+        let mut b = utf8::builder(arena::Arena){ realloc = arena::alloc, &heap }
+        // Room for the longest line at once (a list rounds it up to a power of two, at most
+        // twice it), so that the builder never grows, which in an arena would leave what it
+        // outgrew: neither push fails.
+        try! list::reserve(u8, arena::Arena){ list = &b.bytes, extra = LINE_MOST }
+        push_line{ &b, line } iferr {}
+        utf8::push{ &b, s = "\n" } iferr {}
+        append{ journal, bytes = utf8::view{ b }.bytes }
+    }
+
+    fn push_line(S) { mut b: utf8::Builder(S), line: Line } -> ! {
+        try push_stamp{ &b, unix_ns = line.unix_ns }
+        try @fmt(&b, " {} ", line.peer)
+        if line.method.len == 0 {
+            try utf8::push{ &b, s = "\"-\"" }
+        } else {
+            try utf8::push{ &b, s = "\"" }
+            try push_escaped{ &b, bytes = line.method[..@min(line.method.len, METHOD_MOST)] }
+            try utf8::push{ &b, s = " " }
+            let cut = line.target.len > TARGET_MOST
+            try push_escaped{ &b, bytes = if cut { line.target[..TARGET_MOST] } else { line.target } }
+            if cut { try utf8::push{ &b, s = "..." } }
+            try @fmt(&b, " HTTP/1.{}\"", if line.version == 10 { 0 } else { 1 })
+        }
+        try @fmt(&b, " {} {} {}.{:03}ms", line.status, line.bytes, line.took_ns / 1000000, line.took_ns / 1000 % 1000)
+        if let failure = line.failure { try @fmt(&b, " failed: {}", failure) }
+    }
+
+    // `bytes` with those that would make a line ambiguous or unreadable as \xNN.
+    fn push_escaped(S) { mut b: utf8::Builder(S), bytes: []u8 } -> ! {
+        let digits = "0123456789abcdef"
+        let mut from: usize = 0
+        for c at i in bytes {
+            if c < 0x20 or c >= 0x7F or c == '"' or c == '\\' {
+                try utf8::push{ &b, s = utf8::of{ chars = bytes[from..i] } }
+                let escape: [4]u8 = ['\\', 'x', digits[c >> 4], digits[c & 15]]
+                try utf8::push{ &b, s = utf8::of{ chars = escape[..] } }
+                from = i + 1
+            }
+        }
+        try utf8::push{ &b, s = utf8::of{ chars = bytes[from..] } }
+    }
+
+    // RFC 3339's UTC time to the millisecond: 2026-11-25T22:14:03.123Z.
+    fn push_stamp(S) { mut b: utf8::Builder(S), unix_ns: i64 } -> ! {
+        let t = clock::to_utc{ unix_ns }
+        try @fmt(&b, "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z", t.year, t.month, t.day, t.hour, t.minute, t.second, t.nanosecond / 1000000)
+    }
+
+    const DAYS: []u8 = "SunMonTueWedThuFriSat"
+    const MONTHS: []u8 = "JanFebMarAprMayJunJulAugSepOctNovDec"
+
+    // The longest IMF-fixdate: "Sun, 06 Nov 1994 08:49:37 GMT" is 29 bytes, for a year of four digits.
+    const DATE_SIZE: usize = 29
+
+    // RFC 9110 §5.6.7's IMF-fixdate, what an HTTP Date field holds, into `into` (DATE_SIZE
+    // bytes): "Sun, 06 Nov 1994 08:49:37 GMT". A year past 9999 can't be written in it, and
+    // is written as 9999.
+    fn write_date { unix_ns: i64, into: []mut u8 } -> []u8 {
+        let t = clock::to_utc{ unix_ns }
+        let year = @as(u64, @clamp(t.year, 0, 9999))
+        let w = @as(usize, t.weekday) * 3
+        let m = (@as(usize, t.month) - 1) * 3
+        slice::copy(u8){ dst = into[0..3], src = DAYS[w..w + 3] }
+        into[3] = ','
+        into[4] = ' '
+        put_two{ into = into[5..7], v = t.day }
+        into[7] = ' '
+        slice::copy(u8){ dst = into[8..11], src = MONTHS[m..m + 3] }
+        into[11] = ' '
+        put_two{ into = into[12..14], v = @as(u8, year / 100) }
+        put_two{ into = into[14..16], v = @as(u8, year % 100) }
+        into[16] = ' '
+        put_two{ into = into[17..19], v = t.hour }
+        into[19] = ':'
+        put_two{ into = into[20..22], v = t.minute }
+        into[22] = ':'
+        put_two{ into = into[23..25], v = t.second }
+        slice::copy(u8){ dst = into[25..29], src = " GMT" }
+        return into[..DATE_SIZE]
+    }
+
+    // Two decimal digits of `v`, below 100.
+    fn put_two { into: []mut u8, v: u8 } {
+        into[0] = '0' + v / 10
+        into[1] = '0' + v % 10
+    }
+}

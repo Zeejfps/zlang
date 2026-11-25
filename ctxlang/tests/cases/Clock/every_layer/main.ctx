@@ -1,0 +1,7 @@
+// Both of clock's readings, so that each layer's are checked and lowered.
+
+fn main { mut io: Io, mut clock: Clock } {
+    let a = clock::read_monotonic{ &clock }
+    let b = clock::read_wall{ &clock }
+    _ = @fmt(&io, "{} {}\n", a, b)
+}

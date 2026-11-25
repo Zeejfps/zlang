@@ -1,0 +1,66 @@
+// Content types by a file's extension: the program's own table, as every static server keeps
+// one (std has none: which types a server names is its policy). Text types say UTF-8, which is
+// what a directory of documents and source is written in.
+namespace mime {
+    struct Kind { extension: []u8, content_type: []u8 }
+
+    const DEFAULT: []u8 = "application/octet-stream"
+
+    const KINDS: [34]Kind = [
+        Kind{ extension = "html", content_type = "text/html; charset=utf-8" },
+        Kind{ extension = "htm", content_type = "text/html; charset=utf-8" },
+        Kind{ extension = "css", content_type = "text/css; charset=utf-8" },
+        Kind{ extension = "js", content_type = "text/javascript; charset=utf-8" },
+        Kind{ extension = "mjs", content_type = "text/javascript; charset=utf-8" },
+        Kind{ extension = "json", content_type = "application/json" },
+        Kind{ extension = "map", content_type = "application/json" },
+        Kind{ extension = "txt", content_type = "text/plain; charset=utf-8" },
+        Kind{ extension = "md", content_type = "text/markdown; charset=utf-8" },
+        Kind{ extension = "csv", content_type = "text/csv; charset=utf-8" },
+        Kind{ extension = "xml", content_type = "application/xml" },
+        Kind{ extension = "ctx", content_type = "text/plain; charset=utf-8" },
+        Kind{ extension = "c", content_type = "text/plain; charset=utf-8" },
+        Kind{ extension = "h", content_type = "text/plain; charset=utf-8" },
+        Kind{ extension = "py", content_type = "text/plain; charset=utf-8" },
+        Kind{ extension = "svg", content_type = "image/svg+xml" },
+        Kind{ extension = "png", content_type = "image/png" },
+        Kind{ extension = "jpg", content_type = "image/jpeg" },
+        Kind{ extension = "jpeg", content_type = "image/jpeg" },
+        Kind{ extension = "gif", content_type = "image/gif" },
+        Kind{ extension = "webp", content_type = "image/webp" },
+        Kind{ extension = "ico", content_type = "image/vnd.microsoft.icon" },
+        Kind{ extension = "wasm", content_type = "application/wasm" },
+        Kind{ extension = "pdf", content_type = "application/pdf" },
+        Kind{ extension = "zip", content_type = "application/zip" },
+        Kind{ extension = "gz", content_type = "application/gzip" },
+        Kind{ extension = "tar", content_type = "application/x-tar" },
+        Kind{ extension = "mp3", content_type = "audio/mpeg" },
+        Kind{ extension = "wav", content_type = "audio/wav" },
+        Kind{ extension = "mp4", content_type = "video/mp4" },
+        Kind{ extension = "webm", content_type = "video/webm" },
+        Kind{ extension = "woff", content_type = "font/woff" },
+        Kind{ extension = "woff2", content_type = "font/woff2" },
+        Kind{ extension = "ttf", content_type = "font/ttf" },
+    ]
+
+    // The content type of a file named `name` (its last segment, or a whole path), by the
+    // extension after its last `.`, in any case; DEFAULT for none or one not in the table.
+    fn find_type { name: []u8 } -> []u8 {
+        let mut dot = name.len
+        let mut i = name.len
+        while i > 0 {
+            i = i - 1
+            if name[i] == '/' { break }
+            if name[i] == '.' {
+                dot = i
+                break
+            }
+        }
+        if dot == name.len or dot == 0 { return DEFAULT }
+        let extension = name[dot + 1..]
+        for kind in KINDS {
+            if paths::is_named{ base = extension, name = kind.extension } { return kind.content_type }
+        }
+        return DEFAULT
+    }
+}

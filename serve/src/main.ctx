@@ -1,0 +1,76 @@
+// serve: an HTTP/1.1 static file server (serve/PLAN.md).
+//
+//   serve DIR [--port N] [--address A] [--grace SECONDS] [--connections N]
+//
+// Serves GET and HEAD of the files under DIR on A:N (127.0.0.1:8080 unless they are given; port
+// 0 lets the system pick, and the first line says which). The server is a task that accepts,
+// and a task per connection in a task::Group, which serves its requests with
+// http::serve_connection (site.ctx answers them) until the client leaves or the program stops.
+//
+// Ctrl-C (or the system asking) stops it gracefully: it stops accepting, gives the connections
+// SECONDS (5 unless given; at most 3 when the system asks, which on Windows ends the program
+// about 5 seconds later) to finish what they are doing, and then cancels what is left, which
+// closes their sockets. Each response while it stops says `Connection: close`. A connection
+// that is kept alive with no request in progress waits for its next request until the grace
+// period ends. A second Ctrl-C ends the program at once (std's stop).
+//
+// It serves at most N connections at once (--connections, 4096 unless given): one past that is
+// closed as soon as it is accepted, and counted as refused in /stats. Each connection costs two
+// threads while it waits for a request, and about 240 KiB (serve/PLAN.md, Findings).
+//
+// Standard output is the access log (access.ctx), with a line when the server starts and lines
+// as it stops; errors in starting go to standard error, with exit code 2 for a bad command line
+// and 1 for anything else.
+
+const USAGE: []u8 = "usage: serve DIR [--port N] [--address A] [--grace SECONDS] [--connections N]\n"
+
+struct Options {
+    root: []u8,
+    address: net::Address,
+    grace_ns: u64,
+    connections: u64,
+}
+
+error bad_usage{ why: []u8 }
+
+fn parse_options { args: Args } -> !Options {
+    let mut root: ?[]u8 = null
+    let mut ip = net::LOOPBACK_V4
+    let mut port: u16 = 8080
+    let mut grace: u64 = 5
+    let mut connections: u64 = 4096
+    let mut i: usize = 0
+    while i < args.len {
+        let a = args[i]
+        let has_value = i + 1 < args.len
+        if slice::eq_bytes{ a, b = "--port" } and has_value {
+            let n = utf8::parse_u64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return bad_usage{ why = "--port takes a number" } }
+            if n > 65535 { return bad_usage{ why = "--port is at most 65535" } }
+            port = @as(u16, n)
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--address" } and has_value {
+            ip = net::parse_ip{ text = args[i + 1] } iferr { return bad_usage{ why = "--address takes an IP address, as 127.0.0.1 or ::1" } }
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--grace" } and has_value {
+            grace = utf8::parse_u64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return bad_usage{ why = "--grace takes a number of seconds" } }
+            if grace > 3600 { return bad_usage{ why = "--grace is at most 3600 seconds" } }
+            i = i + 2
+        } else if slice::eq_bytes{ a, b = "--connections" } and has_value {
+            connections = utf8::parse_u64{ s = utf8::of{ chars = args[i + 1] } } ifnull { return bad_usage{ why = "--connections takes a number" } }
+            if connections == 0 { return bad_usage{ why = "--connections is at least 1" } }
+            i = i + 2
+        } else if a.len > 0 and a[0] == '-' {
+            return bad_usage{ why = "unknown option, or one without its value" }
+        } else if root == null {
+            root = a
+            i = i + 1
+        } else {
+            return bad_usage{ why = "one directory only" }
+        }
+    }
+    let dir = root ifnull { return bad_usage{ why = "no directory" } }
+    // Without the `/`s at its end, but for a root of `/` alone.
+    let mut end = dir.len
+    while end > 1 and (dir[end - 1] == '/' or dir[end - 1] == '\\') { end = end - 1 }
+    return Options{ root = dir[..end], address = net::Address{ ip, port }, grace_ns = grace * 1000000000, connections }
+}

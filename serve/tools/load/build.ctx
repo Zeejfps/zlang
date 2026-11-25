@@ -1,0 +1,7 @@
+// load, serve's load generator (main.ctx): `kotor/tools/ctxc exe serve/tools/load -o
+// serve/out/load.exe` from the repository's root. Optimized as serve is, so that the client
+// isn't what the numbers measure.
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "load", root = "." }
+    build::optimize{ &b, exe, level = 2 }
+}

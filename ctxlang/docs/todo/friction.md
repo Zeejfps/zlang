@@ -162,7 +162,9 @@ as the write-ups gave them.
     processes, so it has none, and counts a test's time limit in its own 20 ms waits
     (std/test.ctx, `SLICE`): a limit is at least what it says, and nothing can print how long
     a test took. A monotonic clock under a capability that doesn't start threads would fix it.
-    *Hit by 1:* std's test runner.
+    *Partly:* std's `clock` (spec §17) reads the monotonic and the wall clock under `Clock`,
+    which starts no thread (added for serve, whose log needs both); the test runner still
+    counts its own waits until it takes one. *Hit by 2:* std's test runner, serve.
 
 39. **Storing through a read-only slice of `mut` elements needs the slice `mut` too.** http's head
     parsers fill the caller's `[]mut Header` with slices of a buffer the caller owns. Written
@@ -194,3 +196,67 @@ as the write-ups gave them.
     binding's word that what it reaches is safe from any thread, would say what is meant without
     a cast. *Hit by 1:* std (stop's
     handler on every layer, and task's and thread's thread entries).
+
+42. **serve_connection doesn't say what it answered.** A request it refuses (400, 431, 501,
+    505) never reaches the handler, and its error doesn't say whether a response went out, so a
+    server's access log can't have a line for it from what std gives. Written: serve's
+    `find_refusal` (serve/src/run.ctx) maps http's errors back to the statuses std's `refuse`
+    chose, and logs them from the connection's task; a handler's own error of the same kind (a
+    response head too large for the buffer) would be logged twice. A callback for refusals, or
+    the status in the error, would say it. *Hit by 1:* serve.
+
+43. **std has no general-purpose heap.** A server's memory per request is decided by its input
+    (a directory's listing, a path as long as the target) and freed when the request is
+    answered; an arena only grows, and `mem::pages` is never given back. Written: C's calloc,
+    realloc and free behind `alloc::Fn` (serve/src/heap/heap.ctx), which kotor wrote first
+    (kotor/lib/base/heap.ctx). *Hit by 2:* kotor, serve.
+
+44. **A task's standard output is its thread's own buffer.** What a task prints comes out when
+    its worker's 64 KiB fills or its thread ends (10 seconds after its last task), so lines from
+    many tasks come out late and in any order. Flushing after each line makes each one a write
+    of the system's, which threads queue for: serve's access log to a file cut it from 25,600
+    to 4,000 requests a second. Written: a journal of the program's own, a shared buffer under
+    a mutex that one writer task writes out (serve/src/access.ctx, about 90 lines). A std
+    writer that tasks share, written out by line, would say it. *Hit by 1:* serve.
+
+45. **A type's `@fmt` writer reaches one sink.** `net::Address` has writers into a
+    `utf8::Builder` only, so printing one to an `Io` or an `io::Stderr` goes through a builder
+    over an arena first (serve/src/run.ctx). *Hit by 1:* serve.
+
+46. **An error doesn't become a `?error` in one step.** `failure = error`, for an inferred
+    set's error and a `failure: ?error`, and `failure = net::reset`, are errors: a set converts
+    to `error` and a T to `?T`, but not both at once. Written: `let any: error = error`, then
+    `failure = any`. *Hit by 1:* serve (site.ctx, and its tests).
+
+47. **std has no sort.** fs sorts a listing's names with a sort of its own, private; serve's
+    load generator wrote a heap sort to take percentiles of latencies
+    (serve/tools/load/main.ctx, `sort_u64`). A generic `slice::sort(T)` taking a `less` would
+    serve both. *Hit by 1:* serve.
+
+48. **`condition::wait` can't be cancelled.** A task that waits on a condition ends only when
+    what it waits for comes, so its handle's scope end waits for that too. Written: serve's
+    log writer waits with `condition::wait_for` and wakes every 100 ms to ask
+    `task::check_cancelled`. A wait that also waits on the task's cancel object, as
+    `thread::sleep` does, would say it. *Hit by 1:* serve.
+
+49. **Windows' file calls put a 64 KiB path buffer on the stack, which stays committed.** Each
+    of std's file functions on Windows converts the path into a `[32768]u16` local (the longest
+    path Windows takes), and a thread's stack stays committed at the deepest it has been, so
+    every worker that ever touched a file keeps those pages: serve's 1,000 idle connections
+    that had each asked for a file took 238 MiB, and 176 MiB when they had asked for /stats
+    instead. A buffer sized to the path would need memory std doesn't have (entry 43), and a
+    long-path fallback in a function of its own could still be inlined into the common frame:
+    there is no way to say that a function mustn't be. *Hit by 1:* serve.
+
+50. **`ctxc exe -o` into a directory that isn't there fails in the linker.** `ctxc exe serve -o
+    serve/out/serve.exe` before serve/out existed gave ld's "cannot open output file ...: No
+    such file or directory" and "the C compiler failed", not ctxc's own word that the directory
+    is missing, nor the directory made. *Hit by 1:* serve.
+
+51. **A function value can't be started as many tasks.** A start's `run` is a bind written in
+    the call (spec §15, Tasks, rule 3), so a library can't start a task per connection around a
+    handler its caller passed as a value: what the value holds can't be seen. This is what
+    keeps `http::serve` out of std (docs/todo/http.md, Decision 7; serve/PLAN.md, Findings).
+    Written: the accept loop and the connection's task in the program (serve/src/run.ctx,
+    `accept_into` and `connection`, about 45 lines with the program's own counting and
+    logging). *Hit by 1:* serve.

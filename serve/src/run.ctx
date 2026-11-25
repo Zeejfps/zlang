@@ -1,0 +1,167 @@
+// serve's main, and what runs concurrently: the log's writer, the acceptor, and a task per
+// connection (main.ctx's header says what the program does).
+
+// The journal's buffer, and the writer's: a burst of lines this large waits for the disk.
+const JOURNAL_SIZE: usize = 1048576
+
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, mut stop: Stop, mut clock: Clock, args: Args } -> i32 {
+    let mut err = io::to_stderr{ &io }
+    let options = parse_options{ args } iferr err{ error } {
+        if error is bad_usage{ why } { _ = @fmt(&err, "serve: {}\n", why) }
+        _ = @fmt(&err, "{}", USAGE)
+        return 2
+    }
+    if not (fs::size{ &fs, path = options.root } is fs::is_directory) {
+        _ = @fmt(&err, "serve: {} is no directory\n", options.root)
+        return 1
+    }
+    let listener = net::listen{ &net, address = options.address, backlog = 0 } iferr err{ error } {
+        // Address's writer is a Builder's only (docs/todo/friction.md, 45).
+        let mut buf: [128]u8
+        let mut heap = arena::new{ buf = buf[..] }
+        let mut b = utf8::builder(arena::Arena){ realloc = arena::alloc, &heap }
+        _ = @fmt(&b, "{}", options.address)
+        _ = @fmt(&err, "serve: can't listen on {}: {}\n", utf8::view{ b }.bytes, error)
+        return 1
+    }
+    defer net::close_listener{ &net, listener }
+    let at = net::listener_address{ &net, listener } iferr { options.address }
+    let buffers = mem::pages{ &mem, size = 2 * JOURNAL_SIZE } ifnull {
+        _ = @fmt(&err, "serve: no memory for the log\n")
+        return 1
+    }
+    let mut site = site::Site{
+        root = options.root,
+        started_ns = clock::read_monotonic{ &clock },
+        stopping = 0,
+        connections_most = options.connections,
+        stats = site::Stats{ accepted = 0, refused = 0, open = 0, requests = 0, status_2xx = 0, status_3xx = 0, status_4xx = 0, status_5xx = 0, bytes = 0 },
+        journal = access::make_journal{ buffer = buffers[..JOURNAL_SIZE] },
+    }
+    let r = run{ &io, &fs, &mem, &net, &threads, &stop, &clock, listener, at, site = &site, batch = buffers[JOURNAL_SIZE..], grace_ns = options.grace_ns }
+    if r is err{ error } {
+        _ = @fmt(&err, "serve: {}\n", error)
+        return 1
+    }
+    return 0
+}
+
+// A line of the server's own, through the journal as the access log's lines go: its time,
+// `serve:`, and the text the builder `write` writes.
+fn say { mut clock: Clock, site: *mut site::Site, write: &fn{ mut b: utf8::Builder(arena::Arena) } -> ! } {
+    let mut buf: [2048]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    let mut b = utf8::builder(arena::Arena){ realloc = arena::alloc, &heap }
+    access::push_stamp{ &b, unix_ns = clock::read_wall{ &clock } } iferr {}
+    utf8::push{ &b, s = " serve: " } iferr {}
+    write{ &b } iferr {}
+    utf8::push{ &b, s = "\n" } iferr {}
+    access::append{ journal = &site.journal, bytes = utf8::view{ b }.bytes }
+}
+
+fn write_serving { mut b: utf8::Builder(arena::Arena), root: []u8, at: net::Address } -> ! {
+    try @fmt(&b, "serving {} at http://{}/", root, at)
+}
+
+fn write_count { mut b: utf8::Builder(arena::Arena), text: []u8, n: u64, rest: []u8 } -> ! {
+    try @fmt(&b, "{}{}{}", text, n, rest)
+}
+
+// Serves until the program is asked to stop, then stops gracefully. The group and the tasks'
+// handles are this function's locals: however it returns, every task has ended first.
+fn run { mut io: Io, mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, mut stop: Stop, mut clock: Clock, listener: net::Listener, at: net::Address, site: *mut site::Site, batch: []mut u8, grace_ns: u64 } -> ! {
+    let mut writer: task::Task(!)
+    try task::start_concurrent{ &threads, task = &writer, run = access::run_writer{ &io, &threads, journal = &site.journal, batch, _ } }
+    // The writer ends once it has written every line: the last is the one that says so.
+    defer access::close_journal{ journal = &site.journal }
+    say{ &clock, site, write = write_serving{ root = site.root, at, _ } }
+
+    let mut connections: task::Group
+    let mut acceptor: task::Task(!)
+    try task::start_concurrent{ &threads, task = &acceptor, run = accept_into{ &fs, &mem, &net, &threads, &stop, &clock, listener, site, &connections, _ } }
+    let reason = try stop::wait{ &stop }
+    @atomic_store(&site.stopping, 1)
+    // No new connections. The acceptor's own error, if it failed, is what the program ends with.
+    let accepting = task::cancel{ &threads, task = &acceptor }
+    let failed = if accepting is err{ error } { not (error is task::cancelled) } else { false }
+    let grace = if reason is terminate { @min(grace_ns, 3000000000) } else { grace_ns }
+    say{ &clock, site, write = write_count{ text = "stopping: ", n = @atomic_load_relaxed(&site.stats.open), rest = " connections open", _ } }
+    if task::wait_all_for{ &threads, group = &connections, nanoseconds = grace } {
+        // A connection's task never fails (connection): this is the group's end.
+        try task::wait_all{ &threads, group = &connections }
+    } else {
+        say{ &clock, site, write = write_count{ text = "grace period over: cancelling ", n = @atomic_load_relaxed(&site.stats.open), rest = " connections", _ } }
+        task::cancel_all{ &threads, group = &connections }
+    }
+    say{ &clock, site, write = write_count{ text = "stopped after ", n = @atomic_load_relaxed(&site.stats.requests), rest = " requests", _ } }
+    if failed { return accepting }
+}
+
+// Accepts until cancelled, starting a task in `connections` for each. An error it can't go on
+// after (the listener broke) asks the program to stop, as Ctrl-C would, and is its result.
+fn accept_into { mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, mut stop: Stop, mut clock: Clock, listener: net::Listener, site: *mut site::Site, mut connections: task::Group } -> ! {
+    while true {
+        let socket = net::accept{ &net, listener } iferr err{ error } {
+            match error {
+                net::aborted => { continue }                            // a client gave up while queued
+                net::too_many_open => {
+                    thread::sleep{ &threads, nanoseconds = 100000000 }  // let connections end
+                    continue
+                }
+                task::cancelled => { return error }
+                else => {
+                    stop::ask{ &stop, reason = stop::Reason::terminate } iferr {}
+                    return error
+                }
+            }
+        }
+        _ = @atomic_add_relaxed(&site.stats.accepted, 1)
+        if @atomic_load_relaxed(&site.stats.open) >= site.connections_most {
+            _ = @atomic_add_relaxed(&site.stats.refused, 1)
+            net::close{ &net, socket }                                  // too many: refuse it
+            continue
+        }
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &fs, &mem, &net, &threads, &clock, socket, site, _ } } iferr {
+            _ = @atomic_add_relaxed(&site.stats.refused, 1)
+            net::close{ &net, socket }                                  // no thread for it: refuse it
+        }
+    }
+}
+
+// A connection's task. It never fails: a group's task that fails cancels the others
+// (docs/todo/friction.md, 40), and one client's reset is no reason to end every connection.
+// What serve_connection refused before a request line is logged here, since no handler saw it,
+// with the connection's age for its duration, since when that head began isn't known.
+fn connection { mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, mut clock: Clock, socket: net::Socket, site: *mut site::Site } -> ! {
+    defer net::close{ &net, socket }
+    _ = @atomic_add_relaxed(&site.stats.open, 1)
+    defer _ = @atomic_subtract_relaxed(&site.stats.open, 1)
+    let peer = net::peer_address{ &net, socket } iferr { net::Address{ ip = net::ANY_V4, port = 0 } }
+    let mut buffer: [16384]u8
+    let mut fields: [100]http::Header
+    let mut headers = fields[..]
+    let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
+    let began = clock::read_monotonic{ &clock }
+    http::serve_connection{ &net, &threads, &conn, &headers, limits = http::Limits{ .. }, handle = site::answer{ &fs, &mem, &clock, site, peer, _ } } iferr err{ error } {
+        let status = find_refusal{ error } ifnull { return }
+        site::record{ site, line = access::Line{
+            unix_ns = clock::read_wall{ &clock }, peer, method = "", target = "", version = 11, status, bytes = 0,
+            took_ns = clock::read_monotonic{ &clock } - began, failure = null,
+        } }
+    }
+}
+
+// The status serve_connection answered `error` with, if it refused a request before it had one
+// to hand to the handler (std/http.ctx, serve_connection); null for an error that ended the
+// connection without a response of its own (a reset, a deadline, a handler's error, which the
+// handler logged). serve_connection doesn't say which it was (docs/todo/friction.md, 42), so a
+// handler's own error of these kinds would be logged twice.
+fn find_refusal { error: error } -> ?u16 {
+    return match error {
+        http::malformed{ at } => { 400 }
+        http::head_too_large | http::too_many_headers => { 431 }
+        http::unsupported_coding => { 501 }
+        http::unsupported_version => { 505 }
+        else => { null }
+    }
+}

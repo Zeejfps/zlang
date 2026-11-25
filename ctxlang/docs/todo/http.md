@@ -947,8 +947,10 @@ Each package also updates spec §17's table for what it adds.
    deadlines (net.md, Timeouts).
 7. **The accept loop is the program's** (Serving). Rejected: `http::serve` taking a handler, which
    would call one function value from many tasks at once. Kept with `&thread fn`, which checks a
-   value's capabilities and not the places it holds; a later step revisits it with a real program's
-   server.
+   value's capabilities and not the places it holds; revisited with a real program's server,
+   serve (serve/PLAN.md, Findings 1), and kept: a std `serve` can't start a task per connection
+   around a handler passed as a value (spec §15, Tasks, rule 3; friction.md, 51), and the loop it
+   would save is where serve counts, refuses and logs its connections.
 8. **WebSocket in; HTTP/2, HTTP/3, compression out** (Out of scope).
 9. **A URL's parts are slices of its text**, with no storage in `Url`: a zone is a field of its own,
    and empty and absent parts differ by optionals (URLs, Built). Rejected: a `Url` holding a buffer

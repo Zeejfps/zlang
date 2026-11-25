@@ -1,0 +1,75 @@
+// The log's line and the Date field's text, and the content types.
+namespace access_tests {
+    fn check_line { mut t: Test, line: access::Line, want: []u8 } {
+        let mut buf: [16384]u8
+        let mut heap = arena::new{ buf = buf[..] }
+        let mut b = utf8::builder(arena::Arena){ realloc = arena::alloc, &heap }
+        access::push_line{ &b, line } iferr {}
+        @expect(&t, utf8::view{ b }.bytes == want)
+    }
+
+    #test
+    fn a_line_says_the_answer { mut t: Test } {
+        let line = access::Line{
+            unix_ns = 1796595243123456789, peer = "127.0.0.1:54321", method = "GET", target = "/a b\"c\\d\x7f",
+            version = 11, status = 200, bytes = 1234, took_ns = 153400, failure = null,
+        }
+        check_line{ &t, line, want = "2026-12-06T22:14:03.123Z 127.0.0.1:54321 \"GET /a b\\x22c\\x5cd\\x7f HTTP/1.1\" 200 1234 0.153ms" }
+    }
+
+    #test
+    fn a_refusal_has_no_request_line { mut t: Test } {
+        let line = access::Line{
+            unix_ns = 0, peer = "[::1]:80", method = "", target = "",
+            version = 11, status = 431, bytes = 0, took_ns = 2000000000, failure = null,
+        }
+        check_line{ &t, line, want = "1970-01-01T00:00:00.000Z [::1]:80 \"-\" 431 0 2000.000ms" }
+    }
+
+    #test
+    fn a_failure_ends_the_line { mut t: Test } {
+        let reset: error = net::reset
+        let failure: ?error = reset
+        let line = access::Line{
+            unix_ns = 0, peer = "127.0.0.1:1", method = "HEAD", target = "/", version = 10,
+            status = 200, bytes = 0, took_ns = 999, failure,
+        }
+        check_line{ &t, line, want = "1970-01-01T00:00:00.000Z 127.0.0.1:1 \"HEAD / HTTP/1.0\" 200 0 0.000ms failed: net::reset" }
+    }
+
+    #test
+    fn a_long_target_is_cut { mut t: Test } {
+        let mut long: [2000]u8
+        slice::fill(u8){ s = long[..], v = 'a' }
+        let line = access::Line{
+            unix_ns = 0, peer = "127.0.0.1:1", method = "GET", target = long[..], version = 11,
+            status = 404, bytes = 10, took_ns = 0, failure = null,
+        }
+        let mut buf: [16384]u8
+        let mut heap = arena::new{ buf = buf[..] }
+        let mut b = utf8::builder(arena::Arena){ realloc = arena::alloc, &heap }
+        try! access::push_line{ &b, line }
+        // The time, the peer and `"GET `, the target cut and `...`, then ` HTTP/1.1" 404 10 0.000ms`.
+        @expect(&t, utf8::view{ b }.bytes.len == 41 + access::TARGET_MOST + 3 + 26)
+    }
+
+    #test
+    fn dates_are_imf_fixdates { mut t: Test } {
+        let mut date: [29]u8
+        @expect(&t, access::write_date{ unix_ns = 784111777000000000, into = date[..] } == "Sun, 06 Nov 1994 08:49:37 GMT")
+        @expect(&t, access::write_date{ unix_ns = 0, into = date[..] } == "Thu, 01 Jan 1970 00:00:00 GMT")
+        @expect(&t, access::write_date{ unix_ns = 1796595243123456789, into = date[..] } == "Sun, 06 Dec 2026 22:14:03 GMT")
+    }
+
+    #test
+    fn content_types_by_extension { mut t: Test } {
+        @expect(&t, mime::find_type{ name = "index.html" } == "text/html; charset=utf-8")
+        @expect(&t, mime::find_type{ name = "docs/a.b/PHOTO.JPG" } == "image/jpeg")
+        @expect(&t, mime::find_type{ name = "docs/spec.md" } == "text/markdown; charset=utf-8")
+        @expect(&t, mime::find_type{ name = "a.woff2" } == "font/woff2")
+        @expect(&t, mime::find_type{ name = "Makefile" } == "application/octet-stream")
+        @expect(&t, mime::find_type{ name = "a.b/c" } == "application/octet-stream")
+        @expect(&t, mime::find_type{ name = ".bashrc" } == "application/octet-stream")
+        @expect(&t, mime::find_type{ name = "a.unknown" } == "application/octet-stream")
+    }
+}

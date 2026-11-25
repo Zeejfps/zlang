@@ -217,6 +217,15 @@ namespace os {
         if stop.asked == 0 { stop.asked = code }
     }
 
+    // ---- for std's clock: not supported by interp. A run here is the same each time, which a
+    // reading of a clock would make it not be; to_utc is pure, and runs here.
+
+    // What std's Clock holds here: nothing.
+    capability Clock
+
+    fn clock_monotonic { mut clock: Clock } -> u64 { return @as(u64, unsupported{ what = "the clock" }) }
+    fn clock_wall { mut clock: Clock } -> i64 { return @as(i64, unsupported{ what = "the clock" }) }
+
     // ---- threads (std/thread.ctx): one at a time
     //
     // A thread runs to its end inside os::thread_create, before its starter goes on, with its own

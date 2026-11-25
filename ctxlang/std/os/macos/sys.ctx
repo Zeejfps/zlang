@@ -109,10 +109,11 @@ namespace sys {
     const POSIX_SPAWN_CLOEXEC_DEFAULT: i16 = 0x4000
 
     // open's flag, and fcntl's command, for a descriptor that exec closes; the clock that only
-    // goes forward, for clock_gettime.
+    // goes forward, and the system's time, for clock_gettime.
     const O_CLOEXEC: i32 = 0x1000000
     const F_DUPFD_CLOEXEC: i32 = 67
     const CLOCK_MONOTONIC: i32 = 6
+    const CLOCK_REALTIME: i32 = 0
 
     // struct kevent, and what await_exit asks a kqueue for: a process's end, once.
     struct Kevent { ident: u64, filter: i16, flags: u16, fflags: u32, data: i64, udata: u64 }

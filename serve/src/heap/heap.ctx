@@ -1,0 +1,52 @@
+// A general-purpose allocator: the C library's calloc, realloc and free behind std's allocator
+// interface, for memory a request needs in an amount only its input decides (a directory's
+// listing). std has none (spec §14: "a general heap is a program's own alloc::Fn over C's
+// realloc"), so this is kotor's lib/base/heap.ctx again (docs/todo/friction.md, 43). The C
+// library's heap is safe from any thread, so each request makes a Heap of its own and frees
+// what it took before it returns.
+//
+//   let mut h = heap::new{ &mem }
+//   let names = try fs::list(heap::Heap){ &fs, heap = &h, realloc = heap::alloc, path }
+//   defer fs::list_free(heap::Heap){ heap = &h, realloc = heap::alloc, names }
+//
+// Alignment: malloc's, 16 bytes on every 64-bit platform. A request for more fails.
+namespace heap {
+    const MAX_ALIGN: usize = 16
+
+    struct Heap {
+        mem: Mem,
+        live: usize,            // bytes allocated and not freed
+    }
+
+    extern fn calloc { mut mem: Mem, count: usize, size: usize } -> ?*mut u8
+    extern fn realloc { mut mem: Mem, p: *mut u8, size: usize } -> ?*mut u8
+    extern fn free { mut mem: Mem, p: *mut u8 }
+
+    fn new { mut mem: Mem } -> Heap {
+        return Heap{ mem, live = 0 }
+    }
+
+    // Has type alloc::Fn(Heap). `mem` must be empty or a block this heap gave out, at the length
+    // it was given out with. What it hands out past `mem`'s bytes is zero, as std's allocators'
+    // is (spec §14).
+    fn alloc { mut heap: Heap, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
+        if align > MAX_ALIGN { return null }
+        if new == 0 {
+            if mem.len > 0 {
+                free{ mem = &heap.mem, p = mem.ptr }
+                heap.live = heap.live - mem.len
+            }
+            return slice::empty(u8){}
+        }
+        if mem.len == 0 {
+            let p = calloc{ mem = &heap.mem, count = 1, size = new } ifnull { return null }
+            heap.live = heap.live + new
+            return @slice(p, new)
+        }
+        let q = realloc{ mem = &heap.mem, p = mem.ptr, size = new } ifnull { return null }
+        heap.live = heap.live - mem.len + new
+        let out = @slice(q, new)
+        if new > mem.len { slice::fill(u8){ s = out[mem.len..], v = 0 } }
+        return out
+    }
+}

@@ -1,0 +1,38 @@
+// std's clocks (spec §17, clock), read on this machine: the monotonic clock never goes back over
+// many readings, and counts at least a sleep's 20 ms across it; the wall clock is in a sane
+// year, and advances across the sleep by about what the monotonic clock counts. The
+// interpreter has no clock.
+//# interp: cannot run
+//# stdout:
+//| monotonic: never back over 100000 readings
+//| monotonic: 20 ms slept, at least 20 ms counted
+//| wall: after 2024, before 2200
+//| wall: advanced by about as much
+
+fn main { mut io: Io, mut clock: Clock, mut threads: Threads } -> i32 {
+    let mut last = clock::read_monotonic{ &clock }
+    for _ in 0..100000 {
+        let now = clock::read_monotonic{ &clock }
+        if now < last { return 1 }
+        last = now
+    }
+    io::println{ &io, s = "monotonic: never back over 100000 readings" }
+
+    let wall_before = clock::read_wall{ &clock }
+    let before = clock::read_monotonic{ &clock }
+    thread::sleep{ &threads, nanoseconds = 20000000 }
+    let slept = clock::read_monotonic{ &clock } - before
+    let wall_slept = clock::read_wall{ &clock } - wall_before
+    if slept < 20000000 { return 2 }
+    io::println{ &io, s = "monotonic: 20 ms slept, at least 20 ms counted" }
+
+    let t = clock::to_utc{ unix_ns = wall_before }
+    if t.year < 2024 or t.year >= 2200 { return 3 }
+    io::println{ &io, s = "wall: after 2024, before 2200" }
+
+    // The two clocks tick apart, and the system's time may be set meanwhile: within 50 ms.
+    let apart = if wall_slept > @as(i64, slept) { wall_slept - @as(i64, slept) } else { @as(i64, slept) - wall_slept }
+    if apart > 50000000 { return 4 }
+    io::println{ &io, s = "wall: advanced by about as much" }
+    return 0
+}
