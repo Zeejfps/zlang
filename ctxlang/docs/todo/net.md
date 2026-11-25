@@ -1001,7 +1001,7 @@ next. "Verified" is what must pass before it is done; every package also runs th
    timeouts per call and deadlines per socket (Timeouts).
 3. **Sockets are numbers, as `proc::Pipe` and `fs::File` are**, closed by the program. Rejected: a
    socket that closes itself when its scope ends, which ctxlang has no destructors for; a handle type
-   like `#task_handle`, which would forbid storing sockets in a server's connection records.
+   like `#loan_holder`, which would forbid storing sockets in a server's connection records.
 4. **Listeners are IPv6-only, `SO_REUSEADDR` on POSIX and `SO_EXCLUSIVEADDRUSE` on Windows, TCP_NODELAY
    on**, with no options for the first two: each is the setting a server wants, and the systems'
    defaults differ in ways that surprise.

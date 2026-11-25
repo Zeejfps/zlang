@@ -22,9 +22,11 @@ The checker, lowering and runtime should never name a std declaration. Still nam
   `fmt::F64`, and a `utf8::String` argument is taken as text, as a string literal is.
 - [x] `atomic::Order` was the order an `@atomic_*` builtin took, std's type. The order is the
   builtin's name now, `@atomic_load_acquire`, and one without a suffix is sequentially consistent.
-- [ ] Tasks: the checker follows a task handle through std's `task::start`, `start_concurrent`,
-  `start_blocking`, `wait`, `wait_for`, `cancel`, `end`, `wait_all` and `cancel_all`. Lowering
-  ends a `task::Task` with `task::end` and a `task::Group` with `task::cancel_all`, and a program
-  is threaded when main or the start fn takes std's `Threads`.
+- [x] Tasks: the checker followed a task handle through std's `task::start` and its kin, `wait`,
+  `wait_for`, `cancel`, `end`, `wait_all` and `cancel_all`, and lowering ended a `task::Task` with
+  `task::end` and a `task::Group` with `task::cancel_all`. Loan holders are a language feature now
+  (loan-holders.md): std writes `into`, `ends` and `#scope_end`, and the compiler reads them.
+- [x] A program was threaded when main or the start fn took std's `Threads`. It is threaded when it
+  has a callback C may call from any thread, as std's thread entry is.
 - [x] `list::List`: a `for` over a List said, in its error, to go over `list::items` instead. It
   says what a `for` over any struct does now.

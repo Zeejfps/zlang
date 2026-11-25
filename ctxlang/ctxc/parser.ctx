@@ -467,6 +467,22 @@ namespace parser {
         return list::items{ list = xs }
     }
 
+    // Whether the next token is `from`, `into` or `ends`, which follow a type as a contract.
+    fn contract_next { p: Parser } -> bool {
+        if not next_is{ p, k = tok::Kind::ident } { return false }
+        let w = text_of{ p, t = p.toks[p.i] }
+        return slice::eq_bytes{ a = w, b = "from" } or slice::eq_bytes{ a = w, b = "into" } or slice::eq_bytes{ a = w, b = "ends" }
+    }
+
+    // `ends` after a context field's type, on the same line (§15, Tasks): where it is, or null.
+    // `ends` is a name everywhere else, as `into` is.
+    fn ends_word { mut p: Parser } -> ?source::Span {
+        if p.bad or not next_is{ p, k = tok::Kind::ident } or nl{ p } or not slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = "ends" } { return null }
+        let t = p.toks[p.i]
+        skip{ &p }
+        return t.span
+    }
+
     // `enum K {` without its integer type: an error with the two ways on, and the parse goes on
     // with `u8`.
     fn enum_without_type { mut p: Parser, keyword: tok::Token, name: syntax::Name } -> syntax::TypeExpr {
@@ -502,8 +518,9 @@ namespace parser {
             let name = ident{ &p }
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
+            let ends = ends_word{ &p }
             let into = contract{ &p, word = "into", after = true }
-            try! list::push{ list = &xs, item = syntax::Param{ span = span_from{ p, start }, attrs, mutable, name, ty, into } }
+            try! list::push{ list = &xs, item = syntax::Param{ span = span_from{ p, start }, attrs, mutable, name, ty, into, ends } }
             if not accept{ &p, k = tok::Kind::comma } and not lacks_comma{ &p } { break }
         }
         expect{ &p, k = close }
@@ -624,10 +641,10 @@ namespace parser {
             t = syntax::TypeKind::opt{ elem = box{ &p, value = type_expr{ &p } } }
         } else if k == tok::Kind::bang {
             // `!T`, or `!` alone where no type follows on its line: a function that returns no
-            // value or fails.
+            // value or fails. A contract's word after it is no type: `run: &fn{} -> ! into group`.
             skip{ &p }
             let mut elem: ?*syntax::TypeExpr = null
-            if starts_type{ p } and not nl{ p } { elem = box{ &p, value = type_expr{ &p } } }
+            if starts_type{ p } and not nl{ p } and not contract_next{ p } { elem = box{ &p, value = type_expr{ &p } } }
             t = syntax::TypeKind::fail{ elem, set = null }
         } else if k == tok::Kind::lbracket {
             skip{ &p }

@@ -385,6 +385,11 @@ namespace tree {
             end{ &d }
             sub_type{ &d, t = f.ty }
             d.depth = d.depth + 1
+            if let at = f.ends {
+                start{ &d, at = at.start }
+                raw{ &d, s = "ends" }
+                end{ &d }
+            }
             contract_list{ &d, word = "into", xs = f.into }
             d.depth = d.depth - 1
             i = i + 1

@@ -1,15 +1,5 @@
+fn give { mut threads: Threads, mut t: task::Task(u64), run: &fn{} -> u64 into t } { task::start{ &threads, task = &t, run } }
 
-#task
-fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
-
-#task
-fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
-
-#task
-fn sq { n: u64 } -> !u64 { return n * n }
-
-fn main { mut threads: Threads } {
-    let mut t: task::Task(!u64)
-    task::start{ &threads, task = &t, run = sq{ n = 2, _ } }
-    task::start{ &threads, task = &t, run = sq{ n = 2, _ } }  //~ error at 35: `t` holds a task here, on every path: wait for it or cancel it first
+fn main {} {
+    let f = give  //~ error at 13: `give` lends into a loan holder, and is only called: its calls are checked for what the loan holds
 }

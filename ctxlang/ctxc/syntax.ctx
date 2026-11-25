@@ -63,8 +63,9 @@ namespace syntax {
     // A context field, of a function or a function type. A function's may have attributes, on
     // the lines before its span, as a declaration does; a function type's never do. into: the
     // fields named after `into` (`item: T into list`), which the function may keep it in (§14,
-    // Escape check).
-    struct Param { span: Span, attrs: []Attr, mutable: bool, name: Name, ty: TypeExpr, into: []Name }
+    // Escape check). ends: `ends` after the type (`mut task: Task(R) ends`), which says the
+    // function ends every loan in the loan holder the field is (§15, Tasks).
+    struct Param { span: Span, attrs: []Attr, mutable: bool, name: Name, ty: TypeExpr, into: []Name, ends: ?Span }
 
     // A field of a struct, an extern union, a union variant's payload, an error or a capability,
     // with its attributes, on the lines before its span, as a declaration has. In a capability's

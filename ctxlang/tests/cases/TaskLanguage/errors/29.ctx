@@ -1,0 +1,5 @@
+#scope_end
+fn close { mut s: Slot ends, n: u32 } -> u32 { return n }  //~ error at 4: a `scope_end` fn returns nothing and can't fail, since a scope's end has nowhere to give it: `close` returns u32 //~ error at 4: a `scope_end` fn takes its loan holder and capabilities without fields, which a scope's end makes from nothing, not `n: u32`
+#loan_holder
+struct Slot { n: u32 }  //~ error at 8: loan holder `Slot` has no `scope_end` fn, which ends what it still holds where its scope ends: mark one with `#scope_end`
+fn main {} {}

@@ -169,7 +169,7 @@ namespace lower {
             i = i + 1
         }
         let ends = if adapters { entry_fns{ &l, main, start, panic, limit = stack_limit } } else { Entry{ entry = NONE, on_panic = NONE } }
-        let threaded = adapters and threaded_program{ l, main, start }
+        let threaded = adapters and threaded_program{ l }
         return ir::Program{
             version = VERSION,
             files = list::items{ list = l.files },
@@ -182,38 +182,14 @@ namespace lower {
         }
     }
 
-    // Whether the program may run on several threads (spec §15, Entry point, rule 8): main or
-    // the start fn takes std's `Threads` or a capability that includes it, or it has a callback
-    // that C may call from any thread.
-    fn threaded_program { l: Lower, main: u32, start: u32 } -> bool {
-        let threads = check::std_decl_top{ c = l.c.*, name = "Threads" }
+    // Whether the program may run on several threads (spec §15, Entry point, rule 8): it has a
+    // callback that C may call from any thread, as std's thread entry is, so a program that can
+    // start a thread is one.
+    fn threaded_program { l: Lower } -> bool {
         let q = list::items{ list = l.queue }
-        if threads != check::NONE {
-            if takes_cap{ l, d = q[main].decl, decl = threads } { return true }
-            if start != NONE and takes_cap{ l, d = q[start].decl, decl = threads } { return true }
-            // A test runs in the test build's program, with its capabilities.
-            if l.c.testing {
-                for t in list::items{ list = l.c.tests } {
-                    if takes_cap{ l, d = t.decl, decl = threads } { return true }
-                }
-            }
-        }
         let mut i: usize = 0
         while i < q.len {
             if q[i].site == NONE and q[i].widen == null and q[i].entry == NONE and check::get_decl{ c = l.c.*, d = q[i].decl }.any_thread { return true }
-            i = i + 1
-        }
-        return false
-    }
-
-    // Whether fn d's context has capability `decl`, or one that includes it.
-    fn takes_cap { l: Lower, d: u32, decl: u32 } -> bool {
-        let fields = check::get_decl{ c = l.c.*, d }.fields
-        let mut i: usize = 0
-        while i < fields.len {
-            if types::get{ s = l.c.ty, id = types::prune{ s = l.c.ty, t = fields[i].ty } } is cap{ decl = x } {
-                if x == decl or check::has_id{ xs = check::get_decl{ c = l.c.*, d = x }.includes, n = decl } { return true }
-            }
             i = i + 1
         }
         return false
@@ -976,9 +952,9 @@ namespace lower {
         try! list::push{ list = &xs, item = ir::Stmt::loop{ c, body = ir::Block{ stmts = list::items{ list = inner }, result = null }, label } }
     }
 
-    // After a local that is or holds a task's handle (spec §15, Tasks): its scope's end, as a
-    // defer, cancels and waits for what it still has, through std's task::end or, for a group,
-    // task::cancel_all, with a Threads from nothing (a capability without fields).
+    // After a local that is or holds a loan holder (spec §15, Tasks): its scope's end, as a
+    // defer, ends what it still holds through the holder's `#scope_end` fn (std's task::end, or
+    // task::cancel_all for a group), with its capabilities made from nothing.
     fn handle_scope { mut l: Lower, mut xs: list::List(ir::Stmt, Heap), s: syntax::Stmt } {
         let v = local_of{ l, k = check::stmt_key{ s } }
         let t = T{ &l, t = check::get_var{ c = l.c.*, v }.ty }
@@ -1008,11 +984,9 @@ namespace lower {
                 try! list::push{ list = &out, item = ir::Stmt::loop{ c, body = ir::Block{ stmts = list::items{ list = body }, result = null }, label = null } }
             }
             record{ decl, args } => {
-                let task = check::std_decl{ c = l.c.*, space = "task", name = "Task" }
-                let group = check::std_decl{ c = l.c.*, space = "task", name = "Group" }
-                let end = if decl == task { check::std_fn{ c = l.c.*, space = "task", name = "end" } } else if decl == group { check::std_fn{ c = l.c.*, space = "task", name = "cancel_all" } } else { NONE }
-                if end == NONE { @panic("lower: a task handle without std's task::end") }
-                let ts = if decl == task { args } else { no_ids{} }
+                // The holder's `#scope_end` fn, whose generic parameters are the holder's.
+                let end = map::get{ m = l.c.scope_ends, key = decl } ifnull { @panic("lower: a loan holder without a scope_end fn") }
+                let ts = args
                 let x = check::get_decl{ c = l.c.*, d = end }
                 let fields = check::subst_fields{ c = l.c, fields = x.fields, decl = end, args = ts }
                 let mut call = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }

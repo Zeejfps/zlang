@@ -86,7 +86,7 @@ namespace check {
         task:     bool = false,         // a fn with `#task`: a task's entry (§15, Tasks)
         starts_task: bool = false,      // a fn with a valid `#starts_task`: std's task::start and its kin
         thread_bound: bool = false,     // a capability with `#thread_bound`, not those that include one
-        task_handle: bool = false,      // a struct with `#task_handle`: std's task::Task(R) and Group
+        task_handle: bool = false,      // a struct with `#loan_holder`: std's task::Task(R) and Group
         tasky:    bool = false,         // a fn whose body starts tasks or passes handles (task_borrows)
         includes: []u32,                // what a capability includes, directly or not (§15)
         vars:     []mut CVar,           // a capability's C variables, its own and included ones
@@ -135,8 +135,8 @@ namespace check {
     // The attributes the compiler declares, in the universe: `#convert` (§18, Literal
     // conversions), `#write` (§13, Formatting), `#start` and `#panic` (§15, Entry point),
     // `#stack_limit` and `#thread_local` on a static (§15, rule 13), `#pure` on an extern fn (§18, Extern functions, rule 8), and tasks' (§15, Tasks): `#task`
-    // on a fn, `#thread_bound` on a capability, and std's `#starts_task` and `#task_handle`.
-    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, pure, task, thread_bound, starts_task, task_handle, test, test_main, c_symbol, c_callback, c_export }
+    // on a fn, `#thread_bound` on a capability, and std's `#starts_task`, `#loan_holder` and `#scope_end`.
+    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, pure, task, thread_bound, starts_task, loan_holder, scope_end, test, test_main, c_symbol, c_callback, c_export }
 
     struct Space {
         name:   []u8,
@@ -173,7 +173,7 @@ namespace check {
         files:     []File,
         modules:   []Module,                     // by index; File.module and Decl.module name them
         api_decls: list::List(u32, Heap),        // the declarations of api.ctx files, in order
-        handle_spaces: list::List(u32, Heap),    // the namespaces of the `#task_handle` structs (handles_own)
+        handle_spaces: list::List(u32, Heap),    // the namespaces of the `#loan_holder` structs (handles_own)
         restates:  list::List(u32, Heap),        // those that restate a nested module's
         clashes:   map::Map(u64, bool, Heap),    // pairs of declarations reported as clashing (reclash)
         std_files: usize,               // files[..std_files] are std's
@@ -253,8 +253,6 @@ namespace check {
         dead:      bool = false,                      // the flow state: see State
         defs:      []u32,
         maybe:     []u32,
-        zeros:     []u32,                             // and the task handles' (State)
-        fulls:     []u32,
         call_decl: u32 = NONE,                        // the fn of the call being checked, if it names one
         body_errors: usize = 0,                       // errors before the body
         flow_errors: usize = 0,                       // flow errors in the body
@@ -384,6 +382,13 @@ namespace check {
         treport:   bool = false,
         tsums:     map::Map(u32, TaskSum, Heap),
         tsum_busy: map::Map(u32, bool, Heap),
+        // A fn's written loan contracts (§15, Tasks): what it lends into its loan holder fields
+        // (`run: &fn{} -> R into task`), and which of them it ends (`mut task: Task(R) ends`).
+        lends:     map::Map(u32, []Lend, Heap),
+        ends_of:   map::Map(u32, []u32, Heap),
+        scope_ends: map::Map(u32, u32, Heap),          // a loan holder's `#scope_end` fn
+        scope_marks: list::List(ScopeMark, Heap),     // the `#scope_end` fns, checked in task_decls
+        tdecl:     u32 = NONE,                         // the fn the task walk is in
         // Argument order (§3, rule 10; order_post): the braces the first walk finds a conflict
         // in, then, walking them again precisely, the fns' summaries of what they read and
         // change of their context fields, computed to a fixpoint over a queue.
@@ -522,9 +527,7 @@ namespace check {
     // path to it (defs) and on some path (maybe), and whether every path has ended (dead). A
     // local is tracked if it is declared without a value (`let x: T`), and only tracked locals
     // are in the sets. The sets are never changed in place, so a saved state stays as it was.
-    // zeros and fulls: the local task handles (§15, Tasks) that are zero, or hold a task, on
-    // every path here; a loop starts and ends with neither, which reports nothing it can't see.
-    struct State { defs: []u32, maybe: []u32, dead: bool, zeros: []u32, fulls: []u32 }
+    struct State { defs: []u32, maybe: []u32, dead: bool }
 
     // How a field, index or `.len` expression reaches its value (ctxi's Field.kind and
     // Index.kind): through a pointer (p), in an array or slice (s). cvar is a capability's C
@@ -630,7 +633,7 @@ namespace check {
             lives = list::new(Live){ realloc = arena::alloc, &heap },
             live_marks = list::new(usize){ realloc = arena::alloc, &heap },
             loops = list::new(Loop){ realloc = arena::alloc, &heap },
-            defs = slice::empty(u32){}, maybe = slice::empty(u32){}, zeros = slice::empty(u32){}, fulls = slice::empty(u32){},
+            defs = slice::empty(u32){}, maybe = slice::empty(u32){},
             literal = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             spreads = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             narrowed = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -698,6 +701,10 @@ namespace check {
             tloops = list::new(TLoop){ realloc = arena::alloc, &heap },
             tsums = map::new(u32, TaskSum){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             tsum_busy = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            lends = map::new(u32, []Lend){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            ends_of = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            scope_ends = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            scope_marks = list::new(ScopeMark){ realloc = arena::alloc, &heap },
             ord_cands = list::new(OrdCand){ realloc = arena::alloc, &heap },
             ord_state = map::new(u32, u8){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             ord_sum_ix = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
@@ -738,7 +745,8 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "task", e = Entry::attr{ a = Attribute::task } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "thread_bound", e = Entry::attr{ a = Attribute::thread_bound } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "starts_task", e = Entry::attr{ a = Attribute::starts_task } }
-        put_name{ &c, ns = UNIVERSE, values = false, name = "task_handle", e = Entry::attr{ a = Attribute::task_handle } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "loan_holder", e = Entry::attr{ a = Attribute::loan_holder } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "scope_end", e = Entry::attr{ a = Attribute::scope_end } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "test", e = Entry::attr{ a = Attribute::test } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "test_main", e = Entry::attr{ a = Attribute::test_main } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "c_symbol", e = Entry::attr{ a = Attribute::c_symbol } }
@@ -2053,6 +2061,7 @@ namespace check {
             let mut seen_bound = false
             let mut seen_starts = false
             let mut seen_handle = false
+            let mut seen_scope = false
             let mut seen_test = false
             let mut seen_runner = false
             let mut k: usize = 0
@@ -2100,9 +2109,13 @@ namespace check {
                             starts_attr{ &c, x, file, a, seen = seen_starts }
                             seen_starts = true
                         }
-                        task_handle => {
+                        loan_holder => {
                             handle_attr{ &c, x, file, a, seen = seen_handle }
                             seen_handle = true
+                        }
+                        scope_end => {
+                            scope_attr{ &c, x, file, a, seen = seen_scope }
+                            seen_scope = true
                         }
                         test => {
                             test_attr{ &c, x, file, a, seen = seen_test }
@@ -2129,7 +2142,7 @@ namespace check {
 
     // A compiler attribute's name, for messages.
     fn attr_name { a: Attribute } -> []u8 {
-        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } pure => { "pure" } task => { "task" } thread_bound => { "thread_bound" } starts_task => { "starts_task" } task_handle => { "task_handle" } test => { "test" } test_main => { "test_main" } c_symbol => { "c_symbol" } c_callback => { "c_callback" } c_export => { "c_export" } }
+        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } pure => { "pure" } task => { "task" } thread_bound => { "thread_bound" } starts_task => { "starts_task" } test => { "test" } test_main => { "test_main" } c_symbol => { "c_symbol" } c_callback => { "c_callback" } c_export => { "c_export" } loan_holder => { "loan_holder" } scope_end => { "scope_end" } }
     }
 
     // The attribute the compiler declares that a names, if it is one: `#convert` or `#write`
@@ -2422,7 +2435,7 @@ namespace check {
     }
 
     // `#starts_task` on x: a fn with a body that starts a task (std's task::start and its kin),
-    // whose context task_decls checks once every `#task_handle` is known.
+    // whose context task_decls checks once every `#loan_holder` is known.
     fn starts_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
         let func{ external } = x.k else {
             error{ &c, at = a.span, msg = "`starts_task` applies only to a fn" }
@@ -2440,14 +2453,34 @@ namespace check {
         list::at{ list = c.decls, i = d }.starts_task = true
     }
 
-    // `#task_handle` on x: a struct that is a task's handle, or a group's (handle_type).
-    fn handle_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
-        if not (x.k is record) {
-            error{ &c, at = a.span, msg = "`task_handle` applies only to a struct" }
+    // `#scope_end` on x: a fn that ends a loan holder, which the end of the holder's scope calls
+    // (§15, Tasks, rule 6). task_decls checks it once the contracts are known (scope_ends).
+    fn scope_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
+        let func{ external } = x.k else {
+            error{ &c, at = a.span, msg = "`scope_end` applies only to a fn" }
+            return
+        }
+        if external {
+            error{ &c, at = a.span, msg = "`scope_end` applies only to a fn with a body, not an extern fn" }
             return
         }
         if seen {
-            error{ &c, at = a.span, msg = "duplicate `task_handle` attribute" }
+            error{ &c, at = a.span, msg = "duplicate `scope_end` attribute" }
+            return
+        }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        try! list::push{ list = &c.scope_marks, item = ScopeMark{ d, at = a.span } }
+    }
+
+    // `#loan_holder` on x: a struct that holds loans, as a task's handle or a group's does
+    // (handle_type).
+    fn handle_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
+        if not (x.k is record) {
+            error{ &c, at = a.span, msg = "`loan_holder` applies only to a struct" }
+            return
+        }
+        if seen {
+            error{ &c, at = a.span, msg = "duplicate `loan_holder` attribute" }
             return
         }
         let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
@@ -2480,7 +2513,7 @@ namespace check {
         }
     }
 
-    // Whether t is a task's or a group's handle (`#task_handle`).
+    // Whether t is a loan holder (`#loan_holder`), as a task's or a group's handle is.
     fn handle_type { c: Checker, t: Id } -> bool {
         return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is record{ decl } and get_decl{ c, d = decl }.task_handle
     }
@@ -2556,8 +2589,9 @@ namespace check {
     // field, as its type `&fn{} -> R` makes it. So the compiler sees what the task receives.
     fn task_run { mut c: Checker, e: syntax::Expr } {
         let msg: utf8::String = "`run` is a bind of a `task` fn written here, supplying every field: `run = f{ ..., _ }`"
-        // A starts_task fn passes its own `run` on, which its caller wrote.
-        if c.fn_decl != NONE and get_decl{ c, d = c.fn_decl }.starts_task and e.k is path{ segs } and segs.len == 1 and slice::eq_bytes{ a = segs[0].name.text, b = "run" } {
+        // A fn passes on the task it lends itself, which its caller wrote: a start's own `run`, or
+        // what a fn writes `into` a loan holder.
+        if c.fn_decl != NONE and e.k is path{ segs } and segs.len == 1 and lent_field{ c, d = c.fn_decl, name = segs[0].name.text } {
             if let r = nodes::get{ m = c.refs, key = expr_key{ e } } { if r is local{ var } and get_var{ c, v = var }.kind == VarKind::ctx { return } }
         }
         let braced{ callee, bind } = e.k else {
@@ -2626,47 +2660,14 @@ namespace check {
         return decl
     }
 
-    // `&x` passed to field `field` of fn callee (NONE if not a named fn): what it does to local
-    // handle x (§15, Tasks; State's zeros and fulls). std's starts fill it, its waits and
-    // cancels empty it; a wait or cancel of one that is zero on every path, and a start into one
-    // that holds a task on every path, are errors. Any other fn may do either.
-    fn handle_flow { mut c: Checker, x: syntax::Expr, field: []u8, callee: u32, at: source::Span } {
+    // `&x` passed to a field of a call: a fn that passes a local holding a loan holder touches
+    // loans, and its body is walked for them (task_borrows).
+    fn handle_flow { mut c: Checker, x: syntax::Expr } {
         let path{ segs } = x.k else { return }
         if segs.len != 1 { return }
         let r = nodes::get{ m = c.refs, key = expr_key{ e = x } } ifnull { return }
         let local{ var } = r else { return }
-        let v = get_var{ c, v = var }
-        if holds_handle{ c, t = v.ty } { mark_tasky{ &c } }
-        if not (v.kind == VarKind::local) or not handle_type{ c, t = v.ty } { return }
-        let mut what = 0
-        if callee != NONE and slice::eq_bytes{ a = field, b = "task" } {
-            if callee == std_fn{ c, space = "task", name = "start" } { what = 1 }
-            if callee == std_fn{ c, space = "task", name = "start_concurrent" } or callee == std_fn{ c, space = "task", name = "start_blocking" } { what = 2 }
-            if callee == std_fn{ c, space = "task", name = "wait" } or callee == std_fn{ c, space = "task", name = "cancel" } { what = 3 }
-            if callee == std_fn{ c, space = "task", name = "wait_for" } { what = 4 }
-        }
-        if (what == 3 or what == 4) and has_id{ xs = c.zeros, n = var } {
-            errorf{ &c, at, msg = @fmt("`{}` holds no task here, on every path: start one into it first", str{ s = v.name }) }
-        }
-        if (what == 1 or what == 2) and has_id{ xs = c.fulls, n = var } {
-            errorf{ &c, at, msg = @fmt("`{}` holds a task here, on every path: wait for it or cancel it first", str{ s = v.name }) }
-        }
-        if what == 4 { return }
-        c.zeros = set_drop{ c, xs = c.zeros, n = var }
-        c.fulls = set_drop{ c, xs = c.fulls, n = var }
-        if what == 1 { c.fulls = set_add{ c, xs = c.fulls, n = var } }
-        if what == 3 { c.zeros = set_add{ c, xs = c.zeros, n = var } }
-    }
-
-    fn set_drop { c: Checker, xs: []u32, n: u32 } -> []u32 {
-        if not has_id{ xs, n } { return xs }
-        let mut out = list::new(u32){ realloc = arena::alloc, heap = c.heap }
-        let mut i: usize = 0
-        while i < xs.len {
-            if xs[i] != n { push{ xs = &out, n = xs[i] } }
-            i = i + 1
-        }
-        return list::items{ list = out }
+        if holds_handle{ c, t = get_var{ c, v = var }.ty } { mark_tasky{ &c } }
     }
 
     // A call's generic arguments hold no handle: a generic fn may copy what it takes.
@@ -2680,6 +2681,7 @@ namespace check {
     // starts_task fn's has `run: &fn{} -> R` and a handle, `mut task` or `mut group`, and no
     // declaration holds a handle but where a local or a `mut` field may.
     fn task_decls { mut c: Checker } {
+        holder_contracts{ &c }
         let mut d: usize = 0
         while d < c.decls.len {
             let x = get_decl{ c, d = @as(u32, d) }
@@ -2716,12 +2718,150 @@ namespace check {
                     i = i + 1
                 }
             }
-            if x.starts_task { starts_fields{ &c, x } }
+            if x.starts_task { starts_fields{ &c, d = @as(u32, d), x } }
+            d = d + 1
+        }
+        scope_ends{ &c }
+    }
+
+    // What a fn lends into, and ends of, its loan holder fields (§15, Tasks): `x: T into h` for a
+    // holder h is a loan, not a keep (§14), and `mut h: H ends` ends h's loans. Neither can be
+    // checked against the body, which hands its task to a thread, so each is taken on its word:
+    // an unchecked declaration (§13).
+    struct Lend { arg: u32, holder: u32 }
+    struct ScopeMark { d: u32, at: source::Span }
+
+    fn holder_contracts { mut c: Checker } {
+        let mut d: usize = 0
+        while d < c.decls.len {
+            let x = get_decl{ c, d = @as(u32, d) }
+            let func{ params, external } = x.syn.k else {
+                d = d + 1
+                continue
+            }
+            if x.half or x.kind != Kind::func {
+                d = d + 1
+                continue
+            }
+            let mut ends = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+            for p in params {
+                let at = p.ends ifnull { continue }
+                let fi = types::field_index{ fields = x.fields, name = p.name.text } ifnull { continue }
+                let f = x.fields[fi]
+                if not f.mutable or not handle_type{ c, t = f.ty } {
+                    error{ &c, at, msg = "`ends` follows a `mut` field of a loan holder type, whose loans the function ends: `mut task: Task(R) ends`" }
+                    continue
+                }
+                unchecked{ &c, at, what = "`ends`", checked = "" }
+                push{ xs = &ends, n = @as(u32, fi) }
+            }
+            let mut lends = list::new(Lend){ realloc = arena::alloc, heap = c.heap }
+            let mut kept = list::new(types::Keep){ realloc = arena::alloc, heap = c.heap }
+            for k in x.keeps {
+                if k.into.len > 0 {
+                    if let hi = types::field_index{ fields = x.fields, name = k.into } {
+                        if x.fields[hi].mutable and handle_type{ c, t = x.fields[hi].ty } {
+                            if let ai = types::field_index{ fields = x.fields, name = k.arg } {
+                                try! list::push{ list = &lends, item = Lend{ arg = @as(u32, ai), holder = @as(u32, hi) } }
+                                unchecked{ &c, at = into_span{ params, arg = k.arg, into = k.into }, what = "`into` a loan holder", checked = "" }
+                                continue
+                            }
+                        }
+                    }
+                }
+                try! list::push{ list = &kept, item = k }
+            }
+            if lends.len > 0 {
+                let at = list::at{ list = c.decls, i = @as(u32, d) }
+                at.keeps = list::items{ list = kept }
+                at.contract = external or kept.len > 0
+                try! map::put{ m = &c.lends, key = @as(u32, d), value = list::items{ list = lends } }
+            }
+            if ends.len > 0 { try! map::put{ m = &c.ends_of, key = @as(u32, d), value = list::items{ list = ends } } }
             d = d + 1
         }
     }
 
-    fn starts_fields { mut c: Checker, x: Decl } {
+    // Where `arg: T into ... into ...` names `into`.
+    fn into_span { params: []syntax::Param, arg: []u8, into: []u8 } -> source::Span {
+        for p in params {
+            if not slice::eq_bytes{ a = p.name.text, b = arg } { continue }
+            for n in p.into { if slice::eq_bytes{ a = n.text, b = into } { return n.span } }
+            return p.span
+        }
+        return params[0].span
+    }
+
+    // Whether fn d's field `name` is one it lends: a start's `run`, or one it writes `into` a loan
+    // holder.
+    fn lent_field { c: Checker, d: u32, name: []u8 } -> bool {
+        let x = get_decl{ c, d }
+        if x.starts_task and slice::eq_bytes{ a = name, b = "run" } { return true }
+        let ls = map::get{ m = c.lends, key = d } ifnull { return false }
+        for l in ls { if slice::eq_bytes{ a = x.fields[l.arg].name, b = name } { return true } }
+        return false
+    }
+
+    // Whether fn d lends into, or ends, a loan holder by a written contract: it is then only
+    // called, as a start is, since a call through a value couldn't apply it.
+    fn lends_or_ends { c: Checker, d: u32 } -> bool {
+        return map::has{ m = c.lends, key = d } or map::has{ m = c.ends_of, key = d }
+    }
+
+    // Each `#scope_end` fn ends one loan holder, as `fn end(R) { mut threads: Threads, mut task:
+    // Task(R) ends }` does: one `ends` field, the holder, whose generic arguments are the fn's
+    // own in order, and otherwise capabilities without fields, which a scope's end makes from
+    // nothing; it returns nothing. Each holder has exactly one.
+    fn scope_ends { mut c: Checker } {
+        for m in list::items{ list = c.scope_marks } {
+            let x = get_decl{ c, d = m.d }
+            let ends = map::get{ m = c.ends_of, key = m.d } ifnull { slice::empty(u32){} }
+            if ends.len != 1 {
+                error{ &c, at = m.at, msg = "a `scope_end` fn ends one loan holder: it has one field with `ends`, as `mut task: Task(R) ends`" }
+                continue
+            }
+            let hf = x.fields[ends[0]]
+            let record{ decl = hd, args } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = hf.ty } } else { continue }
+            let bad = c.diags.errors
+            if types::prune{ s = c.ty, t = x.ret } != types::VOID {
+                errorf{ &c, at = x.name.span, msg = @fmt("a `scope_end` fn returns nothing and can't fail, since a scope's end has nowhere to give it: `{}` returns {}", str{ s = x.qual }, tstr{ c, t = x.ret }) }
+            }
+            let mut i: usize = 0
+            while i < x.fields.len {
+                let f = x.fields[i]
+                let t = types::prune{ s = c.ty, t = f.ty }
+                if i != @as(usize, ends[0]) and t != types::ERROR and (not (types::get{ s = c.ty, id = t } is cap) or loaded_cap{ c, t }) {
+                    errorf{ &c, at = x.name.span, msg = @fmt("a `scope_end` fn takes its loan holder and capabilities without fields, which a scope's end makes from nothing, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
+                }
+                i = i + 1
+            }
+            let mut own = x.tparams.len == args.len
+            i = 0
+            while own and i < args.len {
+                own = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = args[i] } } is param{ decl = pd, index } and pd == m.d and index == @as(u32, i)
+                i = i + 1
+            }
+            if not own {
+                errorf{ &c, at = x.name.span, msg = @fmt("a `scope_end` fn's generic parameters are its loan holder's, in order, as `fn end(R) {{ mut task: Task(R) ends }}`: `{}` takes {}", str{ s = x.qual }, tstr{ c, t = hf.ty }) }
+            }
+            if c.diags.errors != bad { continue }
+            if let had = map::get{ m = c.scope_ends, key = hd } {
+                errorf{ &c, at = m.at, msg = @fmt("a second `scope_end` fn for `{}`: `{}` is its scope's end already", str{ s = get_decl{ c, d = hd }.qual }, str{ s = get_decl{ c, d = had }.qual }) }
+                continue
+            }
+            try! map::put{ m = &c.scope_ends, key = hd, value = m.d }
+        }
+        let mut d: usize = 0
+        while d < c.decls.len {
+            let x = get_decl{ c, d = @as(u32, d) }
+            if x.task_handle and not x.half and not map::has{ m = c.scope_ends, key = @as(u32, d) } {
+                errorf{ &c, at = x.name.span, msg = @fmt("loan holder `{}` has no `scope_end` fn, which ends what it still holds where its scope ends: mark one with `#scope_end`", str{ s = x.qual }) }
+            }
+            d = d + 1
+        }
+    }
+
+    fn starts_fields { mut c: Checker, d: u32, x: Decl } {
         let mut ok = false
         if let run = types::find_field{ fields = x.fields, name = "run" } {
             let t = types::prune{ s = c.ty, t = run.ty }
@@ -2733,9 +2873,17 @@ namespace check {
         if (task == null) == (group == null) { ok = false }
         if let h = if task != null { task } else { group } {
             if not h.mutable or not handle_type{ c, t = h.ty } { ok = false }
+            // `run: &fn{} -> R into task`: the start lends its task into the handle.
+            let ri = types::field_index{ fields = x.fields, name = "run" }
+            let hi = types::field_index{ fields = x.fields, name = h.name }
+            let mut lent = false
+            if let ls = map::get{ m = c.lends, key = d } {
+                for l in ls { if ri != null and hi != null and @as(usize, l.arg) == ri and @as(usize, l.holder) == hi { lent = true } }
+            }
+            if not lent { ok = false }
         }
         if not ok {
-            errorf{ &c, at = x.name.span, msg = @fmt("`starts_task` fn `{}` takes `run: &fn{{}} -> R`, the task, and a handle it starts it into: `mut task` or `mut group`, of a `task_handle` type", str{ s = x.qual }) }
+            errorf{ &c, at = x.name.span, msg = @fmt("`starts_task` fn `{}` takes `run: &fn{{}} -> R`, the task, and a handle it lends it into: `run: &fn{{}} -> R into task` and `mut task`, or `into group` and `mut group`, of a `loan_holder` type", str{ s = x.qual }) }
         }
     }
 
@@ -5246,8 +5394,6 @@ namespace check {
         c.dead = false
         c.defs = slice::empty(u32){}
         c.maybe = slice::empty(u32){}
-        c.zeros = slice::empty(u32){}
-        c.fulls = slice::empty(u32){}
         c.body_errors = c.diags.errors
         c.flow_errors = 0
         c.label_ids = 0
@@ -6247,15 +6393,13 @@ namespace check {
     // ---- the flow state and definite initialization (§11, Initialization)
 
     fn save { c: Checker } -> State {
-        return State{ defs = c.defs, maybe = c.maybe, dead = c.dead, zeros = c.zeros, fulls = c.fulls }
+        return State{ defs = c.defs, maybe = c.maybe, dead = c.dead }
     }
 
     fn restore { mut c: Checker, s: State } {
         c.defs = s.defs
         c.maybe = s.maybe
         c.dead = s.dead
-        c.zeros = s.zeros
-        c.fulls = s.fulls
     }
 
     // Where paths join: a local is assigned if it is on every path that goes on, and maybe
@@ -6263,16 +6407,12 @@ namespace check {
     fn merge { c: Checker, xs: []State } -> State {
         let mut maybe: []u32 = slice::empty(u32){}
         let mut defs: []u32 = slice::empty(u32){}
-        let mut zeros: []u32 = slice::empty(u32){}
-        let mut fulls: []u32 = slice::empty(u32){}
         let mut live = false
         let mut i: usize = 0
         while i < xs.len {
             maybe = set_union{ c, a = maybe, b = xs[i].maybe }
             if not xs[i].dead {
                 defs = if live { set_meet{ c, a = defs, b = xs[i].defs } } else { xs[i].defs }
-                zeros = if live { set_meet{ c, a = zeros, b = xs[i].zeros } } else { xs[i].zeros }
-                fulls = if live { set_meet{ c, a = fulls, b = xs[i].fulls } } else { xs[i].fulls }
                 live = true
             }
             i = i + 1
@@ -6284,7 +6424,7 @@ namespace check {
                 i = i + 1
             }
         }
-        return State{ defs, maybe, dead = not live, zeros, fulls }
+        return State{ defs, maybe, dead = not live }
     }
 
     fn set_add { c: Checker, xs: []u32, n: u32 } -> []u32 {
@@ -6440,7 +6580,6 @@ namespace check {
         }
         handle_local{ &c, t, value = init != null, at = s.span }
         let v = new_var{ &c, name = name.text, ty = t, kind = VarKind::local, mutable, at = s.span }
-        if init == null and handle_type{ c, t } { c.zeros = set_add{ c, xs = c.zeros, n = v } }
         if holds_handle{ c, t } { mark_tasky{ &c } }
         let mut held: []Place = slice::empty(Place){}
         if init == null {
@@ -6808,9 +6947,6 @@ namespace check {
     // declared in it. `forever` is a loop that leaves only through a `break`.
     fn loop_body { mut c: Checker, name: []u8, facts: []Fact, vars: []u32, forever: bool, body: syntax::Block, at: source::Span, k: u64 } {
         let s0 = save{ c }
-        // A loop may run its body any number of times: no handle declared before it is known.
-        c.zeros = slice::empty(u32){}
-        c.fulls = slice::empty(u32){}
         let lp = Loop{
             label = name,
             key = k,
@@ -6864,10 +7000,10 @@ namespace check {
         if forever {
             // `while true` leaves only through a break; without one it ends the path.
             let none = slice::empty(u32){}
-            let after = if breaks.len > 0 { merge{ c, xs = breaks } } else { State{ defs = s0.defs, maybe = none, dead = true, zeros = none, fulls = none } }
-            restore{ &c, s = State{ defs = after.defs, maybe, dead = s0.dead or after.dead, zeros = none, fulls = none } }
+            let after = if breaks.len > 0 { merge{ c, xs = breaks } } else { State{ defs = s0.defs, maybe = none, dead = true } }
+            restore{ &c, s = State{ defs = after.defs, maybe, dead = s0.dead or after.dead } }
         } else {
-            restore{ &c, s = State{ defs = s0.defs, maybe, dead = s0.dead, zeros = slice::empty(u32){}, fulls = slice::empty(u32){} } }
+            restore{ &c, s = State{ defs = s0.defs, maybe, dead = s0.dead } }
         }
     }
 
@@ -6910,7 +7046,7 @@ namespace check {
         let n = cover{ &c, e = x, region = expr_key{ e } }
         if t != types::ERROR and n == 0 { nothing_covered{ &c, e } }
         if n > 0 { try! list::push{ list = &c.ovfs, item = e } }
-        restore{ &c, s = State{ defs = s0.defs, maybe = s1.maybe, dead = s0.dead, zeros = set_meet{ c, a = s0.zeros, b = s1.zeros }, fulls = set_meet{ c, a = s0.fulls, b = s1.fulls } } }
+        restore{ &c, s = State{ defs = s0.defs, maybe = s1.maybe, dead = s0.dead } }
         let mut bs = list::new(Branch){ realloc = arena::alloc, heap = c.heap }
         add_branch{ xs = &bs, b = Branch{ t, value = Value::expr{ e = x } } }
         add_branch{ xs = &bs, b = value_block{ &c, b = els, vars = slice::empty(u32){}, facts = slice::empty(Fact){}, exp = t, drop = false } }
@@ -7790,7 +7926,7 @@ namespace check {
         if not c.dead {
             error{ &c, at = els.span, msg = "the `else` of a `let` pattern must leave: end it with `return`, `break`, `continue` or `@panic()`" }
         }
-        restore{ &c, s = State{ defs = s0.defs, maybe = set_union{ c, a = s0.maybe, b = c.maybe }, dead = s0.dead, zeros = s0.zeros, fulls = s0.fulls } }
+        restore{ &c, s = State{ defs = s0.defs, maybe = set_union{ c, a = s0.maybe, b = c.maybe }, dead = s0.dead } }
         c.live_from = s.span.end
         declare_all{ &c, vars = bvars }
     }
@@ -11466,6 +11602,8 @@ namespace check {
         let func{ body } = x.syn.k else { return slice::empty(TState){} }
         let rets = c.trets
         let loops = c.tloops
+        let walking = c.tdecl
+        c.tdecl = d
         c.trets = list::new(TState){ realloc = arena::alloc, heap = c.heap }
         c.tloops = list::new(TLoop){ realloc = arena::alloc, heap = c.heap }
         let none = slice::empty(u32){}
@@ -11474,6 +11612,7 @@ namespace check {
         let out = list::items{ list = c.trets }
         c.trets = rets
         c.tloops = loops
+        c.tdecl = walking
         return out
     }
 
@@ -11911,12 +12050,17 @@ namespace check {
         }
         if bind or d == NONE or s.dead { return s }
         let x = get_decl{ c, d }
-        if x.starts_task { return tw_start{ &c, e, items, st = s } }
-        if d == std_fn{ c, space = "task", name = "wait" } or d == std_fn{ c, space = "task", name = "cancel" } or d == std_fn{ c, space = "task", name = "end" } {
-            return tw_end{ &c, item = tw_item{ items, name = "task" }, st = s }
-        }
-        if d == std_fn{ c, space = "task", name = "wait_all" } or d == std_fn{ c, space = "task", name = "cancel_all" } {
-            return tw_end{ &c, item = tw_item{ items, name = "group" }, st = s }
+        // A written loan contract: what the call ends, then what it lends.
+        if lends_or_ends{ c, d } {
+            let es = map::get{ m = c.ends_of, key = d } ifnull { slice::empty(u32){} }
+            for f in es { s = tw_end{ &c, item = tw_item{ items, name = x.fields[f].name }, st = s } }
+            let ls = map::get{ m = c.lends, key = d } ifnull { slice::empty(Lend){} }
+            let mut k: u64 = 0
+            for l in ls {
+                k = k + 1
+                s = tw_lend{ &c, e, key = expr_key{ e } +% k *% 0x9E3779B97F4A7C15, value = tw_item{ items, name = x.fields[l.arg].name }, holder = tw_item{ items, name = x.fields[l.holder].name }, st = s }
+            }
+            return s
         }
         if x.tasky or has_handle_field{ c, x } { return tw_summary{ &c, e, d, items, st = s } }
         return s
@@ -11949,8 +12093,8 @@ namespace check {
         return false
     }
 
-    // A wait or cancel of the handle item gives: its loans end, unless it is an array's
-    // element, and a `mut` handle field is ended.
+    // An `ends` of the holder item gives: its loans end, unless it is an array's element, and a
+    // `mut` holder field is ended.
     fn tw_end { mut c: Checker, item: ?syntax::Item, st: TState } -> TState {
         let h = tw_handle{ c, item } ifnull { return st }
         if is_element{ p = h } { return st }
@@ -11964,12 +12108,12 @@ namespace check {
         return TState{ loans = list::items{ list = keep }, ended, dead = st.dead }
     }
 
-    // A start: a loan of what its bind holds (capabilities aside) and reads, into its handle.
-    fn tw_start { mut c: Checker, e: syntax::Expr, items: []syntax::Item, st: TState } -> TState {
-        let run = tw_item{ items, name = "run" } ifnull { return st }
-        if not (run.value.k is braced) { return st }          // a starts_task fn's own `run`, passed on
-        let item = if let t = tw_item{ items, name = "task" } { t } else { tw_item{ items, name = "group" } }
-        let h = tw_handle{ c, item } ifnull { return st }
+    // An `into` a holder: a loan of what the value holds as a bind (capabilities aside) and
+    // reads, into the holder item gives.
+    fn tw_lend { mut c: Checker, e: syntax::Expr, key: u64, value: ?syntax::Item, holder: ?syntax::Item, st: TState } -> TState {
+        let run = value ifnull { return st }
+        if passed_on{ c, e = run.value } { return st }
+        let h = tw_handle{ c, item = holder } ifnull { return st }
         let hs = map::get{ m = c.holds, key = expr_key{ e = run.value } } ifnull { slice::empty(Place){} }
         let mut holds = list::new(Place){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
@@ -11988,8 +12132,23 @@ namespace check {
             if not has_id{ xs = list::items{ list = reads }, n = r } { push{ xs = &reads, n = r } }
             i = i + 1
         }
-        let n = tw_loan{ &c, key = expr_key{ e }, l = Loan{ handle = h, holds = list::items{ list = holds }, reads = list::items{ list = reads }, at = expr_at{ e }, element = is_element{ p = h } } }
+        let n = tw_loan{ &c, key, l = Loan{ handle = h, holds = list::items{ list = holds }, reads = list::items{ list = reads }, at = expr_at{ e }, element = is_element{ p = h } } }
         return TState{ loans = set_add{ c, xs = st.loans, n }, ended = st.ended, dead = st.dead }
+    }
+
+    // Whether e is a field the fn being walked lends itself, passed on to another lend: its
+    // caller's loan holds what it holds (a start's own `run`, passed to another start).
+    fn passed_on { c: Checker, e: syntax::Expr } -> bool {
+        let path{ segs } = e.k else { return false }
+        if segs.len != 1 or c.tdecl == NONE { return false }
+        let r = nodes::get{ m = c.refs, key = expr_key{ e } } ifnull { return false }
+        let local{ var } = r else { return false }
+        let v = get_var{ c, v = var }
+        if v.kind != VarKind::ctx { return false }
+        let ls = map::get{ m = c.lends, key = c.tdecl } ifnull { return false }
+        let fields = get_decl{ c, d = c.tdecl }.fields
+        for l in ls { if slice::eq_bytes{ a = fields[l.arg].name, b = v.name } { return true } }
+        return false
     }
 
     // The loan made at key, the first time; rule 2 checked for it.
@@ -13465,6 +13624,8 @@ namespace check {
             func{ decl, targs } => {
                 if get_decl{ c, d = decl }.starts_task {
                     errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` starts a task, and is only called: its calls are checked for what the task borrows", path_text{ c, segs }) }
+                } else if map::has{ m = c.lends, key = decl } {
+                    errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` lends into a loan holder, and is only called: its calls are checked for what the loan holds", path_text{ c, segs }) }
                 }
                 let ct = c_fn_value{ &c, d = decl, exp, at = expr_at{ e } }
                 if ct != types::NO_TYPE { return ct }
@@ -13825,6 +13986,8 @@ namespace check {
                         starting = get_decl{ c, d = decl }.starts_task
                         if starting and bind {
                             errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` starts a task, and is only called, not bound", name) }
+                        } else if bind and map::has{ m = c.lends, key = decl } {
+                            errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` lends into a loan holder, and is only called, not bound", name) }
                         }
                         if not starting and not (c.fn_decl != NONE and handles_own{ c, ns = get_decl{ c, d = c.fn_decl }.ns }) { no_handle_targs{ &c, targs, at = expr_at{ e = callee } } }
                     }
@@ -14077,7 +14240,7 @@ namespace check {
                                 check_mutable{ &c, e = x.* }
                                 mut_arg{ &c, e = it.value, at, t = want }
                             }
-                            handle_flow{ &c, x = x.*, field = f.name, callee = call_decl, at = expr_at{ e = it.value } }
+                            handle_flow{ &c, x = x.* }
                         }
                         else => { mut_arg{ &c, e = it.value, at = expr{ &c, e = it.value, exp = want }, t = want } }
                     }

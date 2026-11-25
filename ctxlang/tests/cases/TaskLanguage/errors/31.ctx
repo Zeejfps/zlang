@@ -1,0 +1,25 @@
+#loan_holder
+struct Job { t: task::Task(u64) }
+
+#task
+fn count { mut n: u64 } -> u64 {
+    n = n + 1
+    return n
+}
+
+// Lends its task into the job: the job holds what the task borrows.
+fn submit { mut threads: Threads, mut job: Job, run: &fn{} -> u64 into job } {
+    task::start{ &threads, task = &job.t, run }
+}
+
+#scope_end
+fn finish { mut threads: Threads, mut job: Job ends } { task::end{ &threads, task = &job.t } }
+
+fn collect { mut threads: Threads, mut job: Job ends } -> u64 { return task::wait{ &threads, task = &job.t } }
+
+fn main { mut threads: Threads } {
+    let mut n: u64 = 41
+    let mut job: Job
+    submit{ &threads, &job, run = count{ &n, _ } }
+    n = 3  //~ error at 5: `n` is held by the task started at 23:11 until it is waited for or cancelled
+}

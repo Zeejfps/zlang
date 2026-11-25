@@ -1,1 +1,8 @@
-fn main { mut io: Io, mut threads: Threads } { io::println{ &io, s = "hi" } }
+#task
+fn work { n: i32 } -> i32 { return n + 1 }
+
+fn main { mut io: Io, mut threads: Threads } {
+    let mut t: task::Task(i32)
+    task::start{ &threads, task = &t, run = work{ n = 1, _ } }
+    io::println_u64{ &io, n = @as(u64, task::wait{ &threads, task = &t }) }
+}

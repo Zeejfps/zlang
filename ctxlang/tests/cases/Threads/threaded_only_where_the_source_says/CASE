@@ -1,5 +1,6 @@
-// A program is threaded if main takes Threads (spec §15, Entry point, rule 8): only then
-// is its C, and the stack limit and `#thread_local` statics in it, per thread.
+// A program is threaded if it can start a thread, which std's thread entry, a callback C may
+// call from any thread, says (spec §15, Entry point, rule 8): only then is its C, and the stack
+// limit and `#thread_local` statics in it, per thread. Taking Threads alone doesn't make it so.
 //# $ ctxc build plain.c {std} -- plain.ctx
 //# exit: 0
 //# file plain.c lacks:
@@ -14,3 +15,7 @@
 //| _Thread_local
 //# file threaded.c has:
 //| ctx_thread_setup();
+//# $ ctxc build takes_threads.c {std} -- takes_threads.ctx
+//# exit: 0
+//# file takes_threads.c lacks:
+//| CTX_THREADS

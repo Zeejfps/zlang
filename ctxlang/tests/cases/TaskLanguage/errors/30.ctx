@@ -1,0 +1,5 @@
+#scope_end  //~ error at 1: a `scope_end` fn ends one loan holder: it has one field with `ends`, as `mut task: Task(R) ends`
+fn close { mut s: Slot } {}
+#loan_holder
+struct Slot { n: u32 }  //~ error at 8: loan holder `Slot` has no `scope_end` fn, which ends what it still holds where its scope ends: mark one with `#scope_end`
+fn main {} {}

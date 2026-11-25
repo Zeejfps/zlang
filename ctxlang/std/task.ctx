@@ -38,7 +38,7 @@ namespace task {
     // A task's handle and, once it has ended, its result. Zero is no task. Only a local, a local
     // array's element, or a `mut` field: never copied, so it never moves while its task writes
     // its result into it.
-    #task_handle
+    #loan_holder
     struct Task(R) {
         slot: u32,                  // the task's slot in the table, from 1, while RUNNING
         generation: u32,            // the slot's, when the task started in it
@@ -47,7 +47,7 @@ namespace task {
     }
 
     // Tasks that end together. Zero is an empty group. The same places as a Task.
-    #task_handle
+    #loan_holder
     struct Group {
         tasks: u32,                 // tasks of the group that haven't ended
         first: u32,                 // the slot of one of them, the head of their list; 0 if none
@@ -69,7 +69,7 @@ namespace task {
     // backend can't run it concurrently (no worker, the limit, or the table can't grow), it runs
     // it here, and `task` holds its result when start returns. `task` must be zero.
     #starts_task
-    fn start(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R } {
+    fn start(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R into task } {
         if task.state != NONE { rt::fail{ msg = "task::start into a handle that holds a task" } }
         if os::CONCURRENT {
             let t = table{ state = &threads }
@@ -99,7 +99,7 @@ namespace task {
 
     // Runs `run` concurrently with the caller, or fails, and `task` stays zero.
     #starts_task
-    fn start_concurrent(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R } -> ! {
+    fn start_concurrent(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R into task } -> ! {
         if task.state != NONE { rt::fail{ msg = "task::start_concurrent into a handle that holds a task" } }
         if not os::CONCURRENT { os::concurrency_unsupported{ what = "task::start_concurrent and task::start_blocking" } }
         let t = table{ state = &threads }
@@ -125,12 +125,12 @@ namespace task {
     // blocks outside std (a C call that waits, a lock held across IO) or computes for long. In
     // Threaded it is start_concurrent.
     #starts_task
-    fn start_blocking(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R } -> ! {
+    fn start_blocking(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R into task } -> ! {
         return start_concurrent(R){ &threads, &task, run }
     }
 
     // Waits for the task to end and gives its result; `task` is zero again.
-    fn wait(R) { mut threads: Threads, mut task: Task(R) } -> R {
+    fn wait(R) { mut threads: Threads, mut task: Task(R) ends } -> R {
         if task.state == NONE { rt::fail{ msg = "task::wait on a handle that holds no task" } }
         if task.state == RUNNING {
             let t = table{ state = &threads }
@@ -158,7 +158,7 @@ namespace task {
 
     // Asks the task to stop (Cancellation), waits for it to end, and gives its result, which is
     // usually `cancelled`; `task` is zero again.
-    fn cancel(R) { mut threads: Threads, mut task: Task(R) } -> R {
+    fn cancel(R) { mut threads: Threads, mut task: Task(R) ends } -> R {
         if task.state == NONE { rt::fail{ msg = "task::cancel on a handle that holds no task" } }
         if task.state == RUNNING {
             let t = table{ state = &threads }
@@ -175,7 +175,8 @@ namespace task {
 
     // What ends a handle's scope (spec §15, Tasks, rule 6): its task, if it has one, cancelled
     // and waited for, its result dropped.
-    fn end(R) { mut threads: Threads, mut task: Task(R) } {
+    #scope_end
+    fn end(R) { mut threads: Threads, mut task: Task(R) ends } {
         if task.state == NONE { return }
         _ = cancel(R){ &threads, &task }
     }
@@ -184,7 +185,7 @@ namespace task {
     // task returns `!`: the first of its tasks to fail cancels the others, and `wait_all`
     // returns that error. A group being cancelled starts its new tasks cancelled.
     #starts_task
-    fn start_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! } {
+    fn start_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! into group } {
         if os::CONCURRENT {
             let t = table{ state = &threads }
             mutex::lock{ mutex = &t.lock }
@@ -215,7 +216,7 @@ namespace task {
     }
 
     #starts_task
-    fn start_concurrent_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! } -> ! {
+    fn start_concurrent_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! into group } -> ! {
         if not os::CONCURRENT { os::concurrency_unsupported{ what = "task::start_concurrent_in and task::start_blocking_in" } }
         let t = table{ state = &threads }
         mutex::lock{ mutex = &t.lock }
@@ -234,13 +235,13 @@ namespace task {
     }
 
     #starts_task
-    fn start_blocking_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! } -> ! {
+    fn start_blocking_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! into group } -> ! {
         return start_concurrent_in{ &threads, &group, run }
     }
 
     // Waits until the group has no task, those started meanwhile included: the first error of
     // its tasks, or success. The group is empty again.
-    fn wait_all { mut threads: Threads, mut group: Group } -> ! {
+    fn wait_all { mut threads: Threads, mut group: Group ends } -> ! {
         let t = table{ state = &threads }
         mutex::lock{ mutex = &t.lock }
         defer mutex::unlock{ mutex = &t.lock }
@@ -254,7 +255,8 @@ namespace task {
 
     // Asks every task of the group to stop, then waits until it has none. The group is empty
     // again, its error dropped.
-    fn cancel_all { mut threads: Threads, mut group: Group } {
+    #scope_end
+    fn cancel_all { mut threads: Threads, mut group: Group ends } {
         let t = table{ state = &threads }
         mutex::lock{ mutex = &t.lock }
         defer mutex::unlock{ mutex = &t.lock }
