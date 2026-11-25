@@ -1661,7 +1661,7 @@ I installed neither.
   its own Vulkan renderer.
 - An offscreen target with readback serves `read_pixels`.
 - The swapchain and the offscreen target use a UNORM format, so colours match the OpenGL backend's.
-- The binding is hand-written in `ui/vulkan/api.ctx`: about 70 functions and 40 structs.
+- The binding is hand-written in `ui/vulkan/vulkan.ctx`: about 70 functions and 40 structs.
 
 ### 4.5 Metal: specified, not staged
 
@@ -1937,7 +1937,7 @@ ctxlang: the tests are found by the compiler. Measured on this machine: the whol
   list, which is written in logical units and converted to pixels by the test at each scale, as a
   widget converts.
 - **Files.** `ui/shaders/canvas_{rect,glyph,image,shape}.{vert,frag}.glsl`, `ui/tools/build_shaders`,
-  `ui/tools/embed_shaders.py`, `ui/gl/api.ctx`, `ui/gl/device.ctx`, `ui/gl/shaders_glsl.ctx`
+  `ui/tools/embed_shaders.py`, `ui/gl/gl.ctx`, `ui/gl/device.ctx`, `ui/gl/shaders_glsl.ctx`
   (generated; in `ui/gl/glsl/` since stage 15), `ui/gl/contract.ctx`, `ui/sdl/sdl.ctx`, `ui/sdl/host.ctx`, `ui/test/png.ctx`,
   `ui/tests/shots/{build.ctx, main.ctx}`.
 - **Acceptance.** The agent shows the `diff` of each shader file against ZGF's: only the listed
@@ -2178,7 +2178,7 @@ ctxlang: the tests are found by the compiler. Measured on this machine: the whol
   block is the projection for (0, 0) to (`width`, `height`) and the metrics (`width`, `height`,
   `width`, `height`), the viewport and the swapchain extent are `staged.width` by `staged.height`, and
   there is no scale anywhere in it.
-- **Files.** `ui/vulkan/api.ctx`, `ui/vulkan/device.ctx`, `ui/vulkan/pipelines.ctx`,
+- **Files.** `ui/vulkan/vulkan.ctx`, `ui/vulkan/device.ctx`, `ui/vulkan/pipelines.ctx`,
   `ui/vulkan/shaders_spv.ctx` (generated), `ui/vulkan/contract.ctx`, `ui/sdl/vulkan.ctx`,
   `ui/samples/demo_vulkan/{build.ctx, main.ctx}`, `ui/tests/shots_vulkan/{build.ctx, main.ctx}`.
 - **Before it starts.** The Khronos validation layer must be installed (section 4.4).
