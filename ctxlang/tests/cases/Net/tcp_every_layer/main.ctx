@@ -1,0 +1,44 @@
+// Every one of net's TCP calls, so that each layer's are checked and lowered.
+
+fn echo { mut net: Net, socket: net::Socket } -> ! {
+    defer net::close{ &net, socket }
+    let mut buf: [4096]u8
+    while true {
+        let n = net::receive{ &net, socket, into = buf[..] } iferr { return }
+        if n == 0 { return }
+        _ = net::send{ &net, socket, bytes = buf[..n] } iferr { return }
+    }
+}
+
+fn main { mut io: Io, mut net: Net, mut threads: Threads } -> i32 {
+    let listener = net::listen{ &net, address = "[::1]:0", backlog = 0 } iferr { return 1 }
+    let at = net::listener_address{ &net, listener } iferr { return 2 }
+    let client = net::connect{ &net, address = at } iferr err{ error } {
+        match error {
+            net::refused | net::reset | net::aborted | net::closed => { return 3 }
+            net::unreachable | net::timed_out | net::address_in_use => { return 4 }
+            net::address_unavailable | net::unsupported_address | net::permission_denied => { return 5 }
+            net::too_many_open | net::message_too_large | net::not_found | net::lookup_failed => { return 6 }
+            net::other{ code } => { return 7 }
+            net::bad_address | task::cancelled => { return 8 }
+            else => { return 9 }
+        }
+    }
+    let mut handlers: task::Group
+    let server = net::accept{ &net, listener } iferr { return 10 }
+    task::start_concurrent_in{ &threads, group = &handlers, run = echo{ &net, socket = server, _ } } iferr {
+        net::close{ &net, socket = server }
+    }
+    try! net::set_keep_alive{ &net, socket = client, idle_seconds = 60 }
+    try! net::set_no_delay{ &net, socket = client, on = false }
+    _ = net::send{ &net, socket = client, bytes = "hi" } iferr { 0 }
+    net::shutdown{ &net, socket = client, how = net::Shutdown::send } iferr {}
+    let mut buf: [16]u8
+    let n = net::receive{ &net, socket = client, into = buf[..] } iferr { 0 }
+    let mine = net::local_address{ &net, socket = client } iferr { return 11 }
+    let theirs = net::peer_address{ &net, socket = client } iferr { return 12 }
+    _ = @fmt(&io, "{} {} {}\n", n, mine.port, theirs.port)
+    net::close{ &net, socket = client }
+    net::close_listener{ &net, listener }
+    return 0
+}

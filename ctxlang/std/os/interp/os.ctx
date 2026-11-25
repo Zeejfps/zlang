@@ -1,7 +1,8 @@
 // std: os in ctxc's interpreter (`ctxc interp`, ctxc/eval.ctx). The platform's layer (spec §17)
-// for a program that runs in the interpreter rather than as C: what io, mem, proc, fs and rt need,
-// over a few externs that only the interpreter provides, `ctx_interp_*`. What it can't do,
-// standard input, files and other programs among it, stops the run as not supported by interp.
+// for a program that runs in the interpreter rather than as C: what io, mem, proc, fs, net and rt
+// need, over a few externs that only the interpreter provides, `ctx_interp_*`. What it can't do,
+// standard input, files, other programs and the network among it, stops the run as not
+// supported by interp.
 // The platform is the one ctxc runs on: its target.ctx, beside this one in the build.
 //
 // Where it differs from the platform's own layer, beyond what it can't do:
@@ -160,6 +161,28 @@ namespace os {
     fn pipe_read { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, into: []mut u8 } -> proc::Error!usize { return try no_programs(usize){} }
     fn pipe_write { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, bytes: []u8 } -> proc::Error!usize { return try no_programs(usize){} }
     fn pipe_close { mut proc: Proc, pipe: u64 } { _ = unsupported{ what = "other programs" } }
+
+    // ---- for std's net: not supported by interp. Addresses are pure, and run here.
+
+    // What std's Net holds here: nothing.
+    capability Net
+
+    // Stops the run, as no_files does, for net's errors.
+    fn no_network(T) {} -> net::Error!T {
+        _ = unsupported{ what = "the network" }
+        return net::other{ code = 0 }
+    }
+
+    fn tcp_connect { mut net: Net, mut cancel: task::Cancel, address: net::Address } -> net::Error!u64 { return try no_network(u64){} }
+    fn tcp_listen { mut net: Net, address: net::Address, backlog: u32 } -> net::Error!u64 { return try no_network(u64){} }
+    fn tcp_accept { mut net: Net, mut cancel: task::Cancel, listener: u64, family: u8 } -> net::Error!u64 { return try no_network(u64){} }
+    fn tcp_receive { mut net: Net, mut cancel: task::Cancel, socket: u64, into: []mut u8 } -> net::Error!usize { return try no_network(usize){} }
+    fn tcp_send { mut net: Net, mut cancel: task::Cancel, socket: u64, bytes: []u8 } -> net::Error!usize { return try no_network(usize){} }
+    fn tcp_shutdown { mut net: Net, socket: u64, how: net::Shutdown } -> net::Error! { _ = try no_network(bool){} }
+    fn tcp_close { mut net: Net, socket: u64 } { _ = unsupported{ what = "the network" } }
+    fn tcp_get_address { mut net: Net, socket: u64, peer: bool } -> net::Error!net::Address { return try no_network(net::Address){} }
+    fn tcp_set_no_delay { mut net: Net, socket: u64, on: bool } -> net::Error! { _ = try no_network(bool){} }
+    fn tcp_set_keep_alive { mut net: Net, socket: u64, idle_seconds: u32 } -> net::Error! { _ = try no_network(bool){} }
 
     fn processors { mut proc: Proc } -> u32 {
         _ = unsupported{ what = "the number of processors" }

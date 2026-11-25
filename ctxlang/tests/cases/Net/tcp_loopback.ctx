@@ -1,0 +1,162 @@
+// TCP in one program, over loopback (docs/todo/net.md, Testing 1): a listener on a port the
+// system picks, an accept task that echoes, and the client sending 1 MiB from a task while it
+// receives the echo, at once: more than the sockets' buffers hold, so each `send` waits for the
+// other side to read. The echo shuts its sending side down once the client has, and the
+// client's receive then returns 0. The addresses each end sees are the other's. A port that
+// nothing listens on refuses, and a port listened on can't be listened on again. Then IPv6 on
+// ::1, whose line says `echoed`, or that the host has no IPv6 (listen gives
+// unsupported_address or address_unavailable); anything else exits with 9.
+//# interp: cannot run
+//# timeout: 120
+//# stdout:
+//| listening on 127.0.0.1
+//| echoed 1048576 bytes both ways at once
+//| the server saw the client's address: true
+//| the client saw the listener's address: true
+//| closed port: net::refused
+//| listening twice: net::address_in_use
+//| v6: {any}
+
+const SIZE: usize = 1048576
+
+// What the accept task saw: the connection's two ends, from the server's side.
+struct Seen { local: net::Address, peer: net::Address }
+
+// Accepts one connection and sends back what it receives until the peer has finished sending,
+// then finishes sending itself.
+fn echo_one { mut net: Net, listener: net::Listener, seen: *mut Seen } -> ! {
+    let socket = try net::accept{ &net, listener }
+    defer net::close{ &net, socket }
+    seen.local = try net::local_address{ &net, socket }
+    seen.peer = try net::peer_address{ &net, socket }
+    let mut buf: [65536]u8
+    while true {
+        let n = try net::receive{ &net, socket, into = buf[..] }
+        if n == 0 { break }
+        _ = try net::send{ &net, socket, bytes = buf[..n] }
+    }
+    try net::shutdown{ &net, socket, how = net::Shutdown::send }
+}
+
+// Sends all of `bytes`, then finishes sending.
+fn send_all { mut net: Net, socket: net::Socket, bytes: []u8 } -> ! {
+    _ = try net::send{ &net, socket, bytes }
+    try net::shutdown{ &net, socket, how = net::Shutdown::send }
+}
+
+fn same { a: net::Address, b: net::Address } -> bool {
+    return net::eq_ip{ a = a.ip, b = b.ip } and a.port == b.port
+}
+
+fn show_ip { mut io: Io, what: []u8, ip: net::Ip } {
+    let mut mem: [128]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&b, "{}", ip)
+    _ = @fmt(&io, "{} {}\n", what, utf8::view{ b })
+}
+
+fn echo_both_ways { mut io: Io, mut net: Net, mut mem: Mem, mut threads: Threads } -> i32 {
+    let listener = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 1 }
+    defer net::close_listener{ &net, listener }
+    let at = net::listener_address{ &net, listener } iferr { return 1 }
+    show_ip{ &io, what = "listening on", ip = at.ip }
+    let mut seen = Seen{ local = at, peer = at }
+    let mut server: task::Task(!)
+    task::start_concurrent{ &threads, task = &server, run = echo_one{ &net, listener, seen = &seen, _ } } iferr { return 2 }
+    let client = net::connect{ &net, address = at } iferr { return 3 }
+    defer net::close{ &net, socket = client }
+
+    let out = mem::pages{ &mem, size = SIZE } ifnull { return 4 }
+    let back = mem::pages{ &mem, size = SIZE } ifnull { return 4 }
+    let mut i: usize = 0
+    while i < SIZE {
+        out[i] = @trunc(u8, i * 7 + i / 251)
+        i = i + 1
+    }
+    let mut sender: task::Task(!)
+    task::start_concurrent{ &threads, task = &sender, run = send_all{ &net, socket = client, bytes = out, _ } } iferr { return 5 }
+    let mut got: usize = 0
+    while true {
+        let n = net::receive{ &net, socket = client, into = back[got..] } iferr { return 6 }
+        if n == 0 { break }
+        got = got + n
+        if got == SIZE {
+            // The echo's end: its shutdown, after the last byte.
+            let mut one: [1]u8
+            if net::receive{ &net, socket = client, into = one[..] } iferr { 1 } != 0 { return 6 }
+            break
+        }
+    }
+    task::wait{ &threads, task = &sender } iferr { return 7 }
+    task::wait{ &threads, task = &server } iferr { return 7 }
+    if got != SIZE or not slice::eq_bytes{ a = out, b = back } { return 8 }
+    _ = @fmt(&io, "echoed {} bytes both ways at once\n", got)
+
+    let mine = net::local_address{ &net, socket = client } iferr { return 9 }
+    let theirs = net::peer_address{ &net, socket = client } iferr { return 9 }
+    _ = @fmt(&io, "the server saw the client's address: {}\n", same{ a = seen.peer, b = mine })
+    _ = @fmt(&io, "the client saw the listener's address: {}\n", same{ a = theirs, b = at } and same{ a = seen.local, b = at })
+    return 0
+}
+
+fn refused { mut io: Io, mut net: Net } -> i32 {
+    let gone = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 10 }
+    let at = net::listener_address{ &net, listener = gone } iferr { return 10 }
+    net::close_listener{ &net, listener = gone }
+    let s = net::connect{ &net, address = at } iferr err{ error } {
+        _ = @fmt(&io, "closed port: {}\n", error)
+        return 0
+    }
+    net::close{ &net, socket = s }
+    return 11
+}
+
+fn in_use { mut io: Io, mut net: Net } -> i32 {
+    let first = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 12 }
+    defer net::close_listener{ &net, listener = first }
+    let at = net::listener_address{ &net, listener = first } iferr { return 12 }
+    let second = net::listen{ &net, address = at, backlog = 0 } iferr err{ error } {
+        _ = @fmt(&io, "listening twice: {}\n", error)
+        return 0
+    }
+    net::close_listener{ &net, listener = second }
+    return 13
+}
+
+// Echoes `six` over ::1.
+fn over_v6 { mut io: Io, mut net: Net, mut threads: Threads } -> i32 {
+    let listener = net::listen{ &net, address = "[::1]:0", backlog = 0 } iferr err{ error } {
+        match error {
+            net::unsupported_address | net::address_unavailable => {
+                io::println{ &io, s = "v6: no IPv6 on this host" }
+                return 0
+            }
+            else => { return 9 }
+        }
+    }
+    defer net::close_listener{ &net, listener }
+    let at = net::listener_address{ &net, listener } iferr { return 9 }
+    let mut seen = Seen{ local = at, peer = at }
+    let mut server: task::Task(!)
+    task::start_concurrent{ &threads, task = &server, run = echo_one{ &net, listener, seen = &seen, _ } } iferr { return 9 }
+    let client = net::connect{ &net, address = at } iferr { return 9 }
+    defer net::close{ &net, socket = client }
+    send_all{ &net, socket = client, bytes = "six" } iferr { return 9 }
+    let mut buf: [8]u8
+    let n = net::receive{ &net, socket = client, into = buf[..] } iferr { return 9 }
+    task::wait{ &threads, task = &server } iferr { return 9 }
+    if n != 3 or not slice::eq_bytes{ a = buf[..n], b = "six" } or not (seen.peer.ip is v6) or not net::is_loopback{ ip = seen.peer.ip } { return 9 }
+    io::println{ &io, s = "v6: echoed" }
+    return 0
+}
+
+fn main { mut io: Io, mut net: Net, mut mem: Mem, mut threads: Threads } -> i32 {
+    let a = echo_both_ways{ &io, &net, &mem, &threads }
+    if a != 0 { return a }
+    let b = refused{ &io, &net }
+    if b != 0 { return b }
+    let c = in_use{ &io, &net }
+    if c != 0 { return c }
+    return over_v6{ &io, &net, &threads }
+}

@@ -1,0 +1,125 @@
+// Cancelling net's blocking calls (docs/todo/net.md, Testing 3): an accept with no client, a
+// receive from a peer that sends nothing, a send to a peer that doesn't read (once the
+// sockets' buffers are full), and a connect to 192.0.2.1, TEST-NET-1, which no host answers.
+// Each is a task that `task::cancel` stops within a second with `cancelled`, and each is
+// followed by a second blocking call on the same listener or socket (after the send, a
+// receive), which must not see a stale cancel.
+// The connect's line says `cancelled`, or that this host has no route there, where it fails
+// at once with `unreachable`; anything else exits with 9.
+//# interp: cannot run
+//# timeout: 120
+//# stdout:
+//| accept: cancelled within a second
+//| accept again: a connection
+//| receive: cancelled within a second
+//| receive again: x
+//| send: cancelled within a second
+//| receive after it: y
+//| connect: {any}
+//| connect again: connected
+
+const ONE_SECOND: u64 = 1000000000
+const PAUSE: u64 = 200000000
+const LOTS: usize = 1048576
+
+fn accept_one { mut net: Net, listener: net::Listener } -> !net::Socket {
+    return net::accept{ &net, listener }
+}
+
+fn receive_some { mut net: Net, socket: net::Socket } -> !usize {
+    let mut buf: [64]u8
+    return net::receive{ &net, socket, into = buf[..] }
+}
+
+// Sends `bytes` again and again: what the systems buffer for a peer that doesn't read differs
+// (Windows takes tens of MiB at once on loopback), so it goes on until a send waits. Past
+// 16 GiB it gives up, as a send that never waits.
+fn send_lots { mut net: Net, socket: net::Socket, bytes: []u8 } -> !usize {
+    let mut total: usize = 0
+    while total < 17179869184 {
+        total = total + try net::send{ &net, socket, bytes }
+    }
+    return total
+}
+
+fn connect_to { mut net: Net, address: net::Address } -> !net::Socket {
+    return net::connect{ &net, address }
+}
+
+// Whether a cancel's result is `cancelled`, and came within a second of `began`.
+fn stopped(T) { mut threads: Threads, r: !T, began: u64 } -> bool {
+    let quick = os::now{ &threads } - began < ONE_SECOND
+    match r {
+        ok => { return false }
+        err{ error } => { return quick and match error { task::cancelled => { true } else => { false } } }
+    }
+}
+
+fn receive_one { mut net: Net, socket: net::Socket } -> !u8 {
+    let mut one: [1]u8
+    if try net::receive{ &net, socket, into = one[..] } != 1 { return net::closed }
+    return one[0]
+}
+
+fn main { mut io: Io, mut net: Net, mut mem: Mem, mut threads: Threads } -> i32 {
+    let listener = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 1 }
+    defer net::close_listener{ &net, listener }
+    let at = net::listener_address{ &net, listener } iferr { return 1 }
+
+    // accept
+    let mut a: task::Task(!net::Socket)
+    task::start_concurrent{ &threads, task = &a, run = accept_one{ &net, listener, _ } } iferr { return 2 }
+    thread::sleep{ &threads, nanoseconds = PAUSE }
+    let mut began = os::now{ &threads }
+    if not stopped(net::Socket){ &threads, r = task::cancel{ &threads, task = &a }, began } { return 2 }
+    io::println{ &io, s = "accept: cancelled within a second" }
+    let client = net::connect{ &net, address = at } iferr { return 3 }
+    defer net::close{ &net, socket = client }
+    let server = net::accept{ &net, listener } iferr { return 3 }
+    defer net::close{ &net, socket = server }
+    io::println{ &io, s = "accept again: a connection" }
+
+    // receive
+    let mut r: task::Task(!usize)
+    task::start_concurrent{ &threads, task = &r, run = receive_some{ &net, socket = client, _ } } iferr { return 4 }
+    thread::sleep{ &threads, nanoseconds = PAUSE }
+    began = os::now{ &threads }
+    if not stopped(usize){ &threads, r = task::cancel{ &threads, task = &r }, began } { return 4 }
+    io::println{ &io, s = "receive: cancelled within a second" }
+    _ = net::send{ &net, socket = server, bytes = "x" } iferr { return 5 }
+    let x = receive_one{ &net, socket = client } iferr { return 5 }
+    let xs: [1]u8 = [x]
+    _ = @fmt(&io, "receive again: {}\n", xs[..])
+
+    // send, to a peer that doesn't read: it waits once the buffers are full
+    let lots = mem::pages{ &mem, size = LOTS } ifnull { return 6 }
+    let mut s: task::Task(!usize)
+    task::start_concurrent{ &threads, task = &s, run = send_lots{ &net, socket = client, bytes = lots, _ } } iferr { return 6 }
+    thread::sleep{ &threads, nanoseconds = PAUSE }
+    began = os::now{ &threads }
+    if not stopped(usize){ &threads, r = task::cancel{ &threads, task = &s }, began } { return 6 }
+    io::println{ &io, s = "send: cancelled within a second" }
+    _ = net::send{ &net, socket = server, bytes = "y" } iferr { return 7 }
+    let y = receive_one{ &net, socket = client } iferr { return 7 }
+    let ys: [1]u8 = [y]
+    _ = @fmt(&io, "receive after it: {}\n", ys[..])
+
+    // connect, to an address no host answers
+    let mut c: task::Task(!net::Socket)
+    task::start_concurrent{ &threads, task = &c, run = connect_to{ &net, address = "192.0.2.1:9", _ } } iferr { return 8 }
+    if task::wait_for{ &threads, task = &c, nanoseconds = PAUSE } {
+        match task::wait{ &threads, task = &c } {
+            ok => { return 9 }
+            net::unreachable => { io::println{ &io, s = "connect: no route to TEST-NET-1 here" } }
+            else => { return 9 }
+        }
+    } else {
+        began = os::now{ &threads }
+        if not stopped(net::Socket){ &threads, r = task::cancel{ &threads, task = &c }, began } { return 9 }
+        io::println{ &io, s = "connect: cancelled within a second" }
+    }
+    let again = net::connect{ &net, address = at } iferr { return 10 }
+    net::close{ &net, socket = again }
+    io::println{ &io, s = "connect again: connected" }
+    return 0
+}

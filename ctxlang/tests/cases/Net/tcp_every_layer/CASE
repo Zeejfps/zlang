@@ -1,0 +1,66 @@
+// std's net over each platform's layer (std/os/PLATFORM, spec §17). A build checks and lowers
+// only its own layer's socket functions, so main.ctx, which calls every one of net's TCP
+// functions, is built here for each layer from any machine, and the C written for Linux and
+// macOS is compiled as far as C's syntax and types go, without their system headers: the
+// generated C declares each C function itself.
+
+// linux: SOCK_NONBLOCK and SOCK_CLOEXEC on socket and accept4.
+//# $ ctxc build linux.c {std:linux} -- main.ctx
+//# exit: 0
+//# file linux.c has:
+//| CTX_SYMBOL("socket")
+//# file linux.c has:
+//| CTX_SYMBOL("accept4")
+//# file linux.c has:
+//| CTX_SYMBOL("getsockopt")
+//# file linux.c has:
+//| CTX_SYMBOL("poll")
+//# file linux.c lacks:
+//| CTX_SYMBOL("fcntl")
+//# $ cc {cflags} -fsyntax-only -I {home}/ctxc/rt linux.c
+//# exit: 0
+
+// macos: accept, then fcntl and SO_NOSIGPIPE.
+//# $ ctxc build macos.c {std:macos} -- main.ctx
+//# exit: 0
+//# file macos.c has:
+//| CTX_SYMBOL("socket")
+//# file macos.c has:
+//| CTX_SYMBOL("accept")
+//# file macos.c has:
+//| CTX_SYMBOL("fcntl")
+//# file macos.c has:
+//| CTX_SYMBOL("poll")
+//# file macos.c lacks:
+//| CTX_SYMBOL("accept4")
+//# $ cc {cflags} -fsyntax-only -I {home}/ctxc/rt macos.c
+//# exit: 0
+
+// windows: Winsock's overlapped calls, and ws2_32 linked, since a program that takes Net
+// reaches extern fns that take os::Net, which names it.
+//# $ ctxc build windows.c {std:windows} -- main.ctx
+//# exit: 0
+//# file windows.c has:
+//| CTX_SYMBOL("WSASocketW")
+//# file windows.c has:
+//| CTX_SYMBOL("WSAGetOverlappedResult")
+//# $ ctxc ir {std:windows} -- main.ctx
+//# exit: 0
+//# stdout has:
+//| (link "ws2_32" 0 0 [])
+
+// interp: the network stops the run, so none of it is a C function.
+//# $ ctxc build interp.c {std:interp} -- main.ctx
+//# exit: 0
+//# file interp.c lacks:
+//| CTX_SYMBOL("socket")
+
+// A program that takes no Net links no library for it: not Winsock on Windows.
+//# write plain.ctx:
+//| fn main { mut io: Io } {
+//|     io::println{ &io, s = "plain" }
+//| }
+//# $ ctxc ir {std:windows} -- plain.ctx
+//# exit: 0
+//# stdout lacks:
+//| ws2_32

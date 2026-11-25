@@ -1,5 +1,5 @@
-// std: os on Linux and macOS. The platform's layer (spec §17): what io, mem, proc, fs and rt
-// need from the operating system, over the C library and its environ. Every layer declares the
+// std: os on Linux and macOS. The platform's layer (spec §17): what io, mem, proc, fs, net and
+// rt need from the operating system, over the C library and its environ. Every layer declares the
 // same functions; std/os/windows is Windows', and a build compiles one. What differs between
 // Linux and macOS is in namespace sys, std/os/linux or std/os/macos, which a build compiles
 // beside it.
@@ -790,6 +790,276 @@ namespace os {
         if code == sys::ENOTEMPTY { return fs::not_empty }
         if code == 9 { return fs::bad_file }                        // EBADF
         return fs::other{ code = @as(i64, code) }
+    }
+
+    // ---- sockets, for std's net: a Socket's or a Listener's id is its file descriptor.
+    //
+    // Every socket is made non-blocking, and exec closes it: SOCK_NONBLOCK and SOCK_CLOEXEC on
+    // Linux, fcntl on macOS (sys::make_socket, sys::accept_socket). A call that would wait polls
+    // the descriptor with the calling task's cancel object instead (net_ready), so a task asked
+    // to stop fails with task::cancelled, having done nothing. A send never raises SIGPIPE:
+    // Linux sends with MSG_NOSIGNAL, and macOS sets SO_NOSIGPIPE on each socket.
+
+    // What std's Net holds on Linux and macOS: nothing, since sockets are the C library's.
+    capability Net
+
+    #c_symbol{ name = "socket" }
+    extern fn c_socket { mut net: Net, domain: i32, kind: i32, protocol: i32 } -> i32
+    #c_symbol{ name = "connect" }
+    extern fn c_connect { mut net: Net, fd: i32, addr: *SockAddr, size: u32 } -> i32
+    #c_symbol{ name = "bind" }
+    extern fn c_bind { mut net: Net, fd: i32, addr: *SockAddr, size: u32 } -> i32
+    #c_symbol{ name = "listen" }
+    extern fn c_listen { mut net: Net, fd: i32, backlog: i32 } -> i32
+    #c_symbol{ name = "recv" }
+    extern fn c_recv { mut net: Net, fd: i32, buf: *mut u8, count: usize, flags: i32 } -> i64
+    #c_symbol{ name = "send" }
+    extern fn c_send { mut net: Net, fd: i32, buf: *u8, count: usize, flags: i32 } -> i64
+    #c_symbol{ name = "shutdown" }
+    extern fn c_shutdown { mut net: Net, fd: i32, how: i32 } -> i32
+    #c_symbol{ name = "close" }
+    extern fn net_close_fd { mut net: Net, fd: i32 } -> i32
+    extern fn getsockname { mut net: Net, fd: i32, mut addr: SockAddr, mut size: u32 } -> i32
+    extern fn getpeername { mut net: Net, fd: i32, mut addr: SockAddr, mut size: u32 } -> i32
+    extern fn setsockopt { mut net: Net, fd: i32, level: i32, name: i32, value: *i32, size: u32 } -> i32
+    extern fn getsockopt { mut net: Net, fd: i32, level: i32, name: i32, mut value: i32, mut size: u32 } -> i32
+    #c_symbol{ name = "poll" }
+    extern fn poll_net { mut net: Net, fds: *mut PollFd, count: u64, ms: i32 } -> i32
+
+    // A struct sockaddr_storage: room for any socket address, aligned as C's. sockaddr_in and
+    // sockaddr_in6 are written into its bytes: a family (sys::put_family, where Linux and macOS
+    // differ), then the port in network order at 2, and an IPv4 address at 4, or an IPv6 one's
+    // flow label at 4, its address at 8 and its scope at 24, in the host's order.
+    struct SockAddr { words: [16]u64 }
+
+    // An address as a sockaddr, its length, and its family (AF_INET, AF_INET6).
+    struct Endpoint { sa: SockAddr, size: u32, family: i32 }
+
+    // The numbers Linux and macOS share for sockets: IPv4, a stream socket and TCP; IPv6's level
+    // for setsockopt; TCP_NODELAY; shutdown's directions; errno's for too many descriptors.
+    const AF_INET: i32 = 2
+    const SOCK_STREAM: i32 = 1
+    const IPPROTO_TCP: i32 = 6
+    const IPPROTO_IPV6: i32 = 41
+    const TCP_NODELAY: i32 = 1
+    const SHUT_RD: i32 = 0
+    const SHUT_WR: i32 = 1
+    const SHUT_RDWR: i32 = 2
+    const ENFILE: i32 = 23
+    const EMFILE: i32 = 24
+
+    // listen's backlog for the system's most: Linux and macOS cut a larger one to their limit
+    // (net.core.somaxconn, kern.ipc.somaxconn), which C's SOMAXCONN only guesses at.
+    const BACKLOG_MOST: i32 = 2147483647
+
+    fn tcp_connect { mut net: Net, mut cancel: task::Cancel, address: net::Address } -> net::Error!u64 {
+        try task::check{ &cancel }
+        let object = task::get_cancel_object{ &cancel }
+        let to = endpoint_of{ address }
+        let fd = sys::make_socket{ &net, family = to.family }
+        if fd < 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
+        let mut connected = false
+        defer {
+            if not connected { _ = net_close_fd{ &net, fd } }
+        }
+        if c_connect{ &net, fd, addr = &to.sa, size = to.size } != 0 {
+            // A connect that EINTR interrupted goes on without the call, as one in progress does.
+            let e = sys::net_errno{ &net }.*
+            if e != sys::EINPROGRESS and e != EINTR { return net_failed{ code = e } }
+            try net_ready{ &net, fd, events = POLLOUT, object }
+            let mut failure: i32 = 0
+            let mut size: u32 = 4
+            if getsockopt{ &net, fd, level = sys::SOL_SOCKET, name = sys::SO_ERROR, value = &failure, &size } != 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
+            if failure != 0 { return net_failed{ code = failure } }
+        }
+        connected = true
+        return @as(u64, fd)
+    }
+
+    fn tcp_listen { mut net: Net, address: net::Address, backlog: u32 } -> net::Error!u64 {
+        let at = endpoint_of{ address }
+        let fd = sys::make_socket{ &net, family = at.family }
+        if fd < 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
+        let mut listening = false
+        defer {
+            if not listening { _ = net_close_fd{ &net, fd } }
+        }
+        try set_option{ &net, fd, level = sys::SOL_SOCKET, name = sys::SO_REUSEADDR, value = 1 }
+        if address.ip is v6 { try set_option{ &net, fd, level = IPPROTO_IPV6, name = sys::IPV6_V6ONLY, value = 1 } }
+        if c_bind{ &net, fd, addr = &at.sa, size = at.size } != 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
+        let most = if backlog == 0 or backlog > 2147483647 { BACKLOG_MOST } else { @as(i32, backlog) }
+        if c_listen{ &net, fd, backlog = most } != 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
+        listening = true
+        return @as(u64, fd)
+    }
+
+    // Waits for a connection on `listener`, polling it while it has none. `family` is Windows'.
+    fn tcp_accept { mut net: Net, mut cancel: task::Cancel, listener: u64, family: u8 } -> net::Error!u64 {
+        try task::check{ &cancel }
+        let object = task::get_cancel_object{ &cancel }
+        let fd = descriptor{ file = listener } ifnull { return net_failed{ code = EBADF } }
+        while true {
+            let s = sys::accept_socket{ &net, fd }
+            if s >= 0 { return @as(u64, s) }
+            let e = sys::net_errno{ &net }.*
+            if e == sys::EAGAIN {
+                try net_ready{ &net, fd, events = POLLIN, object }
+            } else if e != EINTR and not sys::accept_again{ code = e } {
+                return net_failed{ code = e }
+            }
+        }
+    }
+
+    // Receives at most into.len bytes, which aren't none. Returns how many; 0 once the peer
+    // has finished sending.
+    fn tcp_receive { mut net: Net, mut cancel: task::Cancel, socket: u64, into: []mut u8 } -> net::Error!usize {
+        try task::check{ &cancel }
+        let object = task::get_cancel_object{ &cancel }
+        let fd = descriptor{ file = socket } ifnull { return net_failed{ code = EBADF } }
+        while true {
+            let n = c_recv{ &net, fd, buf = into.ptr, count = into.len, flags = 0 }
+            if n >= 0 { return @as(usize, n) }
+            let e = sys::net_errno{ &net }.*
+            if e == sys::EAGAIN {
+                try net_ready{ &net, fd, events = POLLIN, object }
+            } else if e != EINTR {
+                return net_failed{ code = e }
+            }
+        }
+    }
+
+    // Sends some of `bytes`, which aren't none. Returns how many.
+    fn tcp_send { mut net: Net, mut cancel: task::Cancel, socket: u64, bytes: []u8 } -> net::Error!usize {
+        try task::check{ &cancel }
+        let object = task::get_cancel_object{ &cancel }
+        let fd = descriptor{ file = socket } ifnull { return net_failed{ code = EBADF } }
+        while true {
+            let n = c_send{ &net, fd, buf = bytes.ptr, count = bytes.len, flags = sys::MSG_NOSIGNAL }
+            if n >= 0 { return @as(usize, n) }
+            let e = sys::net_errno{ &net }.*
+            if e == sys::EAGAIN {
+                try net_ready{ &net, fd, events = POLLOUT, object }
+            } else if e != EINTR {
+                return net_failed{ code = e }
+            }
+        }
+    }
+
+    fn tcp_shutdown { mut net: Net, socket: u64, how: net::Shutdown } -> net::Error! {
+        let fd = descriptor{ file = socket } ifnull { return net_failed{ code = EBADF } }
+        let h = match how { send => { SHUT_WR } receive => { SHUT_RD } both => { SHUT_RDWR } }
+        if c_shutdown{ &net, fd, how = h } != 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
+    }
+
+    // Closes a socket or a listener. close's EINTR isn't tried again: the descriptor is gone
+    // whatever close says, on Linux and macOS.
+    fn tcp_close { mut net: Net, socket: u64 } {
+        let fd = descriptor{ file = socket } ifnull { return }
+        _ = net_close_fd{ &net, fd }
+    }
+
+    // The socket's own address, or with `peer` the other end's.
+    fn tcp_get_address { mut net: Net, socket: u64, peer: bool } -> net::Error!net::Address {
+        let fd = descriptor{ file = socket } ifnull { return net_failed{ code = EBADF } }
+        let mut sa = SockAddr{ words = [0; 16] }
+        let mut size: u32 = 128                     // sockaddr_storage's
+        let r = if peer { getpeername{ &net, fd, addr = &sa, &size } } else { getsockname{ &net, fd, addr = &sa, &size } }
+        if r != 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
+        return address_of{ sa }
+    }
+
+    fn tcp_set_no_delay { mut net: Net, socket: u64, on: bool } -> net::Error! {
+        let fd = descriptor{ file = socket } ifnull { return net_failed{ code = EBADF } }
+        try set_option{ &net, fd, level = IPPROTO_TCP, name = TCP_NODELAY, value = if on { 1 } else { 0 } }
+    }
+
+    fn tcp_set_keep_alive { mut net: Net, socket: u64, idle_seconds: u32 } -> net::Error! {
+        let fd = descriptor{ file = socket } ifnull { return net_failed{ code = EBADF } }
+        if idle_seconds == 0 {
+            try set_option{ &net, fd, level = sys::SOL_SOCKET, name = sys::SO_KEEPALIVE, value = 0 }
+            return
+        }
+        let idle = if idle_seconds > 2147483647 { 2147483647 } else { @as(i32, idle_seconds) }
+        try set_option{ &net, fd, level = IPPROTO_TCP, name = sys::KEEPALIVE_IDLE, value = idle }
+        try set_option{ &net, fd, level = sys::SOL_SOCKET, name = sys::SO_KEEPALIVE, value = 1 }
+    }
+
+    // setsockopt of an int option.
+    fn set_option { mut net: Net, fd: i32, level: i32, name: i32, value: i32 } -> net::Error! {
+        if setsockopt{ &net, fd, level, name, value = &value, size = 4 } != 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
+    }
+
+    // Waits until socket fd has `events`, or, with a cancel object (task::get_cancel_object),
+    // until it is signalled: then it fails with task::cancelled. A socket with an error is
+    // ready too, and the call that tries it again gets the error. Evented's loop replaces this.
+    fn net_ready { mut net: Net, fd: i32, events: i16, object: u64 } -> net::Error! {
+        let mut fds: [2]PollFd = [PollFd{ fd, events, revents = 0 }, PollFd{ fd = if object != 0 { @as(i32, object) } else { -1 }, events = POLLIN, revents = 0 }]
+        while true {
+            let r = poll_net{ &net, fds = &fds[0], count = 2, ms = -1 }
+            if r > 0 {
+                if fds[1].revents != 0 { return task::cancelled }
+                return
+            }
+            if r < 0 {
+                let e = sys::net_errno{ &net }.*
+                if e != EINTR { return net_failed{ code = e } }
+            }
+        }
+    }
+
+    // `address` as a sockaddr_in or sockaddr_in6.
+    fn endpoint_of { address: net::Address } -> Endpoint {
+        let mut sa = SockAddr{ words = [0; 16] }
+        let b = @slice(@cast(*mut u8, &sa), @size_of(SockAddr))
+        b[2] = @trunc(u8, address.port >> 8)
+        b[3] = @trunc(u8, address.port)
+        match address.ip {
+            v4{ octets } => {
+                sys::put_family{ b, family = AF_INET, size = 16 }
+                slice::copy(u8){ dst = b[4..8], src = octets[..] }
+                return Endpoint{ sa, size = 16, family = AF_INET }
+            }
+            v6{ octets, scope } => {
+                sys::put_family{ b, family = sys::AF_INET6, size = 28 }
+                slice::copy(u8){ dst = b[8..24], src = octets[..] }
+                @cast(*mut u32, b.ptr + 24).* = scope
+                return Endpoint{ sa, size = 28, family = sys::AF_INET6 }
+            }
+        }
+    }
+
+    // The address in a sockaddr the system wrote.
+    fn address_of { sa: SockAddr } -> net::Error!net::Address {
+        let b = @slice(@cast(*u8, &sa), @size_of(SockAddr))
+        let port = (@as(u16, b[2]) << 8) | @as(u16, b[3])
+        let family = sys::family_of{ b }
+        if family == AF_INET {
+            return net::Address{ ip = net::Ip::v4{ octets = [b[4], b[5], b[6], b[7]] }, port }
+        }
+        if family == sys::AF_INET6 {
+            let mut octets: [16]u8
+            slice::copy(u8){ dst = octets[..], src = b[8..24] }
+            return net::Address{ ip = net::Ip::v6{ octets, scope = @cast(*u32, b.ptr + 24).* }, port }
+        }
+        return net::unsupported_address
+    }
+
+    // The error for errno `code` from a socket call. Linux's and macOS's numbers for sockets
+    // differ, so most are sys's.
+    fn net_failed(T) { code: i32 } -> !T {
+        if code == sys::ECONNREFUSED { return net::refused }
+        if code == sys::ECONNRESET { return net::reset }
+        if code == sys::ECONNABORTED { return net::aborted }
+        if code == EPIPE or code == sys::ENOTCONN { return net::closed }
+        if code == sys::ENETUNREACH or code == sys::EHOSTUNREACH or code == sys::ENETDOWN or code == sys::EHOSTDOWN { return net::unreachable }
+        if code == sys::ETIMEDOUT { return net::timed_out }
+        if code == sys::EADDRINUSE { return net::address_in_use }
+        if code == sys::EADDRNOTAVAIL { return net::address_unavailable }
+        if code == sys::EAFNOSUPPORT { return net::unsupported_address }
+        if code == EACCES or code == EPERM { return net::permission_denied }
+        if code == EMFILE or code == ENFILE or code == sys::ENOBUFS { return net::too_many_open }
+        if code == sys::EMSGSIZE { return net::message_too_large }
+        return net::other{ code = @as(i64, code) }
     }
 
     // ---- threads (std/task.ctx, std/thread.ctx): pthreads

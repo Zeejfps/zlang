@@ -1,6 +1,6 @@
-// std: os on Windows. The platform's layer (spec §17): what io, mem, proc, fs and rt need from
-// the operating system, over the C runtime's _write, _read and exit, and the kernel's own
-// functions. Every layer declares the same functions; std/os/posix is Linux's and macOS's, and a
+// std: os on Windows. The platform's layer (spec §17): what io, mem, proc, fs, net and rt need
+// from the operating system, over the C runtime's _write, _read and exit, the kernel's own
+// functions, and Winsock's for sockets. Every layer declares the same functions; std/os/posix is Linux's and macOS's, and a
 // build compiles one.
 
 namespace os {
@@ -1213,6 +1213,409 @@ namespace os {
 
     fn too_long(T) {} -> !T {
         return fs::other{ code = 206 }                              // ERROR_FILENAME_EXCED_RANGE
+    }
+
+    // ---- sockets, for std's net: Winsock's, ws2_32. A Socket's or a Listener's id is its
+    // SOCKET. A program reaches ws2_32 only through extern fns that take Net, so one that takes
+    // no Net doesn't link it (spec §18, Extern functions, rule 11).
+    //
+    // Every socket is made for overlapped operations, and not inherited by programs proc starts
+    // (WSA_FLAG_OVERLAPPED, WSA_FLAG_NO_HANDLE_INHERIT). connect, accept, receive and send start
+    // one with an event of its own and wait for it in net_finish, with a task's cancel event too:
+    // asked to stop, CancelIoEx cancels that operation alone, and the wait goes on until it has
+    // finished, so its buffer outlives it.
+
+    // What std's Net holds on Windows: Winsock's state. WSAStartup is called, and ConnectEx's and
+    // AcceptEx's addresses looked up (WSAIoctl's SIO_GET_EXTENSION_FUNCTION_POINTER, so that
+    // mswsock isn't linked), the first time a socket is made, behind a once-guard as task::table
+    // makes its table. WSACleanup is never called: the process's end releases Winsock, as it
+    // releases every handle.
+    #c_link{ lib = "ws2_32" }
+    capability Net {
+        static ready: u32,              // WSAStartup and the lookups done: 0, 1 while they run, 2
+        static connect_ex: ?*u8,        // ConnectEx
+        static accept_ex: ?*u8,         // AcceptEx
+    }
+
+    extern fn WSAStartup { mut net: Net, version: u16, mut data: WsaData } -> i32
+    extern fn WSAGetLastError { mut net: Net } -> u32
+    extern fn WSASocketW { mut net: Net, family: i32, kind: i32, protocol: i32, info: ?*u8, group: u32, flags: u32 } -> u64
+    extern fn WSAIoctl { mut net: Net, s: u64, code: u32, input: *Guid, in_size: u32, mut output: ?*u8, out_size: u32, mut returned: u32, overlapped: ?*Overlapped, routine: ?*u8 } -> i32
+    extern fn WSARecv { mut net: Net, s: u64, buffers: *WsaBuf, count: u32, received: ?*mut u32, mut flags: u32, mut overlapped: Overlapped, routine: ?*u8 } -> i32
+    extern fn WSASend { mut net: Net, s: u64, buffers: *WsaBuf, count: u32, sent: ?*mut u32, flags: u32, mut overlapped: Overlapped, routine: ?*u8 } -> i32
+    extern fn WSAGetOverlappedResult { mut net: Net, s: u64, mut overlapped: Overlapped, mut done: u32, wait: i32, mut flags: u32 } -> i32
+    #c_symbol{ name = "bind" }
+    extern fn c_bind { mut net: Net, s: u64, addr: *SockAddr, size: i32 } -> i32
+    #c_symbol{ name = "listen" }
+    extern fn c_listen { mut net: Net, s: u64, backlog: i32 } -> i32
+    #c_symbol{ name = "shutdown" }
+    extern fn c_shutdown { mut net: Net, s: u64, how: i32 } -> i32
+    extern fn closesocket { mut net: Net, s: u64 } -> i32
+    extern fn getsockname { mut net: Net, s: u64, mut addr: SockAddr, mut size: i32 } -> i32
+    extern fn getpeername { mut net: Net, s: u64, mut addr: SockAddr, mut size: i32 } -> i32
+    extern fn setsockopt { mut net: Net, s: u64, level: i32, name: i32, value: ?*u8, size: i32 } -> i32
+    #c_symbol{ name = "CreateEventW" }
+    extern fn net_event { mut net: Net, security: ?*u8, manual: i32, initial: i32, name: ?*u16 } -> u64
+    #c_symbol{ name = "CloseHandle" }
+    extern fn net_close_handle { mut net: Net, handle: u64 } -> i32
+    #c_symbol{ name = "WaitForMultipleObjects" }
+    extern fn net_wait_any { mut net: Net, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
+    #c_symbol{ name = "CancelIoEx" }
+    extern fn net_cancel_io { mut net: Net, file: u64, overlapped: *Overlapped } -> i32
+
+    // ConnectEx and AcceptEx, which Winsock gives the addresses of (start_winsock).
+    type ConnectExFn = extern fn{ mut net: Net, s: u64, addr: *SockAddr, size: i32, data: ?*u8, data_size: u32, sent: ?*mut u32, mut overlapped: Overlapped } -> i32
+    type AcceptExFn = extern fn{ mut net: Net, listener: u64, s: u64, buf: *mut u8, data_size: u32, local_size: u32, remote_size: u32, mut received: u32, mut overlapped: Overlapped } -> i32
+
+    // WSADATA, which WSAStartup fills and nothing here reads: 408 bytes on 64-bit Windows.
+    struct WsaData { bytes: [52]u64 }
+
+    // A GUID, and WSABUF: a buffer of WSARecv's or WSASend's.
+    struct Guid { a: u32, b: u16, c: u16, d: [8]u8 }
+    struct WsaBuf { len: u32, buf: *u8 }
+
+    // AcceptEx's addresses, which it writes after the data it receives (none): room for each
+    // address and the 16 bytes it wants beside one.
+    struct AcceptBuffer { words: [36]u64 }
+
+    const SOCK_STREAM: i32 = 1
+    const IPPROTO_TCP: i32 = 6
+    const IPPROTO_IPV6: i32 = 41
+    const INVALID_SOCKET: u64 = 18446744073709551615
+    const WSA_FLAG_OVERLAPPED: u32 = 0x1
+    const WSA_FLAG_NO_HANDLE_INHERIT: u32 = 0x80
+    const SIO_GET_EXTENSION_FUNCTION_POINTER: u32 = 0xC8000006
+    const WSA_IO_PENDING: u32 = 997
+
+    // setsockopt's: the socket's level and its options; IPv6's IPV6_V6ONLY; TCP's.
+    const SOL_SOCKET: i32 = 0xFFFF
+    const SO_KEEPALIVE: i32 = 0x8
+    const SO_EXCLUSIVEADDRUSE: i32 = -5                 // ~SO_REUSEADDR
+    const SO_UPDATE_ACCEPT_CONTEXT: i32 = 0x700B
+    const SO_UPDATE_CONNECT_CONTEXT: i32 = 0x7010
+    const IPV6_V6ONLY: i32 = 27
+    const TCP_NODELAY: i32 = 1
+    const TCP_KEEPIDLE: i32 = 3
+
+    // listen's backlog for the system's most: Winsock's SOMAXCONN.
+    const BACKLOG_MOST: i32 = 2147483647
+
+    // Calls WSAStartup and looks ConnectEx and AcceptEx up, once in the program's life, before
+    // the first socket is made: the first caller does it while the others wait, and one that
+    // fails leaves it to the next. Winsock's statics are Net's (above).
+    fn start_winsock { mut net: Net } -> net::Error! {
+        while true {
+            let state = @atomic_load_acquire(&net.ready)
+            if state == 2 { return }
+            if state == 0 and @atomic_compare_exchange_acquire_release(&net.ready, 0, 1) == null {
+                let code = begin_winsock{ &net }
+                if code != 0 {
+                    @atomic_store_release(&net.ready, 0)
+                    return net_failed{ code }
+                }
+                @atomic_store_release(&net.ready, 2)
+                return
+            }
+        }
+    }
+
+    // WSAStartup, version 2.2, and the lookups, through a socket made for them: 0, or the error.
+    fn begin_winsock { mut net: Net } -> u32 {
+        let mut data = WsaData{ bytes = [0; 52] }
+        let started = WSAStartup{ &net, version = 0x0202, &data }
+        if started != 0 { return @as(u32, started) }
+        let s = WSASocketW{ &net, family = AF_INET, kind = SOCK_STREAM, protocol = IPPROTO_TCP, info = null, group = 0, flags = WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT }
+        if s == INVALID_SOCKET { return WSAGetLastError{ &net } }
+        defer _ = closesocket{ &net, s }
+        let connect_id = Guid{ a = 0x25A207B9, b = 0xDDF3, c = 0x4660, d = [0x8E, 0xE9, 0x76, 0xE5, 0x8C, 0x74, 0x06, 0x3E] }
+        let accept_id = Guid{ a = 0xB5367DF1, b = 0xCBAC, c = 0x11CF, d = [0x95, 0xCA, 0x00, 0x80, 0x5F, 0x48, 0xA1, 0x92] }
+        let mut connect_ex: ?*u8 = null
+        let mut accept_ex: ?*u8 = null
+        let mut returned: u32 = 0
+        if WSAIoctl{ &net, s, code = SIO_GET_EXTENSION_FUNCTION_POINTER, input = &connect_id, in_size = 16, output = &connect_ex, out_size = 8, &returned, overlapped = null, routine = null } != 0 { return WSAGetLastError{ &net } }
+        if WSAIoctl{ &net, s, code = SIO_GET_EXTENSION_FUNCTION_POINTER, input = &accept_id, in_size = 16, output = &accept_ex, out_size = 8, &returned, overlapped = null, routine = null } != 0 { return WSAGetLastError{ &net } }
+        net.connect_ex = connect_ex
+        net.accept_ex = accept_ex
+        return 0
+    }
+
+    // A TCP socket of `family` (AF_INET, AF_INET6) for overlapped operations, which programs
+    // proc starts don't inherit.
+    fn make_socket { mut net: Net, family: i32 } -> net::Error!u64 {
+        let s = WSASocketW{ &net, family, kind = SOCK_STREAM, protocol = IPPROTO_TCP, info = null, group = 0, flags = WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT }
+        if s == INVALID_SOCKET { return net_failed{ code = WSAGetLastError{ &net } } }
+        return s
+    }
+
+    // Binds to `address`, port 0 for any, then ConnectEx, as the operations below wait, with
+    // SO_UPDATE_CONNECT_CONTEXT once it has connected so that the socket's other calls work.
+    fn tcp_connect { mut net: Net, mut cancel: task::Cancel, address: net::Address } -> net::Error!u64 {
+        try task::check{ &cancel }
+        try start_winsock{ &net }
+        let to = endpoint_of{ address }
+        let s = try make_socket{ &net, family = to.family }
+        let mut connected = false
+        defer {
+            if not connected { _ = closesocket{ &net, s } }
+        }
+        let any = endpoint_of{ address = net::Address{ ip = if to.family == AF_INET6 { net::ANY_V6 } else { net::ANY_V4 }, port = 0 } }
+        if c_bind{ &net, s, addr = &any.sa, size = any.size } != 0 { return net_failed{ code = WSAGetLastError{ &net } } }
+        let connect_ex = @cast(ConnectExFn, net.connect_ex ifnull { return net::other{ code = 0 } })
+        let mut o = try net_overlapped{ &net }
+        defer _ = net_close_handle{ &net, handle = o.event }
+        if connect_ex{ &net, s, addr = &to.sa, size = to.size, data = null, data_size = 0, sent = null, overlapped = &o } == 0 {
+            let e = WSAGetLastError{ &net }
+            if e != WSA_IO_PENDING { return net_failed{ code = e } }
+        }
+        let mut done: u32 = 0
+        let end = net_finish{ &net, &cancel, socket = s, &o, &done }
+        if not end.ok {
+            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::cancelled }
+            return net_failed{ code = end.code }
+        }
+        if setsockopt{ &net, s, level = SOL_SOCKET, name = SO_UPDATE_CONNECT_CONTEXT, value = null, size = 0 } != 0 { return net_failed{ code = WSAGetLastError{ &net } } }
+        connected = true
+        return s
+    }
+
+    fn tcp_listen { mut net: Net, address: net::Address, backlog: u32 } -> net::Error!u64 {
+        try start_winsock{ &net }
+        let at = endpoint_of{ address }
+        let s = try make_socket{ &net, family = at.family }
+        let mut listening = false
+        defer {
+            if not listening { _ = closesocket{ &net, s } }
+        }
+        try set_option{ &net, socket = s, level = SOL_SOCKET, name = SO_EXCLUSIVEADDRUSE, value = 1 }
+        if address.ip is v6 { try set_option{ &net, socket = s, level = IPPROTO_IPV6, name = IPV6_V6ONLY, value = 1 } }
+        if c_bind{ &net, s, addr = &at.sa, size = at.size } != 0 { return net_failed{ code = WSAGetLastError{ &net } } }
+        let most = if backlog == 0 or backlog > 2147483647 { BACKLOG_MOST } else { @as(i32, backlog) }
+        if c_listen{ &net, s, backlog = most } != 0 { return net_failed{ code = WSAGetLastError{ &net } } }
+        listening = true
+        return s
+    }
+
+    // AcceptEx into a socket made for it, of the listener's family, waited for as the operations
+    // below; then SO_UPDATE_ACCEPT_CONTEXT, so that the socket's other calls work. A connection
+    // that ended before it was taken (WSAECONNRESET, or ERROR_NETNAME_DELETED) is `aborted`.
+    fn tcp_accept { mut net: Net, mut cancel: task::Cancel, listener: u64, family: u8 } -> net::Error!u64 {
+        try task::check{ &cancel }
+        try start_winsock{ &net }
+        let s = try make_socket{ &net, family = if family == 6 { AF_INET6 } else { AF_INET } }
+        let mut accepted = false
+        defer {
+            if not accepted { _ = closesocket{ &net, s } }
+        }
+        let accept_ex = @cast(AcceptExFn, net.accept_ex ifnull { return net::other{ code = 0 } })
+        let mut buf = AcceptBuffer{ words = [0; 36] }
+        let mut o = try net_overlapped{ &net }
+        defer _ = net_close_handle{ &net, handle = o.event }
+        let mut received: u32 = 0
+        if accept_ex{ &net, listener, s, buf = @cast(*mut u8, &buf), data_size = 0, local_size = 144, remote_size = 144, &received, overlapped = &o } == 0 {
+            let e = WSAGetLastError{ &net }
+            if e != WSA_IO_PENDING { return accept_failed{ code = e } }
+        }
+        let end = net_finish{ &net, &cancel, socket = listener, &o, done = &received }
+        if not end.ok {
+            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::cancelled }
+            return accept_failed{ code = end.code }
+        }
+        if setsockopt{ &net, s, level = SOL_SOCKET, name = SO_UPDATE_ACCEPT_CONTEXT, value = @cast(*u8, &listener), size = 8 } != 0 { return net_failed{ code = WSAGetLastError{ &net } } }
+        accepted = true
+        return s
+    }
+
+    fn accept_failed(T) { code: u32 } -> !T {
+        if code == 10054 or code == 64 { return net::aborted }
+        return net_failed{ code }
+    }
+
+    // Receives at most into.len bytes, which aren't none, with an overlapped WSARecv. Returns
+    // how many; 0 once the peer has finished sending. Cancelled after it received nothing, it
+    // fails with task::cancelled; one that received something returns it.
+    fn tcp_receive { mut net: Net, mut cancel: task::Cancel, socket: u64, into: []mut u8 } -> net::Error!usize {
+        try task::check{ &cancel }
+        let buf = WsaBuf{ len = @as(u32, @min(into.len, CHUNK)), buf = into.ptr }
+        let mut o = try net_overlapped{ &net }
+        defer _ = net_close_handle{ &net, handle = o.event }
+        let mut flags: u32 = 0
+        if WSARecv{ &net, s = socket, buffers = &buf, count = 1, received = null, &flags, overlapped = &o, routine = null } != 0 {
+            let e = WSAGetLastError{ &net }
+            if e != WSA_IO_PENDING { return net_failed{ code = e } }
+        }
+        let mut done: u32 = 0
+        let end = net_finish{ &net, &cancel, socket, &o, &done }
+        if not end.ok {
+            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::cancelled }
+            return net_failed{ code = end.code }
+        }
+        if end.stopped and done == 0 { return task::cancelled }
+        return @as(usize, done)
+    }
+
+    // Sends some of `bytes`, which aren't none, with an overlapped WSASend. Returns how many.
+    // Cancelled after some of them went, it fails with task::cancelled all the same: the
+    // stream's state is unknown.
+    fn tcp_send { mut net: Net, mut cancel: task::Cancel, socket: u64, bytes: []u8 } -> net::Error!usize {
+        try task::check{ &cancel }
+        let buf = WsaBuf{ len = @as(u32, @min(bytes.len, CHUNK)), buf = bytes.ptr }
+        let mut o = try net_overlapped{ &net }
+        defer _ = net_close_handle{ &net, handle = o.event }
+        if WSASend{ &net, s = socket, buffers = &buf, count = 1, sent = null, flags = 0, overlapped = &o, routine = null } != 0 {
+            let e = WSAGetLastError{ &net }
+            if e != WSA_IO_PENDING { return net_failed{ code = e } }
+        }
+        let mut done: u32 = 0
+        let end = net_finish{ &net, &cancel, socket, &o, &done }
+        if not end.ok {
+            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::cancelled }
+            return net_failed{ code = end.code }
+        }
+        if end.stopped { return task::cancelled }
+        return @as(usize, done)
+    }
+
+    // How an overlapped socket operation ended: WSAGetOverlappedResult's success, whether the
+    // calling task was asked to stop meanwhile, and the error it failed with.
+    struct NetFinish { ok: bool, stopped: bool, code: u32 }
+
+    // Waits for overlapped operation o on `socket` to finish, in a task with its cancel object
+    // too: asked to stop, it cancels this operation alone (CancelIoEx), and waits for it to
+    // finish before its buffer is let go. An operation that completes meanwhile stands. As
+    // `finish` is for pipes; Evented's completion port replaces it.
+    fn net_finish { mut net: Net, mut cancel: task::Cancel, socket: u64, mut o: Overlapped, mut done: u32 } -> NetFinish {
+        let object = task::get_cancel_object{ &cancel }
+        let mut stopped = false
+        if object != 0 {
+            let handles: [2]u64 = [o.event, object]
+            if net_wait_any{ &net, count = 2, handles = &handles[0], all = 0, ms = INFINITE } == WAIT_OBJECT_0 + 1 {
+                _ = net_cancel_io{ &net, file = socket, overlapped = &o }
+                stopped = true
+            }
+        }
+        let mut flags: u32 = 0
+        let ok = WSAGetOverlappedResult{ &net, s = socket, overlapped = &o, &done, wait = 1, &flags } != 0
+        return NetFinish{ ok, stopped, code = if ok { 0 } else { WSAGetLastError{ &net } } }
+    }
+
+    // An OVERLAPPED for one operation, with a manual-reset event of its own, which the caller
+    // closes.
+    fn net_overlapped { mut net: Net } -> net::Error!Overlapped {
+        let event = net_event{ &net, security = null, manual = 1, initial = 0, name = null }
+        if event == 0 { return net::other{ code = 0 } }
+        return Overlapped{ internal = 0, internal_high = 0, offset = 0, offset_high = 0, event }
+    }
+
+    fn tcp_shutdown { mut net: Net, socket: u64, how: net::Shutdown } -> net::Error! {
+        let h: i32 = match how { send => { 1 } receive => { 0 } both => { 2 } }        // SD_SEND, SD_RECEIVE, SD_BOTH
+        if c_shutdown{ &net, s = socket, how = h } != 0 { return net_failed{ code = WSAGetLastError{ &net } } }
+    }
+
+    // Closes a socket or a listener.
+    fn tcp_close { mut net: Net, socket: u64 } {
+        _ = closesocket{ &net, s = socket }
+    }
+
+    // The socket's own address, or with `peer` the other end's.
+    fn tcp_get_address { mut net: Net, socket: u64, peer: bool } -> net::Error!net::Address {
+        let mut sa = SockAddr{ words = [0; 16] }
+        let mut size: i32 = 128                     // SOCKADDR_STORAGE's
+        let r = if peer { getpeername{ &net, s = socket, addr = &sa, &size } } else { getsockname{ &net, s = socket, addr = &sa, &size } }
+        if r != 0 { return net_failed{ code = WSAGetLastError{ &net } } }
+        return address_of{ sa }
+    }
+
+    fn tcp_set_no_delay { mut net: Net, socket: u64, on: bool } -> net::Error! {
+        try set_option{ &net, socket, level = IPPROTO_TCP, name = TCP_NODELAY, value = if on { 1 } else { 0 } }
+    }
+
+    // TCP_KEEPIDLE: Windows 10, version 1709, and later.
+    fn tcp_set_keep_alive { mut net: Net, socket: u64, idle_seconds: u32 } -> net::Error! {
+        if idle_seconds == 0 {
+            try set_option{ &net, socket, level = SOL_SOCKET, name = SO_KEEPALIVE, value = 0 }
+            return
+        }
+        let idle = if idle_seconds > 2147483647 { 2147483647 } else { @as(i32, idle_seconds) }
+        try set_option{ &net, socket, level = IPPROTO_TCP, name = TCP_KEEPIDLE, value = idle }
+        try set_option{ &net, socket, level = SOL_SOCKET, name = SO_KEEPALIVE, value = 1 }
+    }
+
+    // setsockopt of an int option.
+    fn set_option { mut net: Net, socket: u64, level: i32, name: i32, value: i32 } -> net::Error! {
+        if setsockopt{ &net, s = socket, level, name, value = @cast(*u8, &value), size = 4 } != 0 { return net_failed{ code = WSAGetLastError{ &net } } }
+    }
+
+    // A SOCKADDR_STORAGE: room for any socket address, aligned as C's. SOCKADDR_IN and
+    // SOCKADDR_IN6 are written into its bytes as on Linux: the family, a u16, at 0, the port in
+    // network order at 2, and an IPv4 address at 4, or an IPv6 one's flow label at 4, its
+    // address at 8 and its scope at 24, in the host's order.
+    struct SockAddr { words: [16]u64 }
+
+    // An address as a SOCKADDR, its length, and its family.
+    struct Endpoint { sa: SockAddr, size: i32, family: i32 }
+
+    const AF_INET: i32 = 2
+    const AF_INET6: i32 = 23
+
+    // `address` as a SOCKADDR_IN or SOCKADDR_IN6.
+    fn endpoint_of { address: net::Address } -> Endpoint {
+        let mut sa = SockAddr{ words = [0; 16] }
+        let b = @slice(@cast(*mut u8, &sa), @size_of(SockAddr))
+        b[2] = @trunc(u8, address.port >> 8)
+        b[3] = @trunc(u8, address.port)
+        match address.ip {
+            v4{ octets } => {
+                b[0] = @trunc(u8, AF_INET)
+                slice::copy(u8){ dst = b[4..8], src = octets[..] }
+                return Endpoint{ sa, size = 16, family = AF_INET }
+            }
+            v6{ octets, scope } => {
+                b[0] = @trunc(u8, AF_INET6)
+                slice::copy(u8){ dst = b[8..24], src = octets[..] }
+                @cast(*mut u32, b.ptr + 24).* = scope
+                return Endpoint{ sa, size = 28, family = AF_INET6 }
+            }
+        }
+    }
+
+    // The address in a SOCKADDR that Winsock wrote.
+    fn address_of { sa: SockAddr } -> net::Error!net::Address {
+        let b = @slice(@cast(*u8, &sa), @size_of(SockAddr))
+        let port = (@as(u16, b[2]) << 8) | @as(u16, b[3])
+        let family = @as(i32, b[0]) | (@as(i32, b[1]) << 8)
+        if family == AF_INET {
+            return net::Address{ ip = net::Ip::v4{ octets = [b[4], b[5], b[6], b[7]] }, port }
+        }
+        if family == AF_INET6 {
+            let mut octets: [16]u8
+            slice::copy(u8){ dst = octets[..], src = b[8..24] }
+            return net::Address{ ip = net::Ip::v6{ octets, scope = @cast(*u32, b.ptr + 24).* }, port }
+        }
+        return net::unsupported_address
+    }
+
+    // The error for Winsock's `code`, WSAGetLastError's or an overlapped operation's: the WSAE
+    // numbers are Winsock's on every version of Windows.
+    fn net_failed(T) { code: u32 } -> !T {
+        if code == 10061 { return net::refused }                                    // WSAECONNREFUSED
+        if code == 10054 { return net::reset }                                      // WSAECONNRESET
+        if code == 10053 { return net::aborted }                                    // WSAECONNABORTED
+        if code == 10058 or code == 10057 { return net::closed }                    // WSAESHUTDOWN, WSAENOTCONN
+        if code == 10050 or code == 10051 or code == 10064 or code == 10065 { return net::unreachable }   // WSAENETDOWN, WSAENETUNREACH, WSAEHOSTDOWN, WSAEHOSTUNREACH
+        if code == 10060 or code == 10052 { return net::timed_out }                 // WSAETIMEDOUT, WSAENETRESET (keep-alive unanswered)
+        if code == 10048 { return net::address_in_use }                             // WSAEADDRINUSE
+        if code == 10049 { return net::address_unavailable }                        // WSAEADDRNOTAVAIL
+        if code == 10047 { return net::unsupported_address }                        // WSAEAFNOSUPPORT
+        if code == 10013 { return net::permission_denied }                          // WSAEACCES
+        if code == 10024 or code == 10055 { return net::too_many_open }             // WSAEMFILE, WSAENOBUFS
+        if code == 10040 { return net::message_too_large }                          // WSAEMSGSIZE
+        // What an overlapped operation's NTSTATUS becomes where Winsock doesn't map it.
+        if code == 1225 { return net::refused }                                     // ERROR_CONNECTION_REFUSED
+        if code == 64 { return net::reset }                                         // ERROR_NETNAME_DELETED
+        if code == 1236 { return net::aborted }                                     // ERROR_CONNECTION_ABORTED
+        if code == 1231 or code == 1232 { return net::unreachable }                 // ERROR_NETWORK_UNREACHABLE, ERROR_HOST_UNREACHABLE
+        if code == 121 { return net::timed_out }                                    // ERROR_SEM_TIMEOUT
+        return net::other{ code = @as(i64, code) }
     }
 
     // ---- threads (std/task.ctx, std/thread.ctx): kernel32's

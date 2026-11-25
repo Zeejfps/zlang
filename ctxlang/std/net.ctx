@@ -1,6 +1,31 @@
-// std: net. Addresses: IPv4 and IPv6 addresses and ports, read from text and written to it
-// (docs/todo/net.md, Addresses). They are pure, with no capability, so they run in the
-// interpreter and while compiling, where a literal becomes an Address.
+// std: net. The network: TCP over the platform's sockets, and the addresses they connect to
+// (docs/todo/net.md).
+//
+// Every function but the addresses' takes `mut net: Net`. Only `main` receives a `Net`, from
+// the runtime, so a function can reach the network only if its caller passes it down. A
+// program that takes no Net reaches none of this, and links nothing for it: Winsock on Windows.
+//
+//   fn main { mut io: Io, mut net: Net } -> ! {
+//       let socket = try net::connect{ &net, address = "127.0.0.1:7000" }
+//       defer net::close{ &net, socket }
+//       _ = try net::send{ &net, socket, bytes = "hello\n" }
+//       try net::shutdown{ &net, socket, how = net::Shutdown::send }
+//       let mut buf: [4096]u8
+//       while true {
+//           let n = try net::receive{ &net, socket, into = buf[..] }
+//           if n == 0 { return }                              // the peer finished sending
+//           io::write{ &io, to = io::Stream::out, bytes = buf[..n] }
+//       }
+//   }
+//
+// Calls block: `connect`, `accept`, `receive` and `send` wait, and in a task asked to stop they
+// fail with task::cancelled (std/task.ctx), which is how a deadline is put on one. A socket is
+// a number, as a file is, which the program closes once, when no task uses it. A socket may
+// be used by two tasks at once, one receiving and one sending.
+//
+// Addresses: IPv4 and IPv6 addresses and ports, read from text and written to it. They are
+// pure, with no capability, so they run in the interpreter and while compiling, where a
+// literal becomes an Address.
 //
 //   let a: net::Address = "127.0.0.1:8080"                // parsed while compiling (from_literal)
 //   let ip = try net::parse_ip{ text = "fe80::1%3" }
@@ -26,6 +51,12 @@
 // Text written is RFC 5952's: a v6 address in lower case, without leading zeros, and with its
 // longest run of two or more zero groups (the first of equal runs) written `::`. An IPv4-mapped
 // address (::ffff:0:0/96) ends in its dotted IPv4 address, as RFC 5952 §5 writes it.
+
+// Permission to reach the network. It includes what its platform's layer needs for sockets,
+// os::Net (std/os): Winsock's state on Windows, nothing on Linux and macOS, whose sockets are
+// the C library's. task::Cancel lets its blocking calls see a task asked to stop. The layer's
+// capability for TLS, os::Tls, joins it with std's TLS (docs/todo/net.md, Order of work, 9).
+capability Net { ..task::Cancel, ..os::Net }
 
 namespace net {
     // An IP address. A v6 address's `scope` is the interface a link-local address is on (its
@@ -117,6 +148,148 @@ namespace net {
     // its IPv4-mapped v6 one differ.
     fn eq_ip { a: Ip, b: Ip } -> bool {
         return a == b
+    }
+
+    // ---- errors
+
+    // What happened to the connection, not which call failed. Each layer maps its system's
+    // numbers to these in one function.
+    error refused               // nothing listens there (ECONNREFUSED)
+    error reset                 // the peer reset the connection (ECONNRESET)
+    error aborted               // the connection ended before accept took it (ECONNABORTED)
+    error closed                // a send after the peer, or this end's shutdown, closed sending (EPIPE, ENOTCONN)
+    error unreachable           // no route to the network or the host (ENETUNREACH, EHOSTUNREACH, ENETDOWN, EHOSTDOWN)
+    error timed_out             // the system gave up: a connect unanswered, keep-alive unanswered (ETIMEDOUT)
+    error address_in_use        // listen on a port taken (EADDRINUSE)
+    error address_unavailable   // an address that isn't this host's (EADDRNOTAVAIL)
+    error unsupported_address   // IPv6 on a host without it, or the reverse (EAFNOSUPPORT)
+    error permission_denied     // a port below 1024 without privilege, a firewall's refusal (EACCES, EPERM)
+    error too_many_open         // no descriptor or handle left, in the process or the system (EMFILE, ENFILE, ENOBUFS)
+    error message_too_large     // a datagram past what the path allows (EMSGSIZE)
+    error not_found             // a name lookup: the name has no address (EAI_NONAME, WSAHOST_NOT_FOUND)
+    error lookup_failed         // a name lookup: the resolver couldn't say, for now (EAI_AGAIN, WSATRY_AGAIN, EAI_FAIL)
+    error other{ code: i64 }    // the OS's number: errno, an EAI_ code minus 10000, or a WSA code
+
+    // What the platform's layer (std/os) may fail with, on every platform: each of its socket
+    // functions declares this set (spec §8, Errors, rule 14), whichever of it its OS gives, and
+    // every blocking call checks first whether its task is asked to stop (task::check). It is
+    // open, as proc::Error is. A server's accept loop goes on after `aborted`, a client that gave
+    // up while it waited, and pauses after `too_many_open`, rather than return.
+    type Error = error(refused, reset, aborted, closed, unreachable, timed_out, address_in_use,
+                       address_unavailable, unsupported_address, permission_denied, too_many_open,
+                       message_too_large, not_found, lookup_failed, other, bad_address, task::cancelled, ..)
+
+    // ---- TCP
+
+    // A connected TCP socket: a file descriptor, or a Windows SOCKET.
+    struct Socket { id: u64 }
+
+    // A listening TCP socket. `family` is 4 or 6: what Windows' AcceptEx makes its socket of.
+    struct Listener { id: u64, family: u8 }
+
+    // Which direction `shutdown` ends.
+    enum Shutdown: u8 { send, receive, both }
+
+    // Connects to `address`, and waits until it has. TCP_NODELAY is set on the socket (set_no_delay).
+    fn connect { mut net: Net, address: Address } -> !Socket {
+        let socket = Socket{ id = try os::tcp_connect{ &net, cancel = &net, address } }
+        try disable_delay{ &net, socket }
+        return socket
+    }
+
+    // A socket listening on `address`; port 0 takes one the system picks (listener_address says
+    // which). `backlog` is the queue of connections not yet accepted; 0 for the system's most.
+    //
+    // A server restarts while its old connections wait out TIME_WAIT: SO_REUSEADDR on Linux and
+    // macOS, and SO_EXCLUSIVEADDRUSE on Windows, whose SO_REUSEADDR would let another program
+    // take the port. A v6 listener takes IPv6 connections only (IPV6_V6ONLY), on every system,
+    // so a peer's address is never a v4-mapped one; a server for both listens twice.
+    fn listen { mut net: Net, address: Address, backlog: u32 } -> !Listener {
+        let id = try os::tcp_listen{ &net, address, backlog }
+        return Listener{ id, family = if address.ip is v6 { 6 } else { 4 } }
+    }
+
+    // Waits for a connection and returns it, with TCP_NODELAY set.
+    fn accept { mut net: Net, listener: Listener } -> !Socket {
+        let socket = Socket{ id = try os::tcp_accept{ &net, cancel = &net, listener = listener.id, family = listener.family } }
+        try disable_delay{ &net, socket }
+        return socket
+    }
+
+    // Receives at most into.len bytes. Returns how many; 0 once the peer has finished sending
+    // (it shut down its sending side, or closed). It waits until there is something. A receive
+    // of 0 bytes returns 0 at once.
+    //
+    // Cancelled, it received nothing; the socket is still usable, though a protocol over it is
+    // mid-message, so a program normally closes it.
+    fn receive { mut net: Net, socket: Socket, into: []mut u8 } -> !usize {
+        if into.len == 0 { return 0 }
+        return try os::tcp_receive{ &net, cancel = &net, socket = socket.id, into }
+    }
+
+    // Sends all of `bytes`, waiting while the system's buffer is full. Returns bytes.len.
+    // A send to a peer that has gone fails with `closed` or `reset`, and never raises SIGPIPE.
+    //
+    // Cancelled, some of the bytes may have gone, how many unknown: the stream's state is
+    // unknown, and the program closes it.
+    fn send { mut net: Net, socket: Socket, bytes: []u8 } -> !usize {
+        let mut done: usize = 0
+        while done < bytes.len {
+            done = done + try os::tcp_send{ &net, cancel = &net, socket = socket.id, bytes = bytes[done..] }
+        }
+        return done
+    }
+
+    // Ends one direction or both: `send` tells the peer this end has finished (its receive
+    // returns 0), and the socket may still receive. It doesn't block.
+    fn shutdown { mut net: Net, socket: Socket, how: Shutdown } -> ! {
+        try os::tcp_shutdown{ &net, socket = socket.id, how }
+    }
+
+    // Closes the socket. Data already sent still goes. No task may be using it: on Linux and
+    // macOS its number may name another descriptor at once.
+    fn close { mut net: Net, socket: Socket } {
+        os::tcp_close{ &net, socket = socket.id }
+    }
+
+    fn close_listener { mut net: Net, listener: Listener } {
+        os::tcp_close{ &net, socket = listener.id }
+    }
+
+    // This end's address: the system's pick of port, and of address for a socket that connected.
+    fn local_address { mut net: Net, socket: Socket } -> !Address {
+        return try os::tcp_get_address{ &net, socket = socket.id, peer = false }
+    }
+
+    fn listener_address { mut net: Net, listener: Listener } -> !Address {
+        return try os::tcp_get_address{ &net, socket = listener.id, peer = false }
+    }
+
+    // The other end's address.
+    fn peer_address { mut net: Net, socket: Socket } -> !Address {
+        return try os::tcp_get_address{ &net, socket = socket.id, peer = true }
+    }
+
+    // Nagle's algorithm off (true, which connect and accept set) or on. With it on, a message
+    // written as a head and then a body waits for the peer's delayed acknowledgement, 40 to
+    // 200 ms; a program that writes many small pieces buffers them instead.
+    fn set_no_delay { mut net: Net, socket: Socket, on: bool } -> ! {
+        try os::tcp_set_no_delay{ &net, socket = socket.id, on }
+    }
+
+    // TCP keep-alive: probes after `idle_seconds` without traffic, at the system's interval and
+    // count; 0 turns it off. A peer that never answers then fails receive with timed_out. A
+    // time past the system's most fails with `other` (Linux's is 32767 seconds).
+    fn set_keep_alive { mut net: Net, socket: Socket, idle_seconds: u32 } -> ! {
+        try os::tcp_set_keep_alive{ &net, socket = socket.id, idle_seconds }
+    }
+
+    // TCP_NODELAY on a socket connect or accept made, which is closed if it can't be set.
+    fn disable_delay { mut net: Net, socket: Socket } -> ! {
+        os::tcp_set_no_delay{ &net, socket = socket.id, on = true } iferr err{ error } {
+            os::tcp_close{ &net, socket = socket.id }
+            return error
+        }
     }
 
     // ---- reading

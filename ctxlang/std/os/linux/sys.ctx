@@ -360,4 +360,75 @@ namespace sys {
         let mut n: u64 = 0
         _ = event_read{ &threads, fd = @as(i32, event - 1), buf = &n, count = 8 }
     }
+
+    // ---- for os's sockets (std's net)
+
+    #c_symbol{ name = "__errno_location" }
+    extern fn net_errno { mut net: os::Net } -> *mut i32
+    extern fn accept4 { mut net: os::Net, fd: i32, addr: ?*mut os::SockAddr, size: ?*mut u32, flags: i32 } -> i32
+
+    // IPv6's address family; socket's flags for a descriptor that doesn't block and that exec
+    // closes, which accept4 takes too.
+    const AF_INET6: i32 = 10
+    const SOCK_NONBLOCK: i32 = 0x800
+    const SOCK_CLOEXEC: i32 = 0x80000
+
+    // setsockopt's and getsockopt's: the socket's level and its options; IPv6's IPV6_V6ONLY;
+    // TCP's idle time before keep-alive probes, TCP_KEEPIDLE.
+    const SOL_SOCKET: i32 = 1
+    const SO_REUSEADDR: i32 = 2
+    const SO_ERROR: i32 = 4
+    const SO_KEEPALIVE: i32 = 9
+    const IPV6_V6ONLY: i32 = 26
+    const KEEPALIVE_IDLE: i32 = 4
+
+    // send's flag for no SIGPIPE when the peer has gone: it fails with EPIPE instead.
+    const MSG_NOSIGNAL: i32 = 0x4000
+
+    // errno's for sockets.
+    const EINPROGRESS: i32 = 115
+    const ECONNREFUSED: i32 = 111
+    const ECONNRESET: i32 = 104
+    const ECONNABORTED: i32 = 103
+    const ENOTCONN: i32 = 107
+    const ENETDOWN: i32 = 100
+    const ENETUNREACH: i32 = 101
+    const EHOSTDOWN: i32 = 112
+    const EHOSTUNREACH: i32 = 113
+    const EADDRINUSE: i32 = 98
+    const EADDRNOTAVAIL: i32 = 99
+    const EAFNOSUPPORT: i32 = 97
+    const ENOBUFS: i32 = 105
+    const EMSGSIZE: i32 = 90
+    const EPROTO: i32 = 71
+    const ENOPROTOOPT: i32 = 92
+    const ENONET: i32 = 64
+    const EOPNOTSUPP: i32 = 95
+
+    // A TCP socket of `family` that doesn't block and that exec closes; -1 and errno if the
+    // system won't make one.
+    fn make_socket { mut net: os::Net, family: i32 } -> i32 {
+        return os::c_socket{ &net, domain = family, kind = os::SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol = 0 }
+    }
+
+    // A connection that listener fd has, as make_socket makes a socket; -1 and errno without one.
+    fn accept_socket { mut net: os::Net, fd: i32 } -> i32 {
+        return accept4{ &net, fd, addr = null, size = null, flags = SOCK_NONBLOCK | SOCK_CLOEXEC }
+    }
+
+    // Whether accept's error `code` is a network error of the connection it took, which Linux
+    // passes on from accept: accept(2) says to accept again, as after EAGAIN.
+    fn accept_again { code: i32 } -> bool {
+        return code == ENETDOWN or code == EPROTO or code == ENOPROTOOPT or code == EHOSTDOWN or code == ENONET or code == EHOSTUNREACH or code == EOPNOTSUPP or code == ENETUNREACH
+    }
+
+    // A sockaddr's family, sa_family_t, a u16 at its start, for a sockaddr of `size` bytes.
+    fn put_family { b: []mut u8, family: i32, size: u8 } {
+        b[0] = @trunc(u8, family)
+        b[1] = @trunc(u8, family >> 8)
+    }
+
+    fn family_of { b: []u8 } -> i32 {
+        return @as(i32, b[0]) | (@as(i32, b[1]) << 8)
+    }
 }

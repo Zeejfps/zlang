@@ -1,0 +1,16 @@
+// TCP against another implementation of sockets, Python's (docs/todo/net.md, Testing 2): a
+// ctxlang client of a Python echo server, a ctxlang server for a Python client, and a Python
+// server that resets the connection (SO_LINGER of 0, then close), which a receive reports as
+// `reset`. The peer is tests/helpers/net_peer.py, which the program starts as
+// `python net_peer.py MODE ...`, found on PATH; a server peer prints its port first.
+//# needs: python
+//# build program: main.ctx
+//# $ {program} {home}/tests/helpers/net_peer.py
+//# timeout: 120
+//# exit: 0
+//# stdout:
+//| python echoed: from ctxlang
+//| python's server ended: 0
+//| python received: ctxlang got: from python
+//| python's client ended: 0
+//| after python's reset: net::reset

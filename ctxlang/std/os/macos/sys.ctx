@@ -273,4 +273,96 @@ namespace sys {
         let mut buf: [64]u8
         while event_read{ &threads, fd = @as(i32, (event & 0xFFFFFFFF) - 1), buf = &buf[0], count = 64 } > 0 {}
     }
+
+    // ---- for os's sockets (std's net). macOS's socket and accept take no flags, so a socket
+    // is made to not block, to close on exec, and to raise no SIGPIPE by fcntl and setsockopt
+    // after it is made (prepare). A program that another thread forks in between, other than
+    // with proc's spawn, may get it: posix_spawn's POSIX_SPAWN_CLOEXEC_DEFAULT, which spawn
+    // sets, gives a child no descriptor it isn't given.
+
+    #c_symbol{ name = "__error" }
+    extern fn net_errno { mut net: os::Net } -> *mut i32
+    #c_symbol{ name = "accept" }
+    extern fn c_accept { mut net: os::Net, fd: i32, addr: ?*mut os::SockAddr, size: ?*mut u32 } -> i32
+    #c_symbol{ name = "fcntl" }
+    extern fn net_fcntl { mut net: os::Net, fd: i32, cmd: i32, arg: i64, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: i64 } -> i32
+
+    // IPv6's address family.
+    const AF_INET6: i32 = 30
+
+    // setsockopt's and getsockopt's: the socket's level and its options, SO_NOSIGPIPE among
+    // them; IPv6's IPV6_V6ONLY; TCP's idle time before keep-alive probes, which macOS names
+    // TCP_KEEPALIVE.
+    const SOL_SOCKET: i32 = 0xFFFF
+    const SO_REUSEADDR: i32 = 0x4
+    const SO_KEEPALIVE: i32 = 0x8
+    const SO_ERROR: i32 = 0x1007
+    const SO_NOSIGPIPE: i32 = 0x1022
+    const IPV6_V6ONLY: i32 = 27
+    const KEEPALIVE_IDLE: i32 = 0x10
+
+    // send's flags: none, since SO_NOSIGPIPE is set on each socket.
+    const MSG_NOSIGNAL: i32 = 0
+
+    // errno's for sockets.
+    const EINPROGRESS: i32 = 36
+    const ECONNREFUSED: i32 = 61
+    const ECONNRESET: i32 = 54
+    const ECONNABORTED: i32 = 53
+    const ENOTCONN: i32 = 57
+    const ENETDOWN: i32 = 50
+    const ENETUNREACH: i32 = 51
+    const EHOSTDOWN: i32 = 64
+    const EHOSTUNREACH: i32 = 65
+    const EADDRINUSE: i32 = 48
+    const EADDRNOTAVAIL: i32 = 49
+    const EAFNOSUPPORT: i32 = 47
+    const ENOBUFS: i32 = 55
+    const EMSGSIZE: i32 = 40
+    const ETIMEDOUT: i32 = 60
+
+    // A TCP socket of `family` that doesn't block, that exec closes, and that raises no
+    // SIGPIPE; -1 and errno if the system won't make one.
+    fn make_socket { mut net: os::Net, family: i32 } -> i32 {
+        let fd = os::c_socket{ &net, domain = family, kind = os::SOCK_STREAM, protocol = 0 }
+        if fd < 0 { return -1 }
+        return prepare{ &net, fd }
+    }
+
+    // A connection that listener fd has, as make_socket makes a socket; -1 and errno without one.
+    fn accept_socket { mut net: os::Net, fd: i32 } -> i32 {
+        let s = c_accept{ &net, fd, addr = null, size = null }
+        if s < 0 { return -1 }
+        return prepare{ &net, fd = s }
+    }
+
+    // fd made to not block, to close on exec and to raise no SIGPIPE; or closed, and -1 and
+    // errno, if it can't be.
+    fn prepare { mut net: os::Net, fd: i32 } -> i32 {
+        let one: i32 = 1
+        if net_fcntl{ &net, fd, cmd = os::F_SETFD, arg = os::FD_CLOEXEC, r3 = 0, r4 = 0, r5 = 0, r6 = 0, r7 = 0, stacked = os::FD_CLOEXEC } < 0
+            or net_fcntl{ &net, fd, cmd = os::F_SETFL, arg = O_NONBLOCK, r3 = 0, r4 = 0, r5 = 0, r6 = 0, r7 = 0, stacked = O_NONBLOCK } < 0
+            or os::setsockopt{ &net, fd, level = SOL_SOCKET, name = SO_NOSIGPIPE, value = &one, size = 4 } != 0 {
+            let e = net_errno{ &net }.*
+            _ = os::net_close_fd{ &net, fd }
+            net_errno{ &net }.* = e
+            return -1
+        }
+        return fd
+    }
+
+    // macOS's accept passes on no error of the connection it took.
+    fn accept_again { code: i32 } -> bool {
+        return false
+    }
+
+    // A sockaddr's length, sin_len, and its family, sa_family_t, a byte each at its start.
+    fn put_family { b: []mut u8, family: i32, size: u8 } {
+        b[0] = size
+        b[1] = @trunc(u8, family)
+    }
+
+    fn family_of { b: []u8 } -> i32 {
+        return @as(i32, b[1])
+    }
 }

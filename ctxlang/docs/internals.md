@@ -145,7 +145,7 @@ behaves, and why.
 ### Capabilities
 
 `Io`, `Fs`, `Proc` (through `Io`) and `Threads` include `task::Cancel`, whose `#thread_local` static
-`current` is the running task's slot; `Net` will too (net.md). `Threads` is
+`current` is the running task's slot, and so does `Net` (net.md). `Threads` is
 `{ ..os::Threads, ..Mem, ..task::State, ..task::Cancel }`: permission to run tasks, with the
 backend's state, and `Mem` because the table lives in pages. Each is a capability without fields, so
 `main` receives them. Everything a capability std hands out reaches is safe from many threads at
@@ -153,7 +153,8 @@ once: per-thread (`io`'s output buffer), behind a lock, or atomic. Only namespac
 `current`; the platform's layers call `task::check`, `get_cancel_object`, `begin_synchronous` and
 `end_synchronous`, passing the capability they hold. `proc`'s layer functions take `os::Proc`, which
 doesn't include `Io`, so `os::pipe_read`, `pipe_write`, `wait` and `wait_for` take a
-`mut cancel: task::Cancel`, passed as `cancel = &proc`.
+`mut cancel: task::Cancel`, passed as `cancel = &proc`; `net`'s blocking layer functions take
+`os::Net` and one too, passed as `cancel = &net`.
 
 ### Cancellation
 
@@ -272,8 +273,8 @@ What `task::State` holds and does, all of it std over the platform layer's threa
 
 `ctxc interp` runs `start`'s tasks at once, which `start` allows, and `wait` and its kin return at
 once. `start_concurrent`, `start_blocking` and their `_in` forms stop the run as not supported by
-interp: it runs one thread, so it can't keep their promise. Files, standard input and other programs
-are already not supported there, so what the interpreter runs of tasks is code that computes and
+interp: it runs one thread, so it can't keep their promise. Files, standard input, other programs and the
+network are already not supported there, so what the interpreter runs of tasks is code that computes and
 prints; it detects no deadlock beyond what it already stops on (a mutex another thread holds).
 
 ### What a program without tasks pays

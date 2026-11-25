@@ -1571,7 +1571,7 @@ struct t60 { uint32_t tag; union { struct { t6 m_value; } v1; } p; };
 struct t61 { uint32_t tag; union { struct { t54 m_value; } v1; } p; };
 struct t64 { t16 m_kind; t8 m_dir; t6 m_roots; };
 struct t66 { uint32_t tag; union { struct { t13 m_error; } v1; } p; };
-struct t69 { uint32_t tag; union { struct { t15 m_at; } v1; struct { t57 m_code; } v9; struct { t15 m_at; } v10; struct { t57 m_code; } v14; struct { t15 m_at; } v18; } p; };
+struct t69 { uint32_t tag; union { struct { t15 m_at; } v1; struct { t57 m_code; } v9; struct { t15 m_at; } v10; struct { t57 m_code; } v25; struct { t57 m_code; } v29; struct { t15 m_at; } v33; } p; };
 struct t67 { uint32_t tag; union { struct { t0 m_value; } v0; struct { t69 m_error; } v1; } p; };
 struct t68 { uint32_t tag; union { struct { t0 m_value; } v0; struct { t56 m_error; } v1; } p; };
 struct t73 { t304 m_ptr; t15 m_len; };
@@ -2719,8 +2719,9 @@ _Static_assert(sizeof(t69) == 16 && _Alignof(t69) == 8, "layout of t69");
 _Static_assert(offsetof(t69, p.v1.m_at) == 8, "offset in t69");
 _Static_assert(offsetof(t69, p.v9.m_code) == 8, "offset in t69");
 _Static_assert(offsetof(t69, p.v10.m_at) == 8, "offset in t69");
-_Static_assert(offsetof(t69, p.v14.m_code) == 8, "offset in t69");
-_Static_assert(offsetof(t69, p.v18.m_at) == 8, "offset in t69");
+_Static_assert(offsetof(t69, p.v25.m_code) == 8, "offset in t69");
+_Static_assert(offsetof(t69, p.v29.m_code) == 8, "offset in t69");
+_Static_assert(offsetof(t69, p.v33.m_at) == 8, "offset in t69");
 _Static_assert(sizeof(t71) == 40 && _Alignof(t71) == 8, "layout of t71");
 _Static_assert(offsetof(t71, m_items) == 0, "offset in t71");
 _Static_assert(offsetof(t71, m_len) == 16, "offset in t71");
@@ -12919,15 +12920,15 @@ static t0 f_drive__command(CTX_UP t1 l0, t2 l1, t3 l2, t4 l3, t5 l4, t6 l5, t7 l
             _t62 = ((t67){ .tag = 0, .p.v0 = { .m_value = l36, } });
         } } else if ((_t63.tag == 1)) { l37 = _t63.p.v1.m_error; {
             _t62 = ((t67){ .tag = 1, .p.v1 = { .m_error = ({ t69 _t67; t56 _t68 = l37; if ((_t68.tag == 0)) { {
-                _t67 = ((t69){ .tag = 11 });
+                _t67 = ((t69){ .tag = 26 });
             } } else if ((_t68.tag == 1)) { {
-                _t67 = ((t69){ .tag = 12 });
+                _t67 = ((t69){ .tag = 27 });
             } } else if ((_t68.tag == 2)) { {
-                _t67 = ((t69){ .tag = 13 });
+                _t67 = ((t69){ .tag = 28 });
             } } else if ((_t68.tag == 3)) { l38 = _t68.p.v3.m_code; {
-                _t67 = ((t69){ .tag = 14, .p.v14 = { .m_code = l38, } });
+                _t67 = ((t69){ .tag = 29, .p.v29 = { .m_code = l38, } });
             } } else if ((_t68.tag == 4)) { {
-                _t67 = ((t69){ .tag = 15 });
+                _t67 = ((t69){ .tag = 30 });
             } } _t67; }), } });
         } } _t62; }); t8 _t61 = l19; CTX_AT(178, 23); f_drive__started(CTX_ME _t59, _t60, _t61); });
     }
@@ -13044,15 +13045,15 @@ static t0 f_drive__test(CTX_UP t1 l0, t2 l1, t3 l2, t4 l3, t5 l4, t6 l5) {
             _t55 = ((t67){ .tag = 0, .p.v0 = { .m_value = l30, } });
         } } else if ((_t56.tag == 1)) { l31 = _t56.p.v1.m_error; {
             _t55 = ((t67){ .tag = 1, .p.v1 = { .m_error = ({ t69 _t60; t56 _t61 = l31; if ((_t61.tag == 0)) { {
-                _t60 = ((t69){ .tag = 11 });
+                _t60 = ((t69){ .tag = 26 });
             } } else if ((_t61.tag == 1)) { {
-                _t60 = ((t69){ .tag = 12 });
+                _t60 = ((t69){ .tag = 27 });
             } } else if ((_t61.tag == 2)) { {
-                _t60 = ((t69){ .tag = 13 });
+                _t60 = ((t69){ .tag = 28 });
             } } else if ((_t61.tag == 3)) { l32 = _t61.p.v3.m_code; {
-                _t60 = ((t69){ .tag = 14, .p.v14 = { .m_code = l32, } });
+                _t60 = ((t69){ .tag = 29, .p.v29 = { .m_code = l32, } });
             } } else if ((_t61.tag == 4)) { {
-                _t60 = ((t69){ .tag = 15 });
+                _t60 = ((t69){ .tag = 30 });
             } } _t60; }), } });
         } } _t55; }); t8 _t54 = l25; CTX_AT(646, 23); f_drive__started(CTX_ME _t52, _t53, _t54); });
     }
@@ -15801,15 +15802,15 @@ static t19 f_drive__compile(CTX_UP t1 l0, t2 l1, t3 l2, t4 l3, t5 l4, t30 l5, t5
                 } } }
             } } else if ((_t92.tag == 1)) { l65 = _t92.p.v1.m_error; {
                 (void)({ t1 _t105 = (&(*l0)); t67 _t106 = ((t67){ .tag = 1, .p.v1 = { .m_error = ({ t69 _t108; t56 _t109 = l65; if ((_t109.tag == 0)) { {
-                    _t108 = ((t69){ .tag = 11 });
+                    _t108 = ((t69){ .tag = 26 });
                 } } else if ((_t109.tag == 1)) { {
-                    _t108 = ((t69){ .tag = 12 });
+                    _t108 = ((t69){ .tag = 27 });
                 } } else if ((_t109.tag == 2)) { {
-                    _t108 = ((t69){ .tag = 13 });
+                    _t108 = ((t69){ .tag = 28 });
                 } } else if ((_t109.tag == 3)) { l66 = _t109.p.v3.m_code; {
-                    _t108 = ((t69){ .tag = 14, .p.v14 = { .m_code = l66, } });
+                    _t108 = ((t69){ .tag = 29, .p.v29 = { .m_code = l66, } });
                 } } else if ((_t109.tag == 4)) { {
-                    _t108 = ((t69){ .tag = 15 });
+                    _t108 = ((t69){ .tag = 30 });
                 } } _t108; }), } }); t8 _t107 = (*({ t6 _t110 = (((*l6)).m_cc); uint64_t _t111 = ((t15)(0ULL)); _t110.m_ptr + ctx_idx(_t111, _t110.m_len, 1909, 61, &w_drive__compile, CTX_UPV); })); CTX_AT(1909, 32); f_drive__started(CTX_ME _t105, _t106, _t107); });
                 (void)(CTX_AT(1910, 35), f_fs__remove(CTX_ME (&(*l1)), l51));
                 (void)(CTX_AT(1911, 35), f_fs__remove(CTX_ME (&(*l1)), l53));
@@ -16178,9 +16179,9 @@ static t0 f_drive__started(CTX_UP t1 l0, t67 l1, t8 l2) {
         { t67 _t0 = l1; if ((_t0.tag == 0)) { l3 = _t0.p.v0.m_value; {
             return l3;
         } } else if ((_t0.tag == 1)) { l4 = _t0.p.v1.m_error; {
-            { t69 _t1 = l4; if ((_t1.tag == 11)) { {
+            { t69 _t1 = l4; if ((_t1.tag == 26)) { {
                 (CTX_AT(2223, 48), f_cannot(CTX_ME (&(*l0)), l2, ((t17){ .m_bytes = ((t8){ .m_ptr = (void *)"no such program (set CTX_CC for another C compiler)", .m_len = 51 }), })));
-            } } else if ((_t1.tag == 12)) { {
+            } } else if ((_t1.tag == 27)) { {
                 (CTX_AT(2224, 56), f_cannot(CTX_ME (&(*l0)), l2, ((t17){ .m_bytes = ((t8){ .m_ptr = (void *)"permission denied", .m_len = 17 }), })));
             } } else { {
                 (CTX_AT(2225, 37), f_cannot(CTX_ME (&(*l0)), l2, ((t17){ .m_bytes = ((t8){ .m_ptr = (void *)"cannot start", .m_len = 12 }), })));
@@ -16719,24 +16720,54 @@ static t29 f_drive__said(CTX_UP t1 l0, t30 l1, t50 * l2, t85 l3, t8 l4, t8 l5, t
                 } } else if ((_t27.tag == 10)) { {
                     ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::bad_address");
                 } } else if ((_t27.tag == 11)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: proc::not_found");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::refused");
                 } } else if ((_t27.tag == 12)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: proc::permission_denied");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::reset");
                 } } else if ((_t27.tag == 13)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: proc::broken_pipe");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::aborted");
                 } } else if ((_t27.tag == 14)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: proc::other");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::closed");
                 } } else if ((_t27.tag == 15)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: task::cancelled");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::unreachable");
                 } } else if ((_t27.tag == 16)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: task::out_of_resources");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::timed_out");
                 } } else if ((_t27.tag == 17)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: thread::out_of_resources");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::address_in_use");
                 } } else if ((_t27.tag == 18)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::address_unavailable");
                 } } else if ((_t27.tag == 19)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::unsupported_address");
                 } } else if ((_t27.tag == 20)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::permission_denied");
+                } } else if ((_t27.tag == 21)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::too_many_open");
+                } } else if ((_t27.tag == 22)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::message_too_large");
+                } } else if ((_t27.tag == 23)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::not_found");
+                } } else if ((_t27.tag == 24)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::lookup_failed");
+                } } else if ((_t27.tag == 25)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: net::other");
+                } } else if ((_t27.tag == 26)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: proc::not_found");
+                } } else if ((_t27.tag == 27)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: proc::permission_denied");
+                } } else if ((_t27.tag == 28)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: proc::broken_pipe");
+                } } else if ((_t27.tag == 29)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: proc::other");
+                } } else if ((_t27.tag == 30)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: task::cancelled");
+                } } else if ((_t27.tag == 31)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: task::out_of_resources");
+                } } else if ((_t27.tag == 32)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: thread::out_of_resources");
+                } } else if ((_t27.tag == 33)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
+                } } else if ((_t27.tag == 34)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                } } else if ((_t27.tag == 35)) { {
                     ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: eval::halt");
                 } } }
             } } }
@@ -16790,24 +16821,54 @@ static t29 f_drive__said(CTX_UP t1 l0, t30 l1, t50 * l2, t85 l3, t8 l4, t8 l5, t
                     } } else if ((_t44.tag == 10)) { {
                         ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::bad_address");
                     } } else if ((_t44.tag == 11)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: proc::not_found");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::refused");
                     } } else if ((_t44.tag == 12)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: proc::permission_denied");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::reset");
                     } } else if ((_t44.tag == 13)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: proc::broken_pipe");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::aborted");
                     } } else if ((_t44.tag == 14)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: proc::other");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::closed");
                     } } else if ((_t44.tag == 15)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: task::cancelled");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::unreachable");
                     } } else if ((_t44.tag == 16)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: task::out_of_resources");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::timed_out");
                     } } else if ((_t44.tag == 17)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: thread::out_of_resources");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::address_in_use");
                     } } else if ((_t44.tag == 18)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::address_unavailable");
                     } } else if ((_t44.tag == 19)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::unsupported_address");
                     } } else if ((_t44.tag == 20)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::permission_denied");
+                    } } else if ((_t44.tag == 21)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::too_many_open");
+                    } } else if ((_t44.tag == 22)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::message_too_large");
+                    } } else if ((_t44.tag == 23)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::not_found");
+                    } } else if ((_t44.tag == 24)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::lookup_failed");
+                    } } else if ((_t44.tag == 25)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: net::other");
+                    } } else if ((_t44.tag == 26)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: proc::not_found");
+                    } } else if ((_t44.tag == 27)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: proc::permission_denied");
+                    } } else if ((_t44.tag == 28)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: proc::broken_pipe");
+                    } } else if ((_t44.tag == 29)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: proc::other");
+                    } } else if ((_t44.tag == 30)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: task::cancelled");
+                    } } else if ((_t44.tag == 31)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: task::out_of_resources");
+                    } } else if ((_t44.tag == 32)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: thread::out_of_resources");
+                    } } else if ((_t44.tag == 33)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
+                    } } else if ((_t44.tag == 34)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                    } } else if ((_t44.tag == 35)) { {
                         ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: eval::halt");
                     } } }
                 } } }
@@ -16890,24 +16951,54 @@ static t29 f_drive__said(CTX_UP t1 l0, t30 l1, t50 * l2, t85 l3, t8 l4, t8 l5, t
                     } } else if ((_t78.tag == 10)) { {
                         ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::bad_address");
                     } } else if ((_t78.tag == 11)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: proc::not_found");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::refused");
                     } } else if ((_t78.tag == 12)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: proc::permission_denied");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::reset");
                     } } else if ((_t78.tag == 13)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: proc::broken_pipe");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::aborted");
                     } } else if ((_t78.tag == 14)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: proc::other");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::closed");
                     } } else if ((_t78.tag == 15)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: task::cancelled");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::unreachable");
                     } } else if ((_t78.tag == 16)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: task::out_of_resources");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::timed_out");
                     } } else if ((_t78.tag == 17)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: thread::out_of_resources");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::address_in_use");
                     } } else if ((_t78.tag == 18)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::address_unavailable");
                     } } else if ((_t78.tag == 19)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::unsupported_address");
                     } } else if ((_t78.tag == 20)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::permission_denied");
+                    } } else if ((_t78.tag == 21)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::too_many_open");
+                    } } else if ((_t78.tag == 22)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::message_too_large");
+                    } } else if ((_t78.tag == 23)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::not_found");
+                    } } else if ((_t78.tag == 24)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::lookup_failed");
+                    } } else if ((_t78.tag == 25)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: net::other");
+                    } } else if ((_t78.tag == 26)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: proc::not_found");
+                    } } else if ((_t78.tag == 27)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: proc::permission_denied");
+                    } } else if ((_t78.tag == 28)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: proc::broken_pipe");
+                    } } else if ((_t78.tag == 29)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: proc::other");
+                    } } else if ((_t78.tag == 30)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: task::cancelled");
+                    } } else if ((_t78.tag == 31)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: task::out_of_resources");
+                    } } else if ((_t78.tag == 32)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: thread::out_of_resources");
+                    } } else if ((_t78.tag == 33)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
+                    } } else if ((_t78.tag == 34)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                    } } else if ((_t78.tag == 35)) { {
                         ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: eval::halt");
                     } } }
                 } } }
@@ -22336,15 +22427,15 @@ static t0 f_drive__build_program(CTX_UP t1 l0, t2 l1, t3 l2, t4 l3, t5 l4, t30 l
             _t46 = ((t67){ .tag = 0, .p.v0 = { .m_value = l22, } });
         } } else if ((_t47.tag == 1)) { l23 = _t47.p.v1.m_error; {
             _t46 = ((t67){ .tag = 1, .p.v1 = { .m_error = ({ t69 _t51; t56 _t52 = l23; if ((_t52.tag == 0)) { {
-                _t51 = ((t69){ .tag = 11 });
+                _t51 = ((t69){ .tag = 26 });
             } } else if ((_t52.tag == 1)) { {
-                _t51 = ((t69){ .tag = 12 });
+                _t51 = ((t69){ .tag = 27 });
             } } else if ((_t52.tag == 2)) { {
-                _t51 = ((t69){ .tag = 13 });
+                _t51 = ((t69){ .tag = 28 });
             } } else if ((_t52.tag == 3)) { l24 = _t52.p.v3.m_code; {
-                _t51 = ((t69){ .tag = 14, .p.v14 = { .m_code = l24, } });
+                _t51 = ((t69){ .tag = 29, .p.v29 = { .m_code = l24, } });
             } } else if ((_t52.tag == 4)) { {
-                _t51 = ((t69){ .tag = 15 });
+                _t51 = ((t69){ .tag = 30 });
             } } _t51; }), } });
         } } _t46; }); t8 _t45 = l14; CTX_AT(990, 26); f_drive__started(CTX_ME _t43, _t44, _t45); });
         if ((l21 != ((t0)(0ULL)))) {
@@ -22903,15 +22994,15 @@ static t7 f_drive__finish(CTX_UP t1 l0, t2 l1, t4 l2, t50 * l3, t166 * l4) {
             _t3 = ((t67){ .tag = 0, .p.v0 = { .m_value = l7, } });
         } } else if ((_t4.tag == 1)) { l8 = _t4.p.v1.m_error; {
             _t3 = ((t67){ .tag = 1, .p.v1 = { .m_error = ({ t69 _t5; t56 _t6 = l8; if ((_t6.tag == 0)) { {
-                _t5 = ((t69){ .tag = 11 });
+                _t5 = ((t69){ .tag = 26 });
             } } else if ((_t6.tag == 1)) { {
-                _t5 = ((t69){ .tag = 12 });
+                _t5 = ((t69){ .tag = 27 });
             } } else if ((_t6.tag == 2)) { {
-                _t5 = ((t69){ .tag = 13 });
+                _t5 = ((t69){ .tag = 28 });
             } } else if ((_t6.tag == 3)) { l9 = _t6.p.v3.m_code; {
-                _t5 = ((t69){ .tag = 14, .p.v14 = { .m_code = l9, } });
+                _t5 = ((t69){ .tag = 29, .p.v29 = { .m_code = l9, } });
             } } else if ((_t6.tag == 4)) { {
-                _t5 = ((t69){ .tag = 15 });
+                _t5 = ((t69){ .tag = 30 });
             } } _t5; }), } });
         } } _t3; }); t8 _t2 = (*({ t6 _t7 = (((*l3)).m_cc); uint64_t _t8 = ((t15)(0ULL)); _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 1994, 78, &w_drive__finish, CTX_UPV); })); CTX_AT(1994, 27); f_drive__started(CTX_ME _t0, _t1, _t2); });
         if ((l6 != ((t0)(0ULL)))) {
@@ -23291,15 +23382,15 @@ static t7 f_drive__compiled(CTX_UP t1 l0, t4 l1, t50 * l2, t6 l3) {
             _t3 = ((t67){ .tag = 0, .p.v0 = { .m_value = l4, } });
         } } else if ((_t4.tag == 1)) { l5 = _t4.p.v1.m_error; {
             _t3 = ((t67){ .tag = 1, .p.v1 = { .m_error = ({ t69 _t5; t56 _t6 = l5; if ((_t6.tag == 0)) { {
-                _t5 = ((t69){ .tag = 11 });
+                _t5 = ((t69){ .tag = 26 });
             } } else if ((_t6.tag == 1)) { {
-                _t5 = ((t69){ .tag = 12 });
+                _t5 = ((t69){ .tag = 27 });
             } } else if ((_t6.tag == 2)) { {
-                _t5 = ((t69){ .tag = 13 });
+                _t5 = ((t69){ .tag = 28 });
             } } else if ((_t6.tag == 3)) { l6 = _t6.p.v3.m_code; {
-                _t5 = ((t69){ .tag = 14, .p.v14 = { .m_code = l6, } });
+                _t5 = ((t69){ .tag = 29, .p.v29 = { .m_code = l6, } });
             } } else if ((_t6.tag == 4)) { {
-                _t5 = ((t69){ .tag = 15 });
+                _t5 = ((t69){ .tag = 30 });
             } } _t5; }), } });
         } } _t3; }); t8 _t2 = (*({ t6 _t7 = (((*l2)).m_cc); uint64_t _t8 = ((t15)(0ULL)); _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 2210, 83, &w_drive__compiled, CTX_UPV); })); CTX_AT(2210, 19); f_drive__started(CTX_ME _t0, _t1, _t2); }) != ((t0)(0ULL)))) {
             (CTX_AT(2211, 25), f_io__eprintln(CTX_ME (&(*l0)), ((t17){ .m_bytes = ((t8){ .m_ptr = (void *)"ctxc: the C compiler failed", .m_len = 27 }), })));
@@ -24175,24 +24266,54 @@ static t29 f_report__json_place(CTX_UP t81 l0, t185 l1) {
             } } else if ((_t63.tag == 10)) { {
                 ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::bad_address");
             } } else if ((_t63.tag == 11)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: proc::not_found");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::refused");
             } } else if ((_t63.tag == 12)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: proc::permission_denied");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::reset");
             } } else if ((_t63.tag == 13)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: proc::broken_pipe");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::aborted");
             } } else if ((_t63.tag == 14)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: proc::other");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::closed");
             } } else if ((_t63.tag == 15)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: task::cancelled");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::unreachable");
             } } else if ((_t63.tag == 16)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: task::out_of_resources");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::timed_out");
             } } else if ((_t63.tag == 17)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: thread::out_of_resources");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::address_in_use");
             } } else if ((_t63.tag == 18)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::address_unavailable");
             } } else if ((_t63.tag == 19)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::unsupported_address");
             } } else if ((_t63.tag == 20)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::permission_denied");
+            } } else if ((_t63.tag == 21)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::too_many_open");
+            } } else if ((_t63.tag == 22)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::message_too_large");
+            } } else if ((_t63.tag == 23)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::not_found");
+            } } else if ((_t63.tag == 24)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::lookup_failed");
+            } } else if ((_t63.tag == 25)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: net::other");
+            } } else if ((_t63.tag == 26)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: proc::not_found");
+            } } else if ((_t63.tag == 27)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: proc::permission_denied");
+            } } else if ((_t63.tag == 28)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: proc::broken_pipe");
+            } } else if ((_t63.tag == 29)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: proc::other");
+            } } else if ((_t63.tag == 30)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: task::cancelled");
+            } } else if ((_t63.tag == 31)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: task::out_of_resources");
+            } } else if ((_t63.tag == 32)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: thread::out_of_resources");
+            } } else if ((_t63.tag == 33)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: utf8::invalid");
+            } } else if ((_t63.tag == 34)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t63.tag == 35)) { {
                 ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -24476,24 +24597,54 @@ static t29 f_report__json(CTX_UP t81 l0, t74 * l1) {
             } } else if ((_t23.tag == 10)) { {
                 ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::bad_address");
             } } else if ((_t23.tag == 11)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: proc::not_found");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::refused");
             } } else if ((_t23.tag == 12)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: proc::permission_denied");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::reset");
             } } else if ((_t23.tag == 13)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: proc::broken_pipe");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::aborted");
             } } else if ((_t23.tag == 14)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: proc::other");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::closed");
             } } else if ((_t23.tag == 15)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: task::cancelled");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::unreachable");
             } } else if ((_t23.tag == 16)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: task::out_of_resources");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::timed_out");
             } } else if ((_t23.tag == 17)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::address_in_use");
             } } else if ((_t23.tag == 18)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::address_unavailable");
             } } else if ((_t23.tag == 19)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::unsupported_address");
             } } else if ((_t23.tag == 20)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::permission_denied");
+            } } else if ((_t23.tag == 21)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::too_many_open");
+            } } else if ((_t23.tag == 22)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::message_too_large");
+            } } else if ((_t23.tag == 23)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::not_found");
+            } } else if ((_t23.tag == 24)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::lookup_failed");
+            } } else if ((_t23.tag == 25)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: net::other");
+            } } else if ((_t23.tag == 26)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: proc::not_found");
+            } } else if ((_t23.tag == 27)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: proc::permission_denied");
+            } } else if ((_t23.tag == 28)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: proc::broken_pipe");
+            } } else if ((_t23.tag == 29)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: proc::other");
+            } } else if ((_t23.tag == 30)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: task::cancelled");
+            } } else if ((_t23.tag == 31)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: task::out_of_resources");
+            } } else if ((_t23.tag == 32)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
+            } } else if ((_t23.tag == 33)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+            } } else if ((_t23.tag == 34)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t23.tag == 35)) { {
                 ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -24569,24 +24720,54 @@ static t29 f_report__json(CTX_UP t81 l0, t74 * l1) {
                 } } else if ((_t55.tag == 10)) { {
                     ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::bad_address");
                 } } else if ((_t55.tag == 11)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: proc::not_found");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::refused");
                 } } else if ((_t55.tag == 12)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: proc::permission_denied");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::reset");
                 } } else if ((_t55.tag == 13)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: proc::broken_pipe");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::aborted");
                 } } else if ((_t55.tag == 14)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: proc::other");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::closed");
                 } } else if ((_t55.tag == 15)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: task::cancelled");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::unreachable");
                 } } else if ((_t55.tag == 16)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: task::out_of_resources");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::timed_out");
                 } } else if ((_t55.tag == 17)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::address_in_use");
                 } } else if ((_t55.tag == 18)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::address_unavailable");
                 } } else if ((_t55.tag == 19)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::unsupported_address");
                 } } else if ((_t55.tag == 20)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::permission_denied");
+                } } else if ((_t55.tag == 21)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::too_many_open");
+                } } else if ((_t55.tag == 22)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::message_too_large");
+                } } else if ((_t55.tag == 23)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::not_found");
+                } } else if ((_t55.tag == 24)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::lookup_failed");
+                } } else if ((_t55.tag == 25)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: net::other");
+                } } else if ((_t55.tag == 26)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: proc::not_found");
+                } } else if ((_t55.tag == 27)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: proc::permission_denied");
+                } } else if ((_t55.tag == 28)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: proc::broken_pipe");
+                } } else if ((_t55.tag == 29)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: proc::other");
+                } } else if ((_t55.tag == 30)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: task::cancelled");
+                } } else if ((_t55.tag == 31)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: task::out_of_resources");
+                } } else if ((_t55.tag == 32)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
+                } } else if ((_t55.tag == 33)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                } } else if ((_t55.tag == 34)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                } } else if ((_t55.tag == 35)) { {
                     ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: eval::halt");
                 } } }
             } } }
@@ -24692,24 +24873,54 @@ static t29 f_report__json(CTX_UP t81 l0, t74 * l1) {
                 } } else if ((_t103.tag == 10)) { {
                     ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::bad_address");
                 } } else if ((_t103.tag == 11)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: proc::not_found");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::refused");
                 } } else if ((_t103.tag == 12)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: proc::permission_denied");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::reset");
                 } } else if ((_t103.tag == 13)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: proc::broken_pipe");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::aborted");
                 } } else if ((_t103.tag == 14)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: proc::other");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::closed");
                 } } else if ((_t103.tag == 15)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: task::cancelled");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::unreachable");
                 } } else if ((_t103.tag == 16)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: task::out_of_resources");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::timed_out");
                 } } else if ((_t103.tag == 17)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::address_in_use");
                 } } else if ((_t103.tag == 18)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::address_unavailable");
                 } } else if ((_t103.tag == 19)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::unsupported_address");
                 } } else if ((_t103.tag == 20)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::permission_denied");
+                } } else if ((_t103.tag == 21)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::too_many_open");
+                } } else if ((_t103.tag == 22)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::message_too_large");
+                } } else if ((_t103.tag == 23)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::not_found");
+                } } else if ((_t103.tag == 24)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::lookup_failed");
+                } } else if ((_t103.tag == 25)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: net::other");
+                } } else if ((_t103.tag == 26)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: proc::not_found");
+                } } else if ((_t103.tag == 27)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: proc::permission_denied");
+                } } else if ((_t103.tag == 28)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: proc::broken_pipe");
+                } } else if ((_t103.tag == 29)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: proc::other");
+                } } else if ((_t103.tag == 30)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: task::cancelled");
+                } } else if ((_t103.tag == 31)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: task::out_of_resources");
+                } } else if ((_t103.tag == 32)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
+                } } else if ((_t103.tag == 33)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                } } else if ((_t103.tag == 34)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                } } else if ((_t103.tag == 35)) { {
                     ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: eval::halt");
                 } } }
             } } }
@@ -24785,24 +24996,54 @@ static t29 f_report__json(CTX_UP t81 l0, t74 * l1) {
                     } } else if ((_t135.tag == 10)) { {
                         ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::bad_address");
                     } } else if ((_t135.tag == 11)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: proc::not_found");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::refused");
                     } } else if ((_t135.tag == 12)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: proc::permission_denied");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::reset");
                     } } else if ((_t135.tag == 13)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: proc::broken_pipe");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::aborted");
                     } } else if ((_t135.tag == 14)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: proc::other");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::closed");
                     } } else if ((_t135.tag == 15)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: task::cancelled");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::unreachable");
                     } } else if ((_t135.tag == 16)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: task::out_of_resources");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::timed_out");
                     } } else if ((_t135.tag == 17)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::address_in_use");
                     } } else if ((_t135.tag == 18)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::address_unavailable");
                     } } else if ((_t135.tag == 19)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::unsupported_address");
                     } } else if ((_t135.tag == 20)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::permission_denied");
+                    } } else if ((_t135.tag == 21)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::too_many_open");
+                    } } else if ((_t135.tag == 22)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::message_too_large");
+                    } } else if ((_t135.tag == 23)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::not_found");
+                    } } else if ((_t135.tag == 24)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::lookup_failed");
+                    } } else if ((_t135.tag == 25)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: net::other");
+                    } } else if ((_t135.tag == 26)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: proc::not_found");
+                    } } else if ((_t135.tag == 27)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: proc::permission_denied");
+                    } } else if ((_t135.tag == 28)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: proc::broken_pipe");
+                    } } else if ((_t135.tag == 29)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: proc::other");
+                    } } else if ((_t135.tag == 30)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: task::cancelled");
+                    } } else if ((_t135.tag == 31)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: task::out_of_resources");
+                    } } else if ((_t135.tag == 32)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
+                    } } else if ((_t135.tag == 33)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                    } } else if ((_t135.tag == 34)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                    } } else if ((_t135.tag == 35)) { {
                         ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: eval::halt");
                     } } }
                 } } }
@@ -43359,7 +43600,7 @@ static const ctx_where w_os__event_waitable = { "os::event_waitable", 2834000043
 static t9 f_os__event_waitable(CTX_UP t9 l0) {
     CTX_STACK_CHECK();
     {
-        return ctx_sub_u64(((t9)((l0 & ((t9)(4294967295ULL))))), ((t9)(1ULL)), 813, 75, &w_os__event_waitable, CTX_UPV);
+        return ctx_sub_u64(((t9)((l0 & ((t9)(4294967295ULL))))), ((t9)(1ULL)), 1083, 75, &w_os__event_waitable, CTX_UPV);
     }
     __builtin_unreachable();
 }
@@ -46361,24 +46602,54 @@ static t29 f_check__errorf(CTX_UP t196 l0, t209 l1, t664 l2) {
             } } else if ((_t2.tag == 10)) { {
                 ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::bad_address");
             } } else if ((_t2.tag == 11)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: proc::not_found");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::refused");
             } } else if ((_t2.tag == 12)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: proc::permission_denied");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::reset");
             } } else if ((_t2.tag == 13)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: proc::broken_pipe");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::aborted");
             } } else if ((_t2.tag == 14)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: proc::other");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::closed");
             } } else if ((_t2.tag == 15)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: task::cancelled");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::unreachable");
             } } else if ((_t2.tag == 16)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: task::out_of_resources");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::timed_out");
             } } else if ((_t2.tag == 17)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: thread::out_of_resources");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::address_in_use");
             } } else if ((_t2.tag == 18)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::address_unavailable");
             } } else if ((_t2.tag == 19)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::unsupported_address");
             } } else if ((_t2.tag == 20)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::permission_denied");
+            } } else if ((_t2.tag == 21)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::too_many_open");
+            } } else if ((_t2.tag == 22)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::message_too_large");
+            } } else if ((_t2.tag == 23)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::not_found");
+            } } else if ((_t2.tag == 24)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::lookup_failed");
+            } } else if ((_t2.tag == 25)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: net::other");
+            } } else if ((_t2.tag == 26)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: proc::not_found");
+            } } else if ((_t2.tag == 27)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: proc::permission_denied");
+            } } else if ((_t2.tag == 28)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: proc::broken_pipe");
+            } } else if ((_t2.tag == 29)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: proc::other");
+            } } else if ((_t2.tag == 30)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: task::cancelled");
+            } } else if ((_t2.tag == 31)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: task::out_of_resources");
+            } } else if ((_t2.tag == 32)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: thread::out_of_resources");
+            } } else if ((_t2.tag == 33)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: utf8::invalid");
+            } } else if ((_t2.tag == 34)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t2.tag == 35)) { {
                 ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -56582,24 +56853,54 @@ static t29 f_parser__slipf(CTX_UP t216 l0, t209 l1, t664 l2) {
             } } else if ((_t2.tag == 10)) { {
                 ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::bad_address");
             } } else if ((_t2.tag == 11)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: proc::not_found");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::refused");
             } } else if ((_t2.tag == 12)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: proc::permission_denied");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::reset");
             } } else if ((_t2.tag == 13)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: proc::broken_pipe");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::aborted");
             } } else if ((_t2.tag == 14)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: proc::other");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::closed");
             } } else if ((_t2.tag == 15)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: task::cancelled");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::unreachable");
             } } else if ((_t2.tag == 16)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: task::out_of_resources");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::timed_out");
             } } else if ((_t2.tag == 17)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: thread::out_of_resources");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::address_in_use");
             } } else if ((_t2.tag == 18)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::address_unavailable");
             } } else if ((_t2.tag == 19)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::unsupported_address");
             } } else if ((_t2.tag == 20)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::permission_denied");
+            } } else if ((_t2.tag == 21)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::too_many_open");
+            } } else if ((_t2.tag == 22)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::message_too_large");
+            } } else if ((_t2.tag == 23)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::not_found");
+            } } else if ((_t2.tag == 24)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::lookup_failed");
+            } } else if ((_t2.tag == 25)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: net::other");
+            } } else if ((_t2.tag == 26)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: proc::not_found");
+            } } else if ((_t2.tag == 27)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: proc::permission_denied");
+            } } else if ((_t2.tag == 28)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: proc::broken_pipe");
+            } } else if ((_t2.tag == 29)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: proc::other");
+            } } else if ((_t2.tag == 30)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: task::cancelled");
+            } } else if ((_t2.tag == 31)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: task::out_of_resources");
+            } } else if ((_t2.tag == 32)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: thread::out_of_resources");
+            } } else if ((_t2.tag == 33)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: utf8::invalid");
+            } } else if ((_t2.tag == 34)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t2.tag == 35)) { {
                 ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -60617,7 +60918,7 @@ static t29 f_os__mutex_lock(CTX_UP t571 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__mutex_lock);
     {
-        (void)(CTX_AT(933, 64), e1934(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1203, 64), e1934(CTX_ME (&(*l0))));
     }
 }
 
@@ -60627,7 +60928,7 @@ static t29 f_os__mutex_unlock(CTX_UP t571 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__mutex_unlock);
     {
-        (void)(CTX_AT(935, 68), e1935(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1205, 68), e1935(CTX_ME (&(*l0))));
     }
 }
 
@@ -60703,8 +61004,8 @@ static t9 f_os__now(CTX_UP t781 l0) {
     CTX_FRAME(&w_os__now);
     {
         l1 = ((t971){ .m_sec = ((t57)(0ULL)), .m_nsec = ((t57)(0ULL)), });
-        (void)(CTX_AT(818, 26), e1939(CTX_ME (&(*l0)), ((t0)(1ULL)), (&l1)));
-        return ({ t9 _t0 = ctx_mul_u64(((t9)(ctx_as_s((int64_t)((l1).m_sec), 0, INT64_MAX, "u64", 819, 16, &w_os__now, CTX_UPV))), ((t9)(1000000000ULL)), 819, 32, &w_os__now, CTX_UPV); t9 _t1 = ((t9)(ctx_as_s((int64_t)((l1).m_nsec), 0, INT64_MAX, "u64", 819, 47, &w_os__now, CTX_UPV))); ctx_add_u64(_t0, _t1, 819, 45, &w_os__now, CTX_UPV); });
+        (void)(CTX_AT(1088, 26), e1939(CTX_ME (&(*l0)), ((t0)(1ULL)), (&l1)));
+        return ({ t9 _t0 = ctx_mul_u64(((t9)(ctx_as_s((int64_t)((l1).m_sec), 0, INT64_MAX, "u64", 1089, 16, &w_os__now, CTX_UPV))), ((t9)(1000000000ULL)), 1089, 32, &w_os__now, CTX_UPV); t9 _t1 = ((t9)(ctx_as_s((int64_t)((l1).m_nsec), 0, INT64_MAX, "u64", 1089, 47, &w_os__now, CTX_UPV))); ctx_add_u64(_t0, _t1, 1089, 45, &w_os__now, CTX_UPV); });
     }
     __builtin_unreachable();
 }
@@ -60736,7 +61037,7 @@ static t9 f_os__event_make(CTX_UP t781 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__event_make);
     {
-        return (CTX_AT(808, 75), f_sys__event_make(CTX_ME (&(*l0))));
+        return (CTX_AT(1078, 75), f_sys__event_make(CTX_ME (&(*l0))));
     }
     __builtin_unreachable();
 }
@@ -60747,7 +61048,7 @@ static t29 f_os__event_reset(CTX_UP t781 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__event_reset);
     {
-        (CTX_AT(810, 75), f_sys__event_reset(CTX_ME (&(*l0)), l1));
+        (CTX_AT(1080, 75), f_sys__event_reset(CTX_ME (&(*l0)), l1));
     }
 }
 
@@ -69853,24 +70154,54 @@ static t29 f_check__notef(CTX_UP t196 l0, t209 l1, t664 l2) {
             } } else if ((_t2.tag == 10)) { {
                 ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::bad_address");
             } } else if ((_t2.tag == 11)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: proc::not_found");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::refused");
             } } else if ((_t2.tag == 12)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: proc::permission_denied");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::reset");
             } } else if ((_t2.tag == 13)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: proc::broken_pipe");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::aborted");
             } } else if ((_t2.tag == 14)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: proc::other");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::closed");
             } } else if ((_t2.tag == 15)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: task::cancelled");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::unreachable");
             } } else if ((_t2.tag == 16)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: task::out_of_resources");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::timed_out");
             } } else if ((_t2.tag == 17)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: thread::out_of_resources");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::address_in_use");
             } } else if ((_t2.tag == 18)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::address_unavailable");
             } } else if ((_t2.tag == 19)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::unsupported_address");
             } } else if ((_t2.tag == 20)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::permission_denied");
+            } } else if ((_t2.tag == 21)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::too_many_open");
+            } } else if ((_t2.tag == 22)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::message_too_large");
+            } } else if ((_t2.tag == 23)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::not_found");
+            } } else if ((_t2.tag == 24)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::lookup_failed");
+            } } else if ((_t2.tag == 25)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: net::other");
+            } } else if ((_t2.tag == 26)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: proc::not_found");
+            } } else if ((_t2.tag == 27)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: proc::permission_denied");
+            } } else if ((_t2.tag == 28)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: proc::broken_pipe");
+            } } else if ((_t2.tag == 29)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: proc::other");
+            } } else if ((_t2.tag == 30)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: task::cancelled");
+            } } else if ((_t2.tag == 31)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: task::out_of_resources");
+            } } else if ((_t2.tag == 32)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: thread::out_of_resources");
+            } } else if ((_t2.tag == 33)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: utf8::invalid");
+            } } else if ((_t2.tag == 34)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t2.tag == 35)) { {
                 ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -71513,24 +71844,54 @@ static t883 f_eval__at_w(CTX_UP t424 l0, t9 l1, t9 l2) {
                 } } else if ((_t19.tag == 10)) { {
                     ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::bad_address");
                 } } else if ((_t19.tag == 11)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: proc::not_found");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::refused");
                 } } else if ((_t19.tag == 12)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: proc::permission_denied");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::reset");
                 } } else if ((_t19.tag == 13)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: proc::broken_pipe");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::aborted");
                 } } else if ((_t19.tag == 14)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: proc::other");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::closed");
                 } } else if ((_t19.tag == 15)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: task::cancelled");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::unreachable");
                 } } else if ((_t19.tag == 16)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: task::out_of_resources");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::timed_out");
                 } } else if ((_t19.tag == 17)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: thread::out_of_resources");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::address_in_use");
                 } } else if ((_t19.tag == 18)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: utf8::invalid");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::address_unavailable");
                 } } else if ((_t19.tag == 19)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: eval::leave");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::unsupported_address");
                 } } else if ((_t19.tag == 20)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::permission_denied");
+                } } else if ((_t19.tag == 21)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::too_many_open");
+                } } else if ((_t19.tag == 22)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::message_too_large");
+                } } else if ((_t19.tag == 23)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::not_found");
+                } } else if ((_t19.tag == 24)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::lookup_failed");
+                } } else if ((_t19.tag == 25)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: net::other");
+                } } else if ((_t19.tag == 26)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: proc::not_found");
+                } } else if ((_t19.tag == 27)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: proc::permission_denied");
+                } } else if ((_t19.tag == 28)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: proc::broken_pipe");
+                } } else if ((_t19.tag == 29)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: proc::other");
+                } } else if ((_t19.tag == 30)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: task::cancelled");
+                } } else if ((_t19.tag == 31)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: task::out_of_resources");
+                } } else if ((_t19.tag == 32)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: thread::out_of_resources");
+                } } else if ((_t19.tag == 33)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: utf8::invalid");
+                } } else if ((_t19.tag == 34)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: eval::leave");
+                } } else if ((_t19.tag == 35)) { {
                     ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: eval::halt");
                 } } }
             } } }
@@ -71751,24 +72112,54 @@ static t883 f_eval__at(CTX_UP t424 l0, t9 l1, t9 l2) {
             } } else if ((_t36.tag == 10)) { {
                 ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::bad_address");
             } } else if ((_t36.tag == 11)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: proc::not_found");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::refused");
             } } else if ((_t36.tag == 12)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: proc::permission_denied");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::reset");
             } } else if ((_t36.tag == 13)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: proc::broken_pipe");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::aborted");
             } } else if ((_t36.tag == 14)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: proc::other");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::closed");
             } } else if ((_t36.tag == 15)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: task::cancelled");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::unreachable");
             } } else if ((_t36.tag == 16)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: task::out_of_resources");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::timed_out");
             } } else if ((_t36.tag == 17)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: thread::out_of_resources");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::address_in_use");
             } } else if ((_t36.tag == 18)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::address_unavailable");
             } } else if ((_t36.tag == 19)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::unsupported_address");
             } } else if ((_t36.tag == 20)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::permission_denied");
+            } } else if ((_t36.tag == 21)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::too_many_open");
+            } } else if ((_t36.tag == 22)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::message_too_large");
+            } } else if ((_t36.tag == 23)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::not_found");
+            } } else if ((_t36.tag == 24)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::lookup_failed");
+            } } else if ((_t36.tag == 25)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: net::other");
+            } } else if ((_t36.tag == 26)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: proc::not_found");
+            } } else if ((_t36.tag == 27)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: proc::permission_denied");
+            } } else if ((_t36.tag == 28)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: proc::broken_pipe");
+            } } else if ((_t36.tag == 29)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: proc::other");
+            } } else if ((_t36.tag == 30)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: task::cancelled");
+            } } else if ((_t36.tag == 31)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: task::out_of_resources");
+            } } else if ((_t36.tag == 32)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: thread::out_of_resources");
+            } } else if ((_t36.tag == 33)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: utf8::invalid");
+            } } else if ((_t36.tag == 34)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t36.tag == 35)) { {
                 ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -75496,24 +75887,54 @@ static t29 f_parser__failf_at(CTX_UP t216 l0, t664 l1, t210 l2) {
             } } else if ((_t2.tag == 10)) { {
                 ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::bad_address");
             } } else if ((_t2.tag == 11)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: proc::not_found");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::refused");
             } } else if ((_t2.tag == 12)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: proc::permission_denied");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::reset");
             } } else if ((_t2.tag == 13)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: proc::broken_pipe");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::aborted");
             } } else if ((_t2.tag == 14)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: proc::other");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::closed");
             } } else if ((_t2.tag == 15)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: task::cancelled");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::unreachable");
             } } else if ((_t2.tag == 16)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: task::out_of_resources");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::timed_out");
             } } else if ((_t2.tag == 17)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: thread::out_of_resources");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::address_in_use");
             } } else if ((_t2.tag == 18)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::address_unavailable");
             } } else if ((_t2.tag == 19)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::unsupported_address");
             } } else if ((_t2.tag == 20)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::permission_denied");
+            } } else if ((_t2.tag == 21)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::too_many_open");
+            } } else if ((_t2.tag == 22)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::message_too_large");
+            } } else if ((_t2.tag == 23)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::not_found");
+            } } else if ((_t2.tag == 24)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::lookup_failed");
+            } } else if ((_t2.tag == 25)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: net::other");
+            } } else if ((_t2.tag == 26)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: proc::not_found");
+            } } else if ((_t2.tag == 27)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: proc::permission_denied");
+            } } else if ((_t2.tag == 28)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: proc::broken_pipe");
+            } } else if ((_t2.tag == 29)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: proc::other");
+            } } else if ((_t2.tag == 30)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: task::cancelled");
+            } } else if ((_t2.tag == 31)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: task::out_of_resources");
+            } } else if ((_t2.tag == 32)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: thread::out_of_resources");
+            } } else if ((_t2.tag == 33)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: utf8::invalid");
+            } } else if ((_t2.tag == 34)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t2.tag == 35)) { {
                 ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -79157,7 +79578,7 @@ static t29 f_os__event_signal(CTX_UP t781 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__event_signal);
     {
-        (CTX_AT(809, 77), f_sys__event_signal(CTX_ME (&(*l0)), l1));
+        (CTX_AT(1079, 77), f_sys__event_signal(CTX_ME (&(*l0)), l1));
     }
 }
 
@@ -79202,17 +79623,17 @@ static t7 f_os__condition_wait_for(CTX_UP t781 l0, t783 l1, t571 l2, t9 l3) {
     CTX_FRAME(&w_os__condition_wait_for);
     {
         l4 = ((t971){ .m_sec = ((t57)(0ULL)), .m_nsec = ((t57)(0ULL)), });
-        (void)(CTX_AT(947, 26), e1939(CTX_ME (&(*l0)), ((t0)(0ULL)), (&l4)));
-        l5 = ({ t9 _t0 = ((t9)(ctx_as_s((int64_t)((l4).m_nsec), 0, INT64_MAX, "u64", 948, 18, &w_os__condition_wait_for, CTX_UPV))); t9 _t1 = ctx_rem_u64(l3, ((t9)(1000000000ULL)), 948, 51, &w_os__condition_wait_for, CTX_UPV); ctx_add_u64(_t0, _t1, 948, 37, &w_os__condition_wait_for, CTX_UPV); });
-        l6 = ({ t9 _t2 = ctx_div_u64(l3, ((t9)(1000000000ULL)), 949, 32, &w_os__condition_wait_for, CTX_UPV); t9 _t3 = ctx_div_u64(l5, ((t9)(1000000000ULL)), 949, 50, &w_os__condition_wait_for, CTX_UPV); ctx_add_u64(_t2, _t3, 949, 45, &w_os__condition_wait_for, CTX_UPV); });
+        (void)(CTX_AT(1217, 26), e1939(CTX_ME (&(*l0)), ((t0)(0ULL)), (&l4)));
+        l5 = ({ t9 _t0 = ((t9)(ctx_as_s((int64_t)((l4).m_nsec), 0, INT64_MAX, "u64", 1218, 18, &w_os__condition_wait_for, CTX_UPV))); t9 _t1 = ctx_rem_u64(l3, ((t9)(1000000000ULL)), 1218, 51, &w_os__condition_wait_for, CTX_UPV); ctx_add_u64(_t0, _t1, 1218, 37, &w_os__condition_wait_for, CTX_UPV); });
+        l6 = ({ t9 _t2 = ctx_div_u64(l3, ((t9)(1000000000ULL)), 1219, 32, &w_os__condition_wait_for, CTX_UPV); t9 _t3 = ctx_div_u64(l5, ((t9)(1000000000ULL)), 1219, 50, &w_os__condition_wait_for, CTX_UPV); ctx_add_u64(_t2, _t3, 1219, 45, &w_os__condition_wait_for, CTX_UPV); });
         l7 = ((t9)(9223372036854775807ULL));
-        l8 = ({ t9 _t4; if (({ t9 _t5 = l6; t9 _t6 = ({ t9 _t7 = l7; t9 _t8 = ((t9)(ctx_as_s((int64_t)((l4).m_sec), 0, INT64_MAX, "u64", 951, 35, &w_os__condition_wait_for, CTX_UPV))); ctx_sub_u64(_t7, _t8, 951, 33, &w_os__condition_wait_for, CTX_UPV); }); (_t5 > _t6); })) {
+        l8 = ({ t9 _t4; if (({ t9 _t5 = l6; t9 _t6 = ({ t9 _t7 = l7; t9 _t8 = ((t9)(ctx_as_s((int64_t)((l4).m_sec), 0, INT64_MAX, "u64", 1221, 35, &w_os__condition_wait_for, CTX_UPV))); ctx_sub_u64(_t7, _t8, 1221, 33, &w_os__condition_wait_for, CTX_UPV); }); (_t5 > _t6); })) {
             _t4 = l7;
         } else {
-            _t4 = ({ t9 _t9 = ((t9)(ctx_as_s((int64_t)((l4).m_sec), 0, INT64_MAX, "u64", 951, 68, &w_os__condition_wait_for, CTX_UPV))); t9 _t10 = l6; ctx_add_u64(_t9, _t10, 951, 86, &w_os__condition_wait_for, CTX_UPV); });
+            _t4 = ({ t9 _t9 = ((t9)(ctx_as_s((int64_t)((l4).m_sec), 0, INT64_MAX, "u64", 1221, 68, &w_os__condition_wait_for, CTX_UPV))); t9 _t10 = l6; ctx_add_u64(_t9, _t10, 1221, 86, &w_os__condition_wait_for, CTX_UPV); });
         } _t4; });
-        l9 = ({ t57 _t11 = ((t57)(ctx_as_u((uint64_t)(l8), INT64_MAX, "i64", 952, 37, &w_os__condition_wait_for, CTX_UPV))); t57 _t12 = ((t57)(ctx_as_u((uint64_t)(ctx_rem_u64(l5, ((t9)(1000000000ULL)), 952, 71, &w_os__condition_wait_for, CTX_UPV)), INT64_MAX, "i64", 952, 59, &w_os__condition_wait_for, CTX_UPV))); ((t971){ .m_sec = _t11, .m_nsec = _t12, }); });
-        return ((CTX_AT(953, 38), e2536(CTX_ME (&(*l0)), (&(*l1)), (&(*l2)), (&l9))) == ((t0)(0ULL)));
+        l9 = ({ t57 _t11 = ((t57)(ctx_as_u((uint64_t)(l8), INT64_MAX, "i64", 1222, 37, &w_os__condition_wait_for, CTX_UPV))); t57 _t12 = ((t57)(ctx_as_u((uint64_t)(ctx_rem_u64(l5, ((t9)(1000000000ULL)), 1222, 71, &w_os__condition_wait_for, CTX_UPV)), INT64_MAX, "i64", 1222, 59, &w_os__condition_wait_for, CTX_UPV))); ((t971){ .m_sec = _t11, .m_nsec = _t12, }); });
+        return ((CTX_AT(1223, 38), e2536(CTX_ME (&(*l0)), (&(*l1)), (&(*l2)), (&l9))) == ((t0)(0ULL)));
     }
     __builtin_unreachable();
 }
@@ -79223,7 +79644,7 @@ static t29 f_os__condition_wait(CTX_UP t783 l0, t571 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_wait);
     {
-        (void)(CTX_AT(941, 30), e2537(CTX_ME (&(*l0)), (&(*l1))));
+        (void)(CTX_AT(1211, 30), e2537(CTX_ME (&(*l0)), (&(*l1))));
     }
 }
 
@@ -79261,7 +79682,7 @@ static t29 f_os__condition_signal(CTX_UP t783 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_signal);
     {
-        (void)(CTX_AT(956, 79), e2540(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1226, 79), e2540(CTX_ME (&(*l0))));
     }
 }
 
@@ -79275,30 +79696,30 @@ static t97 f_os__thread_create(CTX_UP t781 l0, t43 l1, t15 l2) {
     CTX_FRAME(&w_os__thread_create);
     {
         l3 = ((t1083){ .m_bytes = ({ t9 _t0 = ((t9)(0ULL)); t1084 _t1; for (uint64_t _i = 0; _i < 8; _i++) _t1.a[_i] = _t0; _t1; }), });
-        if (((CTX_AT(867, 29), e2541(CTX_ME (&(*l0)), (&l3))) != ((t0)(0ULL)))) {
+        if (((CTX_AT(1137, 29), e2541(CTX_ME (&(*l0)), (&l3))) != ((t0)(0ULL)))) {
             return ((t97){0});
         }
         /* defer */
-        l4 = ctx_mul_u64(ctx_div_u64(ctx_add_u64(l2, ((t15)(65535ULL)), 869, 32, &w_os__thread_create, CTX_UPV), ((t15)(65536ULL)), 869, 41, &w_os__thread_create, CTX_UPV), ((t15)(65536ULL)), 869, 49, &w_os__thread_create, CTX_UPV);
-        if (((CTX_AT(870, 37), e2542(CTX_ME (&(*l0)), (&l3), l4)) != ((t0)(0ULL)))) {
+        l4 = ctx_mul_u64(ctx_div_u64(ctx_add_u64(l2, ((t15)(65535ULL)), 1139, 32, &w_os__thread_create, CTX_UPV), ((t15)(65536ULL)), 1139, 41, &w_os__thread_create, CTX_UPV), ((t15)(65536ULL)), 1139, 49, &w_os__thread_create, CTX_UPV);
+        if (((CTX_AT(1140, 37), e2542(CTX_ME (&(*l0)), (&l3), l4)) != ((t0)(0ULL)))) {
             { t97 _t2 = ((t97){0});
             {
-                (void)(CTX_AT(868, 39), e2543(CTX_ME (&(*l0)), (&l3)));
+                (void)(CTX_AT(1138, 39), e2543(CTX_ME (&(*l0)), (&l3)));
             } return _t2; }
         }
         l5 = ((t9)(0ULL));
-        if (((CTX_AT(872, 26), e2544(CTX_ME (&(*l0)), (&l5), (&l3), k_os__thread_entry, l1)) != ((t0)(0ULL)))) {
+        if (((CTX_AT(1142, 26), e2544(CTX_ME (&(*l0)), (&l5), (&l3), k_os__thread_entry, l1)) != ((t0)(0ULL)))) {
             { t97 _t3 = ((t97){0});
             {
-                (void)(CTX_AT(868, 39), e2543(CTX_ME (&(*l0)), (&l3)));
+                (void)(CTX_AT(1138, 39), e2543(CTX_ME (&(*l0)), (&l3)));
             } return _t3; }
         }
         { t97 _t4 = ((t97){ .tag = 1, .p.v1.m_value = l5 });
         {
-            (void)(CTX_AT(868, 39), e2543(CTX_ME (&(*l0)), (&l3)));
+            (void)(CTX_AT(1138, 39), e2543(CTX_ME (&(*l0)), (&l3)));
         } return _t4; }
         {
-            (void)(CTX_AT(868, 39), e2543(CTX_ME (&(*l0)), (&l3)));
+            (void)(CTX_AT(1138, 39), e2543(CTX_ME (&(*l0)), (&l3)));
         }
     }
     __builtin_unreachable();
@@ -79310,7 +79731,7 @@ static t29 f_os__thread_yield(CTX_UP t781 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_yield);
     {
-        (void)(CTX_AT(892, 24), e2545(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1162, 24), e2545(CTX_ME (&(*l0))));
     }
 }
 
@@ -79320,7 +79741,7 @@ static t29 f_os__thread_detach(CTX_UP t781 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_detach);
     {
-        (void)(CTX_AT(878, 27), e2546(CTX_ME (&(*l0)), l1));
+        (void)(CTX_AT(1148, 27), e2546(CTX_ME (&(*l0)), l1));
     }
 }
 
@@ -94120,24 +94541,54 @@ static t29 f_decls__quote(CTX_UP t81 l0, t8 l1) {
                     } } else if ((_t17.tag == 10)) { {
                         ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::bad_address");
                     } } else if ((_t17.tag == 11)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: proc::not_found");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::refused");
                     } } else if ((_t17.tag == 12)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: proc::permission_denied");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::reset");
                     } } else if ((_t17.tag == 13)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: proc::broken_pipe");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::aborted");
                     } } else if ((_t17.tag == 14)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: proc::other");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::closed");
                     } } else if ((_t17.tag == 15)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: task::cancelled");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::unreachable");
                     } } else if ((_t17.tag == 16)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: task::out_of_resources");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::timed_out");
                     } } else if ((_t17.tag == 17)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: thread::out_of_resources");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::address_in_use");
                     } } else if ((_t17.tag == 18)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: utf8::invalid");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::address_unavailable");
                     } } else if ((_t17.tag == 19)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: eval::leave");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::unsupported_address");
                     } } else if ((_t17.tag == 20)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::permission_denied");
+                    } } else if ((_t17.tag == 21)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::too_many_open");
+                    } } else if ((_t17.tag == 22)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::message_too_large");
+                    } } else if ((_t17.tag == 23)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::not_found");
+                    } } else if ((_t17.tag == 24)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::lookup_failed");
+                    } } else if ((_t17.tag == 25)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: net::other");
+                    } } else if ((_t17.tag == 26)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: proc::not_found");
+                    } } else if ((_t17.tag == 27)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: proc::permission_denied");
+                    } } else if ((_t17.tag == 28)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: proc::broken_pipe");
+                    } } else if ((_t17.tag == 29)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: proc::other");
+                    } } else if ((_t17.tag == 30)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: task::cancelled");
+                    } } else if ((_t17.tag == 31)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: task::out_of_resources");
+                    } } else if ((_t17.tag == 32)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: thread::out_of_resources");
+                    } } else if ((_t17.tag == 33)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: utf8::invalid");
+                    } } else if ((_t17.tag == 34)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: eval::leave");
+                    } } else if ((_t17.tag == 35)) { {
                         ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: eval::halt");
                     } } }
                 } } }
@@ -98808,7 +99259,7 @@ static t29 f_os__condition_broadcast(CTX_UP t783 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_broadcast);
     {
-        (void)(CTX_AT(957, 85), e2973(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1227, 85), e2973(CTX_ME (&(*l0))));
     }
 }
 
@@ -98849,7 +99300,7 @@ static t114 f_os__thread_entry(CTX_UP t43 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_entry);
     {
-        (CTX_AT(859, 22), f_thread__entry(CTX_ME l0));
+        (CTX_AT(1129, 22), f_thread__entry(CTX_ME l0));
         return ((t114)(0));
     }
     __builtin_unreachable();
@@ -141707,8 +142158,8 @@ static t29 f_os__thread_name(CTX_UP t781 l0, t8 l1) {
         } else {
             _t2 = (l1).m_len;
         } _t2; });
-        ({ t8 _t3 = ({ t8 _t5 = (((t8){ .m_ptr = ((t43)((&l2))), .m_len = ((t15)(64ULL)), })); uint64_t _t6 = ((t15)(0ULL)); uint64_t _t7 = l3; ctx_range(_t6, _t7, _t5.m_len, 904, 35, &w_os__thread_name, CTX_UPV); (t8){ .m_ptr = _t5.m_ptr + _t6, .m_len = _t7 - _t6 }; }); t8 _t4 = ({ t8 _t8 = (l1); uint64_t _t9 = ((t15)(0ULL)); uint64_t _t10 = l3; ctx_range(_t9, _t10, _t8.m_len, 904, 52, &w_os__thread_name, CTX_UPV); (t8){ .m_ptr = _t8.m_ptr + _t9, .m_len = _t10 - _t9 }; }); CTX_AT(904, 24); f_slice__copyu8_aae5a9c4(CTX_ME _t3, _t4); });
-        ({ t781 _t11 = (&(*l0)); t43 _t12 = (&(l2).a[ctx_idx(((t15)(0ULL)), 64, 905, 52, &w_os__thread_name, CTX_UPV)]); CTX_AT(905, 29); f_sys__set_thread_name(CTX_ME _t11, _t12); });
+        ({ t8 _t3 = ({ t8 _t5 = (((t8){ .m_ptr = ((t43)((&l2))), .m_len = ((t15)(64ULL)), })); uint64_t _t6 = ((t15)(0ULL)); uint64_t _t7 = l3; ctx_range(_t6, _t7, _t5.m_len, 1174, 35, &w_os__thread_name, CTX_UPV); (t8){ .m_ptr = _t5.m_ptr + _t6, .m_len = _t7 - _t6 }; }); t8 _t4 = ({ t8 _t8 = (l1); uint64_t _t9 = ((t15)(0ULL)); uint64_t _t10 = l3; ctx_range(_t9, _t10, _t8.m_len, 1174, 52, &w_os__thread_name, CTX_UPV); (t8){ .m_ptr = _t8.m_ptr + _t9, .m_len = _t10 - _t9 }; }); CTX_AT(1174, 24); f_slice__copyu8_aae5a9c4(CTX_ME _t3, _t4); });
+        ({ t781 _t11 = (&(*l0)); t43 _t12 = (&(l2).a[ctx_idx(((t15)(0ULL)), 64, 1175, 52, &w_os__thread_name, CTX_UPV)]); CTX_AT(1175, 29); f_sys__set_thread_name(CTX_ME _t11, _t12); });
     }
 }
 
@@ -148263,24 +148714,54 @@ static t1390 f_eval__code_at(CTX_UP t424 l0, t9 l1) {
                 } } else if ((_t25.tag == 10)) { {
                     ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::bad_address");
                 } } else if ((_t25.tag == 11)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: proc::not_found");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::refused");
                 } } else if ((_t25.tag == 12)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: proc::permission_denied");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::reset");
                 } } else if ((_t25.tag == 13)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: proc::broken_pipe");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::aborted");
                 } } else if ((_t25.tag == 14)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: proc::other");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::closed");
                 } } else if ((_t25.tag == 15)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: task::cancelled");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::unreachable");
                 } } else if ((_t25.tag == 16)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: task::out_of_resources");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::timed_out");
                 } } else if ((_t25.tag == 17)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: thread::out_of_resources");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::address_in_use");
                 } } else if ((_t25.tag == 18)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: utf8::invalid");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::address_unavailable");
                 } } else if ((_t25.tag == 19)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: eval::leave");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::unsupported_address");
                 } } else if ((_t25.tag == 20)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::permission_denied");
+                } } else if ((_t25.tag == 21)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::too_many_open");
+                } } else if ((_t25.tag == 22)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::message_too_large");
+                } } else if ((_t25.tag == 23)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::not_found");
+                } } else if ((_t25.tag == 24)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::lookup_failed");
+                } } else if ((_t25.tag == 25)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: net::other");
+                } } else if ((_t25.tag == 26)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: proc::not_found");
+                } } else if ((_t25.tag == 27)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: proc::permission_denied");
+                } } else if ((_t25.tag == 28)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: proc::broken_pipe");
+                } } else if ((_t25.tag == 29)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: proc::other");
+                } } else if ((_t25.tag == 30)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: task::cancelled");
+                } } else if ((_t25.tag == 31)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: task::out_of_resources");
+                } } else if ((_t25.tag == 32)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: thread::out_of_resources");
+                } } else if ((_t25.tag == 33)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: utf8::invalid");
+                } } else if ((_t25.tag == 34)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: eval::leave");
+                } } else if ((_t25.tag == 35)) { {
                     ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: eval::halt");
                 } } }
             } } }
@@ -156776,7 +157257,7 @@ static t29 f_os__condition_free(CTX_UP t783 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_free);
     {
-        (void)(CTX_AT(958, 78), e4296(CTX_ME (&(*l0))));
+        (void)(CTX_AT(1228, 78), e4296(CTX_ME (&(*l0))));
     }
 }
 

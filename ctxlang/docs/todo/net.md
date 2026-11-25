@@ -1,6 +1,9 @@
 # Networking and TLS: design
 
-Status: **design**, threads.md's item 1. Nothing here is built. It is written against the tasks'
+Status: **design**, threads.md's item 1, **built through TCP** (Order of work, 1 to 5): addresses,
+`Net`, `net::Error` and TCP are std/net.ctx and the layers', with `task::wait_all_for` and libraries
+linked by use; TCP's tests (Testing, Built for TCP) run on Windows, and Linux's and macOS's layers
+are compiled from it, not yet run on those systems. It is written against the tasks'
 contract as built (internals.md, Tasks): the Threaded backend, `task::Cancel` and its four functions, cancellation that
 fails blocking calls, and the layers' cancellable waits that `proc` already uses. http.md is built on
 top of it. TLS is OpenSSL 3 on every platform, verified by the operating system on Windows and
@@ -50,14 +53,17 @@ fn echo { mut net: Net, socket: net::Socket } -> ! {
     defer net::close{ &net, socket }
     let mut buf: [4096]u8
     while true {
-        let n = try net::receive{ &net, socket, into = buf[..] }
+        // A handler's error would be its group's, which cancels every other handler: a reset
+        // or a stop ends this connection alone.
+        let n = net::receive{ &net, socket, into = buf[..] } iferr { return }
         if n == 0 { return }                                    // the peer finished sending
-        _ = try net::send{ &net, socket, bytes = buf[..n] }
+        _ = net::send{ &net, socket, bytes = buf[..n] } iferr { return }
     }
 }
 
-fn main { mut io: Io, mut net: Net, mut threads: Threads } -> i32 {
+fn main { mut net: Net, mut threads: Threads } -> i32 {
     let listener = net::listen{ &net, address = "127.0.0.1:7000", backlog = 0 } iferr { return 1 }
+    defer net::close_listener{ &net, listener }
     let mut handlers: task::Group
     while true {
         let socket = net::accept{ &net, listener } iferr { break }
@@ -65,7 +71,6 @@ fn main { mut io: Io, mut net: Net, mut threads: Threads } -> i32 {
             net::close{ &net, socket }
         }
     }
-    net::close_listener{ &net, listener }
     return 0
 }
 ```
@@ -96,6 +101,9 @@ capability Net { ..task::Cancel, ..os::Net, ..os::Tls }
   names the libraries OpenSSL is linked from on that platform (TLS, OpenSSL). The interpreter's is
   empty.
 
+As built, `Net` is `{ ..task::Cancel, ..os::Net }`: `os::Tls` joins it with the OpenSSL binding
+(Order of work, 9), the first code that has an extern fn to take it.
+
 Each has only statics or nothing, so `Net` is a capability without fields, which `main` may receive
 (spec §15, rule 1; Entry point, rule 2). TLS takes `Net` and has no capability of its own: it does
 nothing beyond `Net`'s sockets but read the trust store, which is part of reaching the network.
@@ -104,7 +112,25 @@ nothing beyond `Net`'s sockets but read the trust store, which is part of reachi
 layer declares identically, each declaring `net::Error` (spec §8, Errors, rule 14), as `proc` calls
 `os::pipe_read`. They take `mut net: Net`, the layer's own `os::Net`, and those that block also
 `mut cancel: task::Cancel`, called as `os::tcp_receive{ &net, cancel = &net, ... }`: std's `Net`
-converts to both (internals.md, Tasks, Decisions made building it, 2).
+converts to both (internals.md, Tasks, Decisions made building it, 2). As built, TCP's are:
+
+```
+namespace os {
+    fn tcp_connect { mut net: Net, mut cancel: task::Cancel, address: net::Address } -> net::Error!u64
+    fn tcp_listen { mut net: Net, address: net::Address, backlog: u32 } -> net::Error!u64
+    fn tcp_accept { mut net: Net, mut cancel: task::Cancel, listener: u64, family: u8 } -> net::Error!u64
+    fn tcp_receive { mut net: Net, mut cancel: task::Cancel, socket: u64, into: []mut u8 } -> net::Error!usize
+    fn tcp_send { mut net: Net, mut cancel: task::Cancel, socket: u64, bytes: []u8 } -> net::Error!usize
+    fn tcp_shutdown { mut net: Net, socket: u64, how: net::Shutdown } -> net::Error!
+    fn tcp_close { mut net: Net, socket: u64 }                         // a socket or a listener
+    fn tcp_get_address { mut net: Net, socket: u64, peer: bool } -> net::Error!net::Address
+    fn tcp_set_no_delay { mut net: Net, socket: u64, on: bool } -> net::Error!
+    fn tcp_set_keep_alive { mut net: Net, socket: u64, idle_seconds: u32 } -> net::Error!
+}
+```
+
+`receive` of 0 bytes and `send`'s loop are std/net.ctx's, as are TCP_NODELAY on what `connect` and
+`accept` make (the socket closed if it can't be set) and a listener's family.
 
 **Winsock's start.** Windows needs `WSAStartup` before the first socket call, and a lookup of
 `ConnectEx` and `AcceptEx` (`WSAIoctl` with `SIO_GET_EXTENSION_FUNCTION_POINTER`, so `mswsock` isn't
@@ -276,10 +302,10 @@ namespace net {
     fn connect { mut net: Net, address: Address } -> !Socket
 
     // Looks `host` up and connects to its addresses in turn: the first that connects, or the
-    // last one's error. At most 16 are tried.
+    // last one's error. At most 16 are tried. Name lookup's (Order of work, 6).
     fn connect_host { mut net: Net, host: []u8, port: u16 } -> !Socket
 
-    // A socket listening on `address`; port 0 takes one the system picks (local_address says
+    // A socket listening on `address`; port 0 takes one the system picks (listener_address says
     // which). `backlog` is the queue of connections not yet accepted; 0 for the system's most.
     fn listen { mut net: Net, address: Address, backlog: u32 } -> !Listener
 
@@ -306,6 +332,23 @@ namespace net {
     fn peer_address { mut net: Net, socket: Socket } -> !Address
 }
 ```
+
+Built (Order of work, 4 and 5) as declared, but `connect_host`, with what building it settled:
+
+- **The layers' sockets.** On Linux `socket` and `accept4` take `SOCK_NONBLOCK | SOCK_CLOEXEC`; on
+  macOS, whose calls take no flags, `fcntl` sets `FD_CLOEXEC` and `O_NONBLOCK` and `setsockopt`
+  `SO_NOSIGPIPE` right after `socket` or `accept`, and a socket that can't have them is closed.
+  `connect` that `EINTR` interrupts is waited for as one in progress, since it goes on without the
+  call.
+- **Linux's `accept`** passes on a pending connection's network errors (`ENETDOWN`, `EPROTO`,
+  `ENOPROTOOPT`, `EHOSTDOWN`, `ENONET`, `EHOSTUNREACH`, `EOPNOTSUPP`, `ENETUNREACH`), which
+  accept(2) says to treat as `EAGAIN`: the layer accepts again, so `accept` fails only for the
+  listener's own errors.
+- **The backlog** for 0 is the largest `int`, which Linux and macOS cut to their limits
+  (`net.core.somaxconn`, `kern.ipc.somaxconn`), and Windows' `SOMAXCONN` is: the system's most,
+  where C's `SOMAXCONN` is a header's guess (4096 or 128).
+- **Keep-alive** past what the system takes fails with `other`: Linux's `TCP_KEEPIDLE` is at most
+  32767 seconds.
 
 **Partial IO**, as `proc`'s: `receive` returns what is there, at least one byte unless the peer is
 done; `send` loops until every byte is sent, each round the layer's `tcp_send` of some of them. A
@@ -366,8 +409,10 @@ fn connect_racing { mut net: Net, mut threads: Threads, addresses: []net::Addres
     }
     _ = task::wait_all{ &threads, group = &tries } iferr {}  // `connected`, or every attempt ended
     if let s = race.socket { return s }
-    try race.last
-    return net::unreachable
+    match race.last {
+        ok => { return net::unreachable }
+        err{ error } => { return error }                    // the last attempt's failure
+    }
 }
 ```
 
@@ -382,7 +427,7 @@ fn connect_racing { mut net: Net, mut threads: Threads, addresses: []net::Addres
   and peers' addresses are never v4-mapped; a server for both listens twice, a task each. The
   systems' defaults differ (Linux dual-stack, Windows IPv6-only, OpenBSD with no choice), so one
   setting gives one behaviour.
-- The backlog, `SOMAXCONN` for 0.
+- The backlog, the system's most for 0 (TCP, Built).
 
 ### A server
 
@@ -390,8 +435,8 @@ A task per connection, in a group, so stopping the server (cancelling the task t
 stops every handler, and `serve` returning, by any path, waits for them: the group is its local.
 `mem` gives pages and never takes them back, so a connection's memory is reused: a handler that ends
 puts its `Connection` on the server's free list, under a mutex. A handler borrows nothing of `serve`'s
-frame: `c` points into pages, which tasks share as threads do (spec §3.1, rule 6). `net`'s calls
-are as they were sketched before this document; Order of work, 8 makes it compile.
+frame: `c` points into pages, which tasks share as threads do (spec §3.1, rule 6). It compiles
+against the built API, with a `serve_requests` of the program's; Order of work, 8 tests it.
 
 ```
 struct Connection { socket: net::Socket, server: *mut Server, next: ?*mut Connection }
@@ -510,8 +555,8 @@ namespace net {
     error refused               // nothing listens there (ECONNREFUSED)
     error reset                 // the peer reset the connection (ECONNRESET)
     error aborted               // the connection ended before accept took it (ECONNABORTED)
-    error closed                // a send after the peer, or this end's shutdown, closed sending (EPIPE)
-    error unreachable           // no route to the network or the host (ENETUNREACH, EHOSTUNREACH, ENETDOWN)
+    error closed                // a send after the peer, or this end's shutdown, closed sending (EPIPE, ENOTCONN)
+    error unreachable           // no route to the network or the host (ENETUNREACH, EHOSTUNREACH, ENETDOWN, EHOSTDOWN)
     error timed_out             // the system gave up: a connect unanswered, keep-alive unanswered (ETIMEDOUT)
     error address_in_use        // listen or bind on a port taken (EADDRINUSE)
     error address_unavailable   // an address that isn't this host's (EADDRNOTAVAIL)
@@ -536,7 +581,10 @@ one function, as `proc_failed` does: Linux's and macOS's `errno` values differ (
 and 61), so their numbers are in `sys`; Windows' `WSAE*` values are the same as Winsock's on every
 version. `getaddrinfo`'s `EAI_*` codes are a separate space, so `other` gets them shifted out of
 `errno`'s range. A server's accept loop should go on after `aborted` (a client gave up while queued)
-and pause after `too_many_open`, rather than return; http.md's server does.
+and pause after `too_many_open`, rather than return; http.md's server does. `ENOTCONN` (macOS's
+`shutdown` once the peer has closed) is `closed`, as `EPIPE` is; on Windows `WSAESHUTDOWN` (a send
+after this end's shutdown) and `WSAENOTCONN` are `closed`, and `WSAENETRESET` (keep-alive found the
+connection dead) is `timed_out`.
 
 ## Cancellation
 
@@ -871,7 +919,7 @@ fn fetch_banner { mut net: Net, config: tls::ClientConfig, host: []u8, into: []m
 
 Built after this; the API above doesn't change for it. Each layer has one place where a socket call
 waits: on Windows the function that waits for an overlapped operation and cancels it (`net_finish`,
-as `finish` is for pipes), on POSIX the one that polls a descriptor with the cancel object (`ready`).
+as `finish` is for pipes), on POSIX the one that polls a descriptor with the cancel object (`net_ready`, as `ready` is for pipes).
 Evented replaces those two, and the lookups:
 
 - **Windows, IOCP.** Every socket is associated with the process's one completion port when it is
@@ -939,6 +987,21 @@ without colliding, and passes the port to its peer on the command line or throug
    random name under a real domain 1 ms after it starts, on Windows); keep-alive's timing (minutes); the systems'
    own connect timeouts; behaviour under memory or descriptor exhaustion beyond `too_many_open` with a
    lowered `ulimit -n` on Linux.
+
+Built for TCP, in tests/cases/Net:
+
+- `tcp_loopback`: Testing 1's TCP cases, and `refused` and `address_in_use`, which need no Python
+  peer. Its IPv6 line says `echoed`, or that the host has no IPv6.
+- `tcp_python_peers`: Testing 2's Python peers, tests/helpers/net_peer.py, which the program starts
+  as `python net_peer.py MODE`, found on PATH (the case `needs: python`); a server peer prints its
+  port as its first line.
+- `tcp_cancellation`: Testing 3's TCP cases. Windows' loopback takes tens of MiB from a send that
+  no peer reads before it waits, so the blocked send is a loop of sends that goes on until one waits.
+- `tcp_every_layer`: every layer's TCP built from any machine, the C for Linux and macOS compiled
+  as far as its syntax and types (`cc -fsyntax-only`), and `ws2_32` linked on Windows only by a
+  program that takes `Net`.
+
+UDP's and name lookup's cases (Testing 1's UDP, 3's lookup) are Order of work 6 and 7's.
 
 ## Order of work
 

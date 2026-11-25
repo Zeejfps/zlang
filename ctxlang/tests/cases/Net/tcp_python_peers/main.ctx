@@ -1,0 +1,110 @@
+// Starts `python PEER MODE ARG` with its standard output a pipe, which the caller reads.
+fn start_peer { mut proc: Proc, peer: []u8, mode: []u8, arg: []u8 } -> !proc::Child {
+    let options = proc::Options{ stdout = proc::Stdio::pipe, .. }
+    if arg.len == 0 { return proc::spawn{ &proc, argv = ["python", peer, mode], options } }
+    return proc::spawn{ &proc, argv = ["python", peer, mode, arg], options }
+}
+
+// Reads the peer's output to its end, into `into`: how many bytes.
+fn read_all { mut proc: Proc, child: proc::Child, into: []mut u8 } -> !usize {
+    let out = child.stdout ifnull { return 0 }
+    let mut n: usize = 0
+    while n < into.len {
+        let got = try proc::read{ &proc, pipe = out, into = into[n..] }
+        if got == 0 { break }
+        n = n + got
+    }
+    return n
+}
+
+// The port on the first line a server peer prints.
+fn read_port { mut proc: Proc, child: proc::Child } -> !u16 {
+    let out = child.stdout ifnull { return 0 }
+    let mut port: u32 = 0
+    let mut c: [1]u8
+    while true {
+        if try proc::read{ &proc, pipe = out, into = c[..] } == 0 { break }
+        if c[0] == '\n' { break }
+        if c[0] >= '0' and c[0] <= '9' { port = port * 10 + @as(u32, c[0] - '0') }
+    }
+    return @trunc(u16, port)
+}
+
+fn at_port { port: u16 } -> net::Address {
+    return net::Address{ ip = net::LOOPBACK_V4, port }
+}
+
+// A ctxlang client of Python's echo server.
+fn client_of_python { mut io: Io, mut net: Net, mut proc: Proc, peer: []u8 } -> i32 {
+    let mut child = start_peer{ &proc, peer, mode = "echo_server", arg = "" } iferr { return 1 }
+    let port = read_port{ &proc, child } iferr { return 2 }
+    let s = net::connect{ &net, address = at_port{ port } } iferr { return 3 }
+    _ = net::send{ &net, socket = s, bytes = "from ctxlang" } iferr { return 4 }
+    net::shutdown{ &net, socket = s, how = net::Shutdown::send } iferr { return 4 }
+    let mut buf: [64]u8
+    let mut n: usize = 0
+    while true {
+        let got = net::receive{ &net, socket = s, into = buf[n..] } iferr { return 5 }
+        if got == 0 { break }
+        n = n + got
+    }
+    net::close{ &net, socket = s }
+    _ = @fmt(&io, "python echoed: {}\n", buf[..n])
+    _ = @fmt(&io, "python's server ended: {}\n", proc::wait{ &proc, &child } iferr { -1 })
+    return 0
+}
+
+// A ctxlang server for Python's client, which sends, finishes sending, and prints what comes
+// back.
+fn server_for_python { mut io: Io, mut net: Net, mut proc: Proc, peer: []u8 } -> i32 {
+    let listener = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 10 }
+    defer net::close_listener{ &net, listener }
+    let at = net::listener_address{ &net, listener } iferr { return 10 }
+    let mut mem: [64]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&b, "{}", at.port)
+    let mut child = start_peer{ &proc, peer, mode = "client", arg = utf8::view{ b }.bytes } iferr { return 11 }
+    let s = net::accept{ &net, listener } iferr { return 12 }
+    let mut buf: [64]u8
+    let mut n: usize = 0
+    while true {
+        let got = net::receive{ &net, socket = s, into = buf[n..] } iferr { return 13 }
+        if got == 0 { break }
+        n = n + got
+    }
+    _ = net::send{ &net, socket = s, bytes = "ctxlang got: " } iferr { return 14 }
+    _ = net::send{ &net, socket = s, bytes = buf[..n] } iferr { return 14 }
+    net::close{ &net, socket = s }
+    let mut said: [128]u8
+    let mut k = read_all{ &proc, child, into = said[..] } iferr { return 15 }
+    while k > 0 and (said[k - 1] == '\r' or said[k - 1] == '\n') { k = k - 1 }     // print's line break, "\r\n" on Windows
+    _ = @fmt(&io, "python received: {}\n", said[..k])
+    _ = @fmt(&io, "python's client ended: {}\n", proc::wait{ &proc, &child } iferr { -1 })
+    return 0
+}
+
+// Python's server resets the connection: a receive fails with `reset`.
+fn reset_by_python { mut io: Io, mut net: Net, mut proc: Proc, peer: []u8 } -> i32 {
+    let mut child = start_peer{ &proc, peer, mode = "reset_server", arg = "" } iferr { return 20 }
+    let port = read_port{ &proc, child } iferr { return 21 }
+    let s = net::connect{ &net, address = at_port{ port } } iferr { return 22 }
+    defer net::close{ &net, socket = s }
+    let mut buf: [16]u8
+    let n = net::receive{ &net, socket = s, into = buf[..] } iferr err{ error } {
+        _ = @fmt(&io, "after python's reset: {}\n", error)
+        _ = proc::wait{ &proc, &child } iferr { -1 }
+        return 0
+    }
+    _ = @fmt(&io, "after python's reset: {} bytes\n", n)
+    return 23
+}
+
+fn main { mut io: Io, mut net: Net, mut proc: Proc, args: Args } -> i32 {
+    let peer = args[0]
+    let a = client_of_python{ &io, &net, &proc, peer }
+    if a != 0 { return a }
+    let b = server_for_python{ &io, &net, &proc, peer }
+    if b != 0 { return b }
+    return reset_by_python{ &io, &net, &proc, peer }
+}
