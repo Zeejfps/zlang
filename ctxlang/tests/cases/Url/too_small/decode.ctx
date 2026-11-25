@@ -1,0 +1,16 @@
+// decode_percent panics when `into` is too small: text.len bytes always suffice, so a shorter
+// buffer is the caller's mistake, as utf8::encode's is.
+
+fn main { mut io: Io } {
+    let mut buf: [4]u8
+    let n = try! url::decode_percent{ text = "%41%42", into = buf[..2] }
+    _ = @fmt(&io, "{}\n", buf[..n])
+    _ = url::decode_percent{ text = "%41%42c", into = buf[..2] }
+}
+
+//# stdout:
+//| AB
+//# panic: std/url.ctx:216:32: panic: url::decode_percent: into is too small
+//# path:
+//|   at url::decode_percent (std/url.ctx:216:32)
+//|   at main (decode.ctx:8:28)

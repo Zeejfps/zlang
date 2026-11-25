@@ -1,0 +1,18 @@
+// resolve panics when `into` is too small: the length of the base's text, plus the
+// reference's, plus 2 always suffice.
+
+fn main { mut io: Io } {
+    let base = try! url::parse{ text = "http://a/b/c" }
+    let mut buf: [16]u8
+    let u = try! url::resolve{ base, reference = "d", into = buf[..12] }
+    _ = @fmt(&io, "{}\n", u.path)
+    _ = url::resolve{ base, reference = "de", into = buf[..12] }
+}
+
+//# stdout:
+//| /b/d
+//# panic: std/url.ctx:391:35: panic: url::resolve: into is too small
+//# path:
+//|   at url::write_bytes (std/url.ctx:391:35)
+//|   at url::resolve (std/url.ctx:157:28)
+//|   at main (resolve.ctx:9:21)

@@ -1,0 +1,67 @@
+// push_url writes a parsed URL as it was read, so writing and parsing again gives the same
+// parts; push_target writes a request line's target, "/" before an empty path, which the text of
+// "http://h?x" doesn't hold. A URL built by hand is written from its parts, its authority from
+// `authority`.
+
+fn same { a: ?[]u8, b: ?[]u8 } -> bool {
+    if a == null or b == null { return a == null and b == null }
+    return slice::eq_bytes{ a, b }
+}
+
+fn show { mut io: Io, text: []u8 } {
+    let mut mem: [1024]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let u = try! url::parse{ text }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&b, "{}", u)
+    let written = utf8::view{ b }.bytes
+    let v = try! url::parse{ text = written }
+    let parts_same = slice::eq_bytes{ a = u.scheme, b = v.scheme } and same{ a = u.user, b = v.user }
+        and slice::eq_bytes{ a = u.host, b = v.host } and slice::eq_bytes{ a = u.zone, b = v.zone }
+        and u.port == v.port and same{ a = u.authority, b = v.authority } and slice::eq_bytes{ a = u.path, b = v.path }
+        and same{ a = u.query, b = v.query } and same{ a = u.fragment, b = v.fragment } and slice::eq_bytes{ a = u.target, b = v.target }
+    let mut t = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&t, "GET {} HTTP/1.1", url::push_target{ u, _ })
+    _ = @fmt(&io, "{} -> {} (same text {}, same parts {}) {}\n", text, written, slice::eq_bytes{ a = written, b = text }, parts_same, utf8::view{ b = t })
+}
+
+fn main { mut io: Io } {
+    show{ &io, text = "http://example.com/a/b?x=1#top" }
+    show{ &io, text = "https://u:p@[fe80::1%25eth0]:8443/p?q#f" }
+    show{ &io, text = "http://h" }
+    show{ &io, text = "http://h?" }
+    show{ &io, text = "http://h?x" }
+    show{ &io, text = "http://h#" }
+    show{ &io, text = "http://@h:/" }
+    show{ &io, text = "file:///x" }
+    show{ &io, text = "mailto:a@b" }
+    show{ &io, text = "/p?q" }
+    show{ &io, text = "?q" }
+    show{ &io, text = "" }
+    show{ &io, text = "//h" }
+    show{ &io, text = "a/b%2Fc" }
+
+    let built = url::Url{ scheme = "https", user = null, host = "h", zone = "", port = 444, authority = "h:444", path = "/x y", query = "a=%20", fragment = null, target = "/x y?a=%20" }
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&b, "{} and {}", built, url::push_target{ u = built, _ })
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| http://example.com/a/b?x=1#top -> http://example.com/a/b?x=1#top (same text true, same parts true) GET /a/b?x=1 HTTP/1.1
+//| https://u:p@[fe80::1%25eth0]:8443/p?q#f -> https://u:p@[fe80::1%25eth0]:8443/p?q#f (same text true, same parts true) GET /p?q HTTP/1.1
+//| http://h -> http://h (same text true, same parts true) GET / HTTP/1.1
+//| http://h? -> http://h? (same text true, same parts true) GET /? HTTP/1.1
+//| http://h?x -> http://h?x (same text true, same parts true) GET /?x HTTP/1.1
+//| http://h# -> http://h# (same text true, same parts true) GET / HTTP/1.1
+//| http://@h:/ -> http://@h:/ (same text true, same parts true) GET / HTTP/1.1
+//| file:///x -> file:///x (same text true, same parts true) GET /x HTTP/1.1
+//| mailto:a@b -> mailto:a@b (same text true, same parts true) GET a@b HTTP/1.1
+//| /p?q -> /p?q (same text true, same parts true) GET /p?q HTTP/1.1
+//| ?q -> ?q (same text true, same parts true) GET /?q HTTP/1.1
+//|  ->  (same text true, same parts true) GET / HTTP/1.1
+//| //h -> //h (same text true, same parts true) GET / HTTP/1.1
+//| a/b%2Fc -> a/b%2Fc (same text true, same parts true) GET a/b%2Fc HTTP/1.1
+//| https://h:444/x y?a=%20 and /x y?a=%20

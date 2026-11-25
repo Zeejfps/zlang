@@ -1,0 +1,16 @@
+// encode_percent panics when `into` is too small: 3 * text.len bytes always suffice. An escape
+// is written whole or not at all.
+
+fn main { mut io: Io } {
+    let mut buf: [8]u8
+    let n = url::encode_percent{ text = "a b", into = buf[..5] }
+    _ = @fmt(&io, "{}\n", buf[..n])
+    _ = url::encode_percent{ text = "ab ", into = buf[..4] }
+}
+
+//# stdout:
+//| a%20b
+//# panic: std/url.ctx:235:39: panic: url::encode_percent: into is too small
+//# path:
+//|   at url::encode_percent (std/url.ctx:235:39)
+//|   at main (encode.ctx:8:28)

@@ -1,0 +1,23 @@
+// url is pure, so a const's value can be a parsed URL, computed while compiling: its parts are
+// slices of the literal's bytes. decode_percent runs there too, into a const's array.
+
+const HOME: url::Url = try! url::parse{ text = "https://example.com:8443/a?b#c" }
+const PORT: ?u16 = url::default_port{ scheme = HOME.scheme }
+const SPACE: u8 = decode_first{ text = "%20" }
+
+fn decode_first { text: []u8 } -> u8 {
+    let mut buf: [4]u8
+    let n = try! url::decode_percent{ text, into = buf[..] }
+    return buf[n - 1]
+}
+
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&b, "{} host {} port {} default {} space {}", HOME, HOME.host, HOME.port ifnull 0, PORT ifnull 0, SPACE)
+    io::println{ &io, s = utf8::view{ b } }
+}
+
+//# stdout:
+//| https://example.com:8443/a?b#c host example.com port 8443 default 443 space 32

@@ -1,0 +1,71 @@
+// Text that isn't a URL fails with bad_url, at the first byte that can't be there, at a `%`
+// whose escape is broken, at the start of a port too large, or at the text's end when it ends
+// too soon. A URL is ASCII, so a space or a byte past 127 is one that can't be there.
+
+fn show { mut io: Io, text: []u8 } {
+    match url::parse{ text } {
+        ok => { _ = @fmt(&io, "{}: read\n", text) }
+        url::bad_url{ at } => { _ = @fmt(&io, "{}: at {}\n", text, at) }
+    }
+}
+
+fn main { mut io: Io } {
+    show{ &io, text = ":x" }                    // an empty scheme
+    show{ &io, text = "1http://h" }             // a scheme begins with a letter
+    show{ &io, text = "ht_tp://h" }
+    show{ &io, text = "http://h h/" }
+    show{ &io, text = "http://h/a b" }
+    show{ &io, text = "http://h/a\xc3\xa9" }    // not ASCII
+    show{ &io, text = "http://h/a%" }           // broken escapes
+    show{ &io, text = "http://h/a%4" }
+    show{ &io, text = "http://h/a%4g" }
+    show{ &io, text = "http://h/a%zz/b" }
+    show{ &io, text = "http://h/a%41" }
+    show{ &io, text = "http://h?q%" }
+    show{ &io, text = "http://h#f%2" }
+    show{ &io, text = "http://h#a#b" }          // one `#`
+    show{ &io, text = "http://h/<>" }
+    show{ &io, text = "http://h/a\"b" }
+    show{ &io, text = "http://h?a[b]" }         // brackets are only a host's
+    show{ &io, text = "http://h:x/" }
+    show{ &io, text = "http://h:8x/" }
+    show{ &io, text = "http://h:65536/" }       // past a u16: where the port starts
+    show{ &io, text = "http://h:1000000000000/" }
+    show{ &io, text = "http://h:1:2/" }
+    show{ &io, text = "http://u%/" }
+    show{ &io, text = "http://u[@h/" }
+    show{ &io, text = "http://h%zz/" }
+    show{ &io, text = "http://h\\x/" }
+    show{ &io, text = "a{b" }
+    show{ &io, text = "http://h/%E2%82%AC" }    // escaped UTF-8 is ASCII
+}
+
+//# stdout:
+//| :x: at 0
+//| 1http://h: at 0
+//| ht_tp://h: at 2
+//| http://h h/: at 8
+//| http://h/a b: at 10
+//| http://h/aé: at 10
+//| http://h/a%: at 10
+//| http://h/a%4: at 10
+//| http://h/a%4g: at 10
+//| http://h/a%zz/b: at 10
+//| http://h/a%41: read
+//| http://h?q%: at 10
+//| http://h#f%2: at 10
+//| http://h#a#b: at 10
+//| http://h/<>: at 9
+//| http://h/a"b: at 10
+//| http://h?a[b]: at 10
+//| http://h:x/: at 9
+//| http://h:8x/: at 10
+//| http://h:65536/: at 9
+//| http://h:1000000000000/: at 9
+//| http://h:1:2/: at 10
+//| http://u%/: at 8
+//| http://u[@h/: at 8
+//| http://h%zz/: at 8
+//| http://h\x/: at 8
+//| a{b: at 1
+//| http://h/%E2%82%AC: read

@@ -1,6 +1,7 @@
 # HTTP: design
 
-Status: **design**, threads.md's item 1, after net.md. Nothing here is built. HTTP/1.1, client and
+Status: **design**, threads.md's item 1, after net.md. **Built: `url`** (Order of work, 1), as
+std/url.ctx; nothing else here is. HTTP/1.1, client and
 server, written in ctxlang over `net` and `tls` (net.md), with URLs (`url`) and WebSocket
 (`websocket`) beside it.
 
@@ -269,18 +270,20 @@ connection rather than read a body nobody wants.
 ```
 namespace url {
     // A URL's parts, slices of the text it was parsed from (RFC 3986). `port` is null when the
-    // URL has none; `host` has no brackets ("::1"); `authority` is what a Host field takes
-    // ("[::1]:8080"), without user information; `target` is the path and query, as a request
-    // line takes them, "/" when the path is empty.
+    // URL has none; `host` has no brackets ("::1") and no zone, which is `zone`; `authority` is
+    // what a Host field takes ("[::1]:8080"), without user information; `target` is the path and
+    // query, as a request line takes them, "/" when both are empty. `user`, `authority`, `query`
+    // and `fragment` are null without their `@`, `//`, `?` or `#`, and "" with nothing after it.
     struct Url {
         scheme: []u8,
-        user: []u8,
+        user: ?[]u8,
         host: []u8,
+        zone: []u8,
         port: ?u16,
-        authority: []u8,
+        authority: ?[]u8,
         path: []u8,
-        query: []u8,
-        fragment: []u8,
+        query: ?[]u8,
+        fragment: ?[]u8,
         target: []u8,
     }
 
@@ -292,6 +295,9 @@ namespace url {
     // written into `into`, and parsed: what a redirect's Location gives.
     fn resolve { base: Url, reference: []u8, into: []mut u8 } -> !Url
 
+    // Whether a scheme is `name`, a lower-case one, without case.
+    fn is_scheme { scheme: []u8, name: []u8 } -> bool
+
     // The port a scheme implies: 80 for http, 443 for https, 80 and 443 for ws and wss.
     fn default_port { scheme: []u8 } -> ?u16
 
@@ -299,17 +305,59 @@ namespace url {
     fn decode_percent { text: []u8, into: []mut u8 } -> !usize
 
     // Bytes other than RFC 3986's unreserved ones escaped into `into`: for a query's values.
-    fn encode_percent { text: []u8, into: []mut u8 } -> !usize
+    fn encode_percent { text: []u8, into: []mut u8 } -> usize
 
     // An @fmt writer: the URL as text.
     #write
     fn push_url(S) { mut b: utf8::Builder(S), u: Url } -> !
+
+    // A request line's target, "/" before an empty path: a writer to bind (push_target{ u, _ }).
+    fn push_target(S) { mut b: utf8::Builder(S), u: Url } -> !
 }
 ```
 
 A scheme is matched without case; a host isn't changed (no IDNA: net.md, Name lookup), and an IPv6
 host's `%zone` is decoded. Query strings stay bytes: `application/x-www-form-urlencoded`'s `+` and
 pairs are a program's to split, with `decode_percent`. `url` is pure.
+
+Built (Order of work, 1) as declared above, which differs from the first design in four places, with
+what building it settled, and std/url.ctx's header saying it in full:
+
+- **Empty and absent differ**: `user`, `authority`, `query` and `fragment` are `?[]u8`. RFC 3986's
+  resolution (§5.2.2) tells a query that is there and empty ("?") from none, and so does writing a
+  URL back, which a slice that is "" for both can't.
+- **The zone is a field of its own.** `host` is a slice of the text, and the decoded
+  "fe80::1%eth0" isn't in the text "[fe80::1%25eth0]", so `host` is the address ("fe80::1") and
+  `zone` what follows `%25` ("eth0"), both slices, with no storage in `Url`. A zone's own escapes
+  stay, as in every part; a bare `%` (which RFC 6874 lets browsers accept) is `bad_url`, since
+  "%25" would then read two ways. `authority` keeps the zone as written.
+- **`target` with an empty path and a query.** "http://h?x" holds no "/?x" to slice, so `target`
+  is "?x" there; `push_target` writes a request line's target in every case, which is what
+  `fetch` sends.
+- **`encode_percent` returns `usize`**, not `!usize`: its only failure would be a short `into`.
+
+And:
+
+- **A short `into` panics**, in `resolve`, `decode_percent` and `encode_percent`, as
+  `utf8::encode` and `utf8::fmt_i64` do: how much is enough is known before the call (`text.len` to
+  decode, `3 * text.len` to encode, the base's text plus the reference plus 2 to resolve), so a
+  short buffer is the caller's mistake, not the text's.
+- **A bracketed host is read by `net::parse_ip`**, so a URL's IPv6 address is exactly what net
+  reads, and `bad_url`'s offset is net's moved to the whole text. A bracketed v4 address and
+  IPvFuture ("[v1.x]", never defined) are `bad_url`.
+- **Strict text**: every byte is one RFC 3986's grammar allows in its part, so a space or a byte
+  past 127 is `bad_url` (a program with such text encodes it), a port is digits to 65535 with
+  leading zeros allowed, and an empty port is none. `parse` reads relative references too, a
+  request line's origin-form target among them.
+- **A resolved path that would begin with "//"** without an authority ("a:/b" and "..//c") begins
+  "/.//" instead, which reads back as a path; RFC 3986 §5.2.4 leaves it to be misread as an
+  authority.
+- **`is_scheme`** joined the API: `default_port` needs it, and so do `fetch`'s scheme checks.
+
+Tested in tests/cases/Url, compiled and interpreted: RFC 3986 §5.4.1's and §5.4.2's examples, all
+of them; every part with empty and absent ones; IPv6 hosts and zones; bad text with its offsets;
+percent-encoding both ways; `default_port`; `push_url` and `push_target` round trips; a short
+`into` for each of the three; and a const computed from `parse` while compiling.
 
 ## Fetch
 
@@ -623,7 +671,7 @@ As net.md's: corpus programs, Python peers from `sys.executable`, ports from 0.
 After net.md's packages 1 to 8 (1, `task::wait_all_for`, for 6), and its 9 to 11 for 5 and after. One sitting each, committed between.
 
 1. **url.** std/url.ctx: `Url`, `parse`, `resolve`, `default_port`, percent encoding, the writer.
-   Verified: Testing 1's URL cases, compiled and interpreted.
+   Verified: Testing 1's URL cases, compiled and interpreted. **Built** (URLs, Built).
 2. **Heads.** std/http.ctx's core: `Header`, `find_header`, `find_header_from`, `has_token`, head
    parsing for requests and responses with every refusal, head writing. Verified: Testing 1's head
    cases.
@@ -662,6 +710,12 @@ Each package also updates spec §17's table for what it adds.
 7. **The accept loop is the program's** (Serving). Rejected: `http::serve` taking a handler, which
    would call one function value from many tasks at once.
 8. **WebSocket in; HTTP/2, HTTP/3, compression out** (Out of scope).
+9. **A URL's parts are slices of its text**, with no storage in `Url`: a zone is a field of its own,
+   and empty and absent parts differ by optionals (URLs, Built). Rejected: a `Url` holding a buffer
+   for decoded parts, which would make every `Url` large and its copies need care, for a zone that
+   is rarely there.
+10. **A short `into` panics** in `url`, as in `utf8` (URLs, Built). Rejected: an error, for a size
+   the caller can compute before the call.
 
 ## Open questions
 

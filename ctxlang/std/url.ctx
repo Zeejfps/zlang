@@ -1,0 +1,448 @@
+// std: url. URLs as RFC 3986 reads them: parsed into slices of their text, resolved against a
+// base, percent-encoded and decoded, and written back (docs/todo/http.md, URLs).
+//
+//   let u = try url::parse{ text = "https://example.com:8443/a/b?x=1#top" }
+//   // u.scheme "https", u.host "example.com", u.port 8443, u.authority "example.com:8443",
+//   // u.path "/a/b", u.query "x=1", u.fragment "top", u.target "/a/b?x=1"
+//   let mut buf: [256]u8
+//   let next = try url::resolve{ base = u, reference = "../c?y", into = buf[..] }   // https://example.com:8443/c?y
+//
+// It is pure, with no capability, so it runs in the interpreter and while compiling.
+//
+// What it reads:
+//
+//   - A URL is RFC 3986's URI-reference: an absolute URL ("http://h/p"), or a relative one
+//     ("/p?q", "../g", "//h/p"), whose scheme is then "". A request line's target in origin
+//     form ("/p?q") is one too.
+//   - Every byte is one RFC 3986's grammar allows in its part; a `%` begins two hexadecimal
+//     digits. A URL's text is ASCII: a space or a byte past 127 is bad_url, and a program with
+//     such text encodes it first (encode_percent). Parts stay as written, escapes included: a
+//     part is decoded by the program that wants it decoded (decode_percent), since what may be
+//     decoded depends on the part ("%2F" in a path segment isn't a `/`).
+//   - The scheme is a letter and then letters, digits, `+`, `-` and `.`, matched without case
+//     (is_scheme, default_port), and kept as written.
+//   - A host is a name, kept as written (no IDNA, no lower-casing: net.md, Name lookup), or an
+//     IPv6 address in brackets, which net::parse_ip reads, so it is what net reads: "[::1]",
+//     "[::ffff:1.2.3.4]". A v4 address isn't bracketed, and is a name to this reading. RFC
+//     3986's IPvFuture ("[v1.x]") is bad_url: no version of it was ever defined.
+//   - An IPv6 host may have a zone (RFC 6874), after `%25`, the escape of `%`: "[fe80::1%25eth0]".
+//     `host` is the address without it ("fe80::1") and `zone` the zone ("eth0"), each a slice of
+//     the text: the decoded host "fe80::1%eth0" isn't in the text, so it can't be a slice of it,
+//     and a slice is what every part is. A zone is RFC 6874's: unreserved bytes and escapes,
+//     which stay as written as in any part. A bare `%` there, which RFC 6874 lets a browser
+//     accept, is bad_url: the text would read two ways ("%25" as an escape or as a zone of "25").
+//   - A port is decimal digits up to 65535, leading zeros allowed, as RFC 3986 allows them. An
+//     empty port ("http://h:/") is no port, as RFC 3986 §6.2.3 says.
+//
+// Empty and absent differ where RFC 3986 says they do, and resolve needs them to: `user`,
+// `authority`, `query` and `fragment` are null when the text has no `@`, `//`, `?` or `#` for
+// them, and "" when it has one with nothing after it. `scheme` is "" when it is absent, since a
+// scheme can't be empty, and so are `host` and `zone`, which only an authority has.
+//
+// Text that isn't a URL fails with bad_url, whose `at` is the offset of the first byte that
+// can't be there, a `%` whose escape is broken, the start of a port too large, or the text's
+// length when it ends too soon ("http://[::1").
+//
+// Buffers: resolve, decode_percent and encode_percent write into the caller's `into` and panic
+// if it is too small, as utf8::encode and utf8::fmt_i64 do. How large is enough is known before
+// the call, so a short buffer is the caller's mistake, not the text's: decode_percent needs at
+// most text.len bytes, encode_percent 3 * text.len, and resolve the length of the text `base` was
+// parsed from, plus reference.len, plus 2.
+
+namespace url {
+    // A URL's parts, slices of the text it was parsed from (RFC 3986). `user` is the user
+    // information before `@`, a password after a colon included (RFC 3986 §3.2.1 deprecates
+    // one, but it is the text's). `authority` is what a Host field takes: the host as written,
+    // brackets and zone included, and the port with its colon ("[::1]:8080"), without the user
+    // information. `target` is the path and query as a request line takes them, "/" when both
+    // are empty; with an empty path and a query ("http://h?x") the text holds no "/?x", and
+    // `target` is "?x": push_target writes a request line's target in every case.
+    struct Url {
+        scheme: []u8,
+        user: ?[]u8,
+        host: []u8,
+        zone: []u8,
+        port: ?u16,
+        authority: ?[]u8,
+        path: []u8,
+        query: ?[]u8,
+        fragment: ?[]u8,
+        target: []u8,
+    }
+
+    error bad_url{ at: usize }          // text that isn't a URL: the offset of what's wrong
+
+    // "http://user@host:80/p?q#f", "/p?q", "../g": a URL or a relative reference.
+    fn parse { text: []u8 } -> !Url {
+        let mut u = Url{ scheme = "", user = null, host = "", zone = "", port = null, authority = null, path = "", query = null, fragment = null, target = "/" }
+        let mut i: usize = 0
+        // A scheme is what comes before the first `:`, if no `/`, `?` or `#` comes first.
+        let colon = find_any{ text, from = 0, stops = ":/?#" }
+        if colon < text.len and text[colon] == ':' {
+            try check_scheme{ text = text[..colon] }
+            u.scheme = text[..colon]
+            i = colon + 1
+        }
+        if i + 1 < text.len and text[i] == '/' and text[i + 1] == '/' {
+            let end = find_any{ text, from = i + 2, stops = "/?#" }
+            try read_authority{ &u, text, from = i + 2, end }
+            i = end
+        }
+        let path_end = find_any{ text, from = i, stops = "?#" }
+        try check_chars{ text, from = i, to = path_end, extra = ":@/", sub_delims = true }
+        u.path = text[i..path_end]
+        let path_start = i
+        i = path_end
+        let mut query_end = path_end
+        if i < text.len and text[i] == '?' {
+            query_end = find_any{ text, from = i + 1, stops = "#" }
+            try check_chars{ text, from = i + 1, to = query_end, extra = ":@/?", sub_delims = true }
+            u.query = text[i + 1..query_end]
+            i = query_end
+        }
+        if i < text.len {
+            // Only a `#` stops a query, so this is one.
+            try check_chars{ text, from = i + 1, to = text.len, extra = ":@/?", sub_delims = true }
+            u.fragment = text[i + 1..]
+        }
+        if path_end > path_start or query_end > path_end {
+            u.target = text[path_start..query_end]
+        }
+        return u
+    }
+
+    // The URL `reference` names relative to `base` (RFC 3986 §5.2, with dot segments removed),
+    // written into `into`, and parsed: what a redirect's Location gives. `base` is absolute, as
+    // §5.2.1 requires; resolved against a relative one, the result is as relative. A path that
+    // would begin with "//" where there is no authority, which would read back as one
+    // ("a:/b" and "..//c"), begins "/.//" instead. `into` must not hold base's text or the
+    // reference, and panics if it is too small (the header says how large).
+    fn resolve { base: Url, reference: []u8, into: []mut u8 } -> !Url {
+        let r = try parse{ text = reference }
+        let mut n: usize = 0
+        let scheme = if r.scheme.len > 0 { r.scheme } else { base.scheme }
+        if scheme.len > 0 {
+            n = write_bytes{ into, n, s = scheme }
+            n = write_bytes{ into, n, s = ":" }
+        }
+        // Whose authority: the reference's if it has a scheme or one, else the base's.
+        let from_reference = r.scheme.len > 0 or r.authority != null
+        let user = if from_reference { r.user } else { base.user }
+        let authority = if from_reference { r.authority } else { base.authority }
+        if let a = authority {
+            n = write_bytes{ into, n, s = "//" }
+            if let s = user {
+                n = write_bytes{ into, n, s }
+                n = write_bytes{ into, n, s = "@" }
+            }
+            n = write_bytes{ into, n, s = a }
+        }
+        let mut query = r.query
+        let start = n
+        if from_reference or (r.path.len > 0 and r.path[0] == '/') {
+            n = write_bytes{ into, n, s = r.path }
+            n = start + remove_dot_segments{ path = into[start..n] }
+        } else if r.path.len == 0 {
+            n = write_bytes{ into, n, s = base.path }
+            if query == null { query = base.query }
+        } else {
+            // Merged (§5.2.3): the base's path up to its last `/`, then the reference's.
+            if base.authority != null and base.path.len == 0 {
+                n = write_bytes{ into, n, s = "/" }
+            } else {
+                let mut slash = base.path.len
+                while slash > 0 and base.path[slash - 1] != '/' { slash = slash - 1 }
+                n = write_bytes{ into, n, s = base.path[..slash] }
+            }
+            n = write_bytes{ into, n, s = r.path }
+            n = start + remove_dot_segments{ path = into[start..n] }
+        }
+        if authority == null and n - start >= 2 and into[start] == '/' and into[start + 1] == '/' {
+            let len = n - start
+            n = write_bytes{ into, n, s = "//" }           // room for "/.", checked
+            let mut k = len
+            while k > 0 {
+                into[start + k + 1] = into[start + k - 1]
+                k = k - 1
+            }
+            into[start] = '/'
+            into[start + 1] = '.'
+        }
+        if let q = query {
+            n = write_bytes{ into, n, s = "?" }
+            n = write_bytes{ into, n, s = q }
+        }
+        if let f = r.fragment {
+            n = write_bytes{ into, n, s = "#" }
+            n = write_bytes{ into, n, s = f }
+        }
+        return parse{ text = into[..n] }
+    }
+
+    // Whether `scheme` is `name`, which is in lower case, without ASCII case: is_scheme{ scheme =
+    // "HTTPS", name = "https" } is true.
+    fn is_scheme { scheme: []u8, name: []u8 } -> bool {
+        if scheme.len != name.len { return false }
+        for c at i in scheme {
+            if ascii::to_lower{ c } != name[i] { return false }
+        }
+        return true
+    }
+
+    // The port a scheme implies: 80 for http and ws, 443 for https and wss, in any case; null for
+    // any other.
+    fn default_port { scheme: []u8 } -> ?u16 {
+        if is_scheme{ scheme, name = "http" } or is_scheme{ scheme, name = "ws" } { return 80 }
+        if is_scheme{ scheme, name = "https" } or is_scheme{ scheme, name = "wss" } { return 443 }
+        return null
+    }
+
+    // %XX escapes decoded into `into`, in either case of hexadecimal: how many bytes. Other bytes
+    // are copied, `+` included (form encoding's space is the program's to read). A `%` without
+    // two hexadecimal digits after it is bad_url at the `%`. `into` needs at most text.len bytes,
+    // and panics if it is too small.
+    fn decode_percent { text: []u8, into: []mut u8 } -> !usize {
+        let mut n: usize = 0
+        let mut i: usize = 0
+        while i < text.len {
+            let mut c = text[i]
+            if c == '%' {
+                if not is_escape{ text, i } { return bad_url{ at = i } }
+                c = @trunc(u8, net::read_hex_digit{ c = text[i + 1] } * 16 + net::read_hex_digit{ c = text[i + 2] })
+                i = i + 3
+            } else {
+                i = i + 1
+            }
+            if n == into.len { @panic("url::decode_percent: into is too small") }
+            into[n] = c
+            n = n + 1
+        }
+        return n
+    }
+
+    // Every byte but RFC 3986's unreserved ones (letters, digits, `-`, `.`, `_`, `~`) as %XX,
+    // with upper-case digits (§2.1), into `into`: how many bytes. For a query's names and values,
+    // and for a path segment. `into` needs at most 3 * text.len bytes, and panics if it is too
+    // small.
+    fn encode_percent { text: []u8, into: []mut u8 } -> usize {
+        let mut n: usize = 0
+        for c in text {
+            if is_unreserved{ c } {
+                if n == into.len { @panic("url::encode_percent: into is too small") }
+                into[n] = c
+                n = n + 1
+            } else {
+                if into.len - n < 3 { @panic("url::encode_percent: into is too small") }
+                into[n] = '%'
+                into[n + 1] = HEX[@as(usize, c >> 4)]
+                into[n + 2] = HEX[@as(usize, c & 15)]
+                n = n + 3
+            }
+        }
+        return n
+    }
+
+    // An @fmt writer: the URL as text, from its parts, so a parsed URL is written as it was read.
+    // An authority is written from `authority`, not `host` and `port`.
+    #write
+    fn push_url(S) { mut b: utf8::Builder(S), u: Url } -> ! {
+        if u.scheme.len > 0 { try @fmt(&b, "{}:", u.scheme) }
+        if let a = u.authority {
+            try @fmt(&b, "//")
+            if let s = u.user { try @fmt(&b, "{}@", s) }
+            try @fmt(&b, "{}", a)
+        }
+        try @fmt(&b, "{}", u.path)
+        if let q = u.query { try @fmt(&b, "?{}", q) }
+        if let f = u.fragment { try @fmt(&b, "#{}", f) }
+    }
+
+    // A request line's target: the path, "/" if it is empty, and the query after a `?` if there
+    // is one. A writer to bind in an @fmt: url::push_target{ u, _ }.
+    fn push_target(S) { mut b: utf8::Builder(S), u: Url } -> ! {
+        if u.path.len == 0 { try @fmt(&b, "/") }
+        try @fmt(&b, "{}", u.path)
+        if let q = u.query { try @fmt(&b, "?{}", q) }
+    }
+
+    // ---- reading
+
+    const HEX: [16]u8 = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F']
+
+    // Where the first byte of `stops` is in text[from..], or text.len.
+    fn find_any { text: []u8, from: usize, stops: []u8 } -> usize {
+        let mut i = from
+        while i < text.len {
+            for s in stops {
+                if text[i] == s { return i }
+            }
+            i = i + 1
+        }
+        return text.len
+    }
+
+    // RFC 3986's unreserved bytes: letters, digits, `-`, `.`, `_` and `~`.
+    fn is_unreserved { c: u8 } -> bool {
+        return ascii::is_alnum{ c } or c == '-' or c == '.' or c == '_' or c == '~'
+    }
+
+    // RFC 3986's sub-delims.
+    fn is_sub_delim { c: u8 } -> bool {
+        return c == '!' or c == '$' or c == '&' or c == '\'' or c == '(' or c == ')' or c == '*' or c == '+' or c == ',' or c == ';' or c == '='
+    }
+
+    // Whether text[i], a `%`, has two hexadecimal digits after it.
+    fn is_escape { text: []u8, i: usize } -> bool {
+        return i + 2 < text.len and net::read_hex_digit{ c = text[i + 1] } < 16 and net::read_hex_digit{ c = text[i + 2] } < 16
+    }
+
+    // text[from..to] as a part whose bytes are unreserved ones, escapes, the bytes of `extra`,
+    // and sub-delims if `sub_delims`.
+    fn check_chars { text: []u8, from: usize, to: usize, extra: []u8, sub_delims: bool } -> ! {
+        let part = text[..to]
+        let mut i = from
+        while i < to {
+            let c = part[i]
+            if c == '%' {
+                if not is_escape{ text = part, i } { return bad_url{ at = i } }
+                i = i + 3
+                continue
+            }
+            if not is_unreserved{ c } and not (sub_delims and is_sub_delim{ c }) {
+                let mut found = false
+                for e in extra {
+                    if c == e { found = true }
+                }
+                if not found { return bad_url{ at = i } }
+            }
+            i = i + 1
+        }
+    }
+
+    // A scheme: a letter, then letters, digits, `+`, `-` and `.`.
+    fn check_scheme { text: []u8 } -> ! {
+        if text.len == 0 or not ascii::is_alpha{ c = text[0] } { return bad_url{ at = 0 } }
+        for c at i in text {
+            if not ascii::is_alnum{ c } and c != '+' and c != '-' and c != '.' { return bad_url{ at = i } }
+        }
+    }
+
+    // text[from..end], an authority, into u's user, host, zone, port and authority.
+    fn read_authority { mut u: Url, text: []u8, from: usize, end: usize } -> ! {
+        let mut h = from
+        let at = find_any{ text = text[..end], from, stops = "@" }
+        if at < end {
+            try check_chars{ text, from, to = at, extra = ":", sub_delims = true }
+            u.user = text[from..at]
+            h = at + 1
+        }
+        u.authority = text[h..end]
+        let mut p = h                   // where the host ends
+        if h < end and text[h] == '[' {
+            let close = find_any{ text = text[..end], from = h, stops = "]" }
+            if close == end { return bad_url{ at = end } }
+            try read_ip_literal{ &u, text, from = h + 1, close }
+            p = close + 1
+            if p < end and text[p] != ':' { return bad_url{ at = p } }
+        } else {
+            p = find_any{ text = text[..end], from = h, stops = ":" }
+            try check_chars{ text, from = h, to = p, extra = "", sub_delims = true }
+            u.host = text[h..p]
+        }
+        if p < end {
+            // The port: text[p] is its colon.
+            let mut v: u32 = 0
+            let mut k = p + 1
+            while k < end {
+                let c = text[k]
+                if not ascii::is_digit{ c } { return bad_url{ at = k } }
+                v = v * 10 + @as(u32, c - '0')
+                if v > 65535 { return bad_url{ at = p + 1 } }
+                k = k + 1
+            }
+            if end > p + 1 { u.port = @trunc(u16, v) }
+        }
+    }
+
+    // text[from..close], inside brackets: an IPv6 address, as net reads one, and its zone.
+    fn read_ip_literal { mut u: Url, text: []u8, from: usize, close: usize } -> ! {
+        if from < close and (text[from] == 'v' or text[from] == 'V') { return bad_url{ at = from } }
+        let pct = find_any{ text = text[..close], from, stops = "%" }
+        let address = text[from..pct]
+        // Without a colon net would read a v4 address, which isn't bracketed.
+        if find_any{ text = address, from = 0, stops = ":" } == address.len { return bad_url{ at = from } }
+        match net::parse_ip{ text = address } {
+            ok => {}
+            net::bad_address{ at } => { return bad_url{ at = from + at } }
+        }
+        u.host = address
+        if pct < close {
+            if pct + 3 > close or text[pct + 1] != '2' or text[pct + 2] != '5' { return bad_url{ at = pct } }
+            if pct + 3 == close { return bad_url{ at = close } }
+            try check_chars{ text, from = pct + 3, to = close, extra = "", sub_delims = false }
+            u.zone = text[pct + 3..close]
+        }
+    }
+
+    // ---- writing
+
+    // s after into[..n]: the new length. Panics if it doesn't fit.
+    fn write_bytes { into: []mut u8, n: usize, s: []u8 } -> usize {
+        if s.len > into.len - n { @panic("url::resolve: into is too small") }
+        slice::copy(u8){ dst = into[n..n + s.len], src = s }
+        return n + s.len
+    }
+
+    // RFC 3986 §5.2.4's remove_dot_segments, in place: the new length of `path`. What is written
+    // is never longer than what is read, so the output, path[..out], stays behind the input.
+    fn remove_dot_segments { path: []mut u8 } -> usize {
+        let n = path.len
+        let mut i: usize = 0            // where the input begins
+        let mut out: usize = 0
+        while i < n {
+            let rest = n - i
+            let c0 = path[i]
+            let c1 = if rest >= 2 { path[i + 1] } else { 0 }
+            let c2 = if rest >= 3 { path[i + 2] } else { 0 }
+            let c3 = if rest >= 4 { path[i + 3] } else { 0 }
+            // A: a leading "../" or "./" goes.
+            if c0 == '.' and c1 == '.' and c2 == '/' {
+                i = i + 3
+            } else if c0 == '.' and c1 == '/' {
+                i = i + 2
+            // B: "/./" and a final "/." become "/".
+            } else if c0 == '/' and c1 == '.' and c2 == '/' {
+                i = i + 2
+            } else if c0 == '/' and c1 == '.' and rest == 2 {
+                path[i + 1] = '/'
+                i = i + 1
+            // C: "/../" and a final "/.." become "/", and the output's last segment goes.
+            } else if c0 == '/' and c1 == '.' and c2 == '.' and (c3 == '/' or rest == 3) {
+                if rest == 3 {
+                    path[i + 2] = '/'
+                    i = i + 2
+                } else {
+                    i = i + 3
+                }
+                while out > 0 and path[out - 1] != '/' { out = out - 1 }
+                if out > 0 { out = out - 1 }
+            // D: a path that is "." or "..".
+            } else if (c0 == '.' and rest == 1) or (c0 == '.' and c1 == '.' and rest == 2) {
+                i = n
+            // E: the first segment, with the `/` before it, moves to the output.
+            } else {
+                if c0 == '/' {
+                    path[out] = '/'
+                    out = out + 1
+                    i = i + 1
+                }
+                while i < n and path[i] != '/' {
+                    path[out] = path[i]
+                    out = out + 1
+                    i = i + 1
+                }
+            }
+        }
+        return out
+    }
+}

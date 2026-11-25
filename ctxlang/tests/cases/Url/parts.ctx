@@ -1,0 +1,136 @@
+// parse gives a URL's parts as slices of its text. `user`, `authority`, `query` and `fragment`
+// are null without their `@`, `//`, `?` or `#`, and empty with nothing after it; an empty port
+// is no port. `target` is the path and query, "/" when both are empty. A relative reference has
+// no scheme. Each line is the text, then the parts; push_url writes it back as it was.
+
+fn write_opt { mut io: Io, name: []u8, part: ?[]u8 } {
+    if let p = part {
+        _ = @fmt(&io, " {}=\"{}\"", name, p)
+    } else {
+        _ = @fmt(&io, " {}=null", name)
+    }
+}
+
+fn show { mut io: Io, text: []u8 } {
+    let u = url::parse{ text } iferr err{ error } {
+        _ = @fmt(&io, "{} -> {}\n", text, error)
+        return
+    }
+    _ = @fmt(&io, "{}\n  scheme=\"{}\"", text, u.scheme)
+    write_opt{ &io, name = "user", part = u.user }
+    _ = @fmt(&io, " host=\"{}\" zone=\"{}\"", u.host, u.zone)
+    if let p = u.port { _ = @fmt(&io, " port={}", p) } else { _ = @fmt(&io, " port=null") }
+    write_opt{ &io, name = "authority", part = u.authority }
+    _ = @fmt(&io, "\n  path=\"{}\"", u.path)
+    write_opt{ &io, name = "query", part = u.query }
+    write_opt{ &io, name = "fragment", part = u.fragment }
+    _ = @fmt(&io, " target=\"{}\"\n", u.target)
+    let mut mem: [512]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&b, "{}", u)
+    if not slice::eq_bytes{ a = utf8::view{ b }.bytes, b = text } { _ = @fmt(&io, "  written as {}\n", utf8::view{ b }) }
+}
+
+fn main { mut io: Io } {
+    show{ &io, text = "http://example.com/a/b?x=1&y=2#top" }
+    show{ &io, text = "https://user:pw@Example.COM:8443/" }
+    show{ &io, text = "http://h" }
+    show{ &io, text = "http://h?" }                 // a query, empty
+    show{ &io, text = "http://h#" }                 // a fragment, empty
+    show{ &io, text = "http://h?#" }
+    show{ &io, text = "http://h:/p" }               // an empty port is none
+    show{ &io, text = "http://h:080" }              // leading zeros are RFC 3986's digits
+    show{ &io, text = "http://h:65535" }
+    show{ &io, text = "http://@h/" }                // user information, empty
+    show{ &io, text = "http://a@b@c/" }
+    show{ &io, text = "http://h?x" }                // the text holds no "/?x"
+    show{ &io, text = "http://h/p?q?r/s" }          // `?` and `/` may be in a query
+    show{ &io, text = "file:///etc/hosts" }         // an authority, empty
+    show{ &io, text = "mailto:someone@example.com" }    // no authority
+    show{ &io, text = "urn:isbn:0451450523" }
+    show{ &io, text = "HtTp+Ex.1-a://h" }
+    show{ &io, text = "/p/a%20th?q=%41" }           // relative: a request line's target
+    show{ &io, text = "//h:1/p" }
+    show{ &io, text = "../g;x?y#s" }
+    show{ &io, text = "" }
+    show{ &io, text = "?" }
+    show{ &io, text = "#f" }
+    show{ &io, text = "*" }
+    show{ &io, text = "http://!$&'()*+,;=.~_-/:@!$&'()*+,;=?/?:@#/?:@" }
+}
+
+//# stdout:
+//| http://example.com/a/b?x=1&y=2#top
+//|   scheme="http" user=null host="example.com" zone="" port=null authority="example.com"
+//|   path="/a/b" query="x=1&y=2" fragment="top" target="/a/b?x=1&y=2"
+//| https://user:pw@Example.COM:8443/
+//|   scheme="https" user="user:pw" host="Example.COM" zone="" port=8443 authority="Example.COM:8443"
+//|   path="/" query=null fragment=null target="/"
+//| http://h
+//|   scheme="http" user=null host="h" zone="" port=null authority="h"
+//|   path="" query=null fragment=null target="/"
+//| http://h?
+//|   scheme="http" user=null host="h" zone="" port=null authority="h"
+//|   path="" query="" fragment=null target="?"
+//| http://h#
+//|   scheme="http" user=null host="h" zone="" port=null authority="h"
+//|   path="" query=null fragment="" target="/"
+//| http://h?#
+//|   scheme="http" user=null host="h" zone="" port=null authority="h"
+//|   path="" query="" fragment="" target="?"
+//| http://h:/p
+//|   scheme="http" user=null host="h" zone="" port=null authority="h:"
+//|   path="/p" query=null fragment=null target="/p"
+//| http://h:080
+//|   scheme="http" user=null host="h" zone="" port=80 authority="h:080"
+//|   path="" query=null fragment=null target="/"
+//| http://h:65535
+//|   scheme="http" user=null host="h" zone="" port=65535 authority="h:65535"
+//|   path="" query=null fragment=null target="/"
+//| http://@h/
+//|   scheme="http" user="" host="h" zone="" port=null authority="h"
+//|   path="/" query=null fragment=null target="/"
+//| http://a@b@c/ -> url::bad_url{ at = 10 }
+//| http://h?x
+//|   scheme="http" user=null host="h" zone="" port=null authority="h"
+//|   path="" query="x" fragment=null target="?x"
+//| http://h/p?q?r/s
+//|   scheme="http" user=null host="h" zone="" port=null authority="h"
+//|   path="/p" query="q?r/s" fragment=null target="/p?q?r/s"
+//| file:///etc/hosts
+//|   scheme="file" user=null host="" zone="" port=null authority=""
+//|   path="/etc/hosts" query=null fragment=null target="/etc/hosts"
+//| mailto:someone@example.com
+//|   scheme="mailto" user=null host="" zone="" port=null authority=null
+//|   path="someone@example.com" query=null fragment=null target="someone@example.com"
+//| urn:isbn:0451450523
+//|   scheme="urn" user=null host="" zone="" port=null authority=null
+//|   path="isbn:0451450523" query=null fragment=null target="isbn:0451450523"
+//| HtTp+Ex.1-a://h
+//|   scheme="HtTp+Ex.1-a" user=null host="h" zone="" port=null authority="h"
+//|   path="" query=null fragment=null target="/"
+//| /p/a%20th?q=%41
+//|   scheme="" user=null host="" zone="" port=null authority=null
+//|   path="/p/a%20th" query="q=%41" fragment=null target="/p/a%20th?q=%41"
+//| //h:1/p
+//|   scheme="" user=null host="h" zone="" port=1 authority="h:1"
+//|   path="/p" query=null fragment=null target="/p"
+//| ../g;x?y#s
+//|   scheme="" user=null host="" zone="" port=null authority=null
+//|   path="../g;x" query="y" fragment="s" target="../g;x?y"
+//|
+//|   scheme="" user=null host="" zone="" port=null authority=null
+//|   path="" query=null fragment=null target="/"
+//| ?
+//|   scheme="" user=null host="" zone="" port=null authority=null
+//|   path="" query="" fragment=null target="?"
+//| #f
+//|   scheme="" user=null host="" zone="" port=null authority=null
+//|   path="" query=null fragment="f" target="/"
+//| *
+//|   scheme="" user=null host="" zone="" port=null authority=null
+//|   path="*" query=null fragment=null target="*"
+//| http://!$&'()*+,;=.~_-/:@!$&'()*+,;=?/?:@#/?:@
+//|   scheme="http" user=null host="!$&'()*+,;=.~_-" zone="" port=null authority="!$&'()*+,;=.~_-"
+//|   path="/:@!$&'()*+,;=" query="/?:@" fragment="/?:@" target="/:@!$&'()*+,;=?/?:@"

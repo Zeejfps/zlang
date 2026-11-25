@@ -1,0 +1,67 @@
+// RFC 3986 §5.4.1's normal examples, all of them, resolved against its base
+// "http://a/b/c/d;p?q": each line is the reference, then what resolve gives, written by push_url.
+
+fn show { mut io: Io, base: url::Url, reference: []u8 } {
+    let mut buf: [128]u8
+    let mut mem: [512]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let u = url::resolve{ base, reference, into = buf[..] } iferr err{ error } {
+        _ = @fmt(&io, "\"{}\" -> {}\n", reference, error)
+        return
+    }
+    try! @fmt(&b, "{}", u)
+    _ = @fmt(&io, "\"{}\" = \"{}\"\n", reference, utf8::view{ b })
+}
+
+fn main { mut io: Io } {
+    let base = try! url::parse{ text = "http://a/b/c/d;p?q" }
+    show{ &io, base, reference = "g:h" }
+    show{ &io, base, reference = "g" }
+    show{ &io, base, reference = "./g" }
+    show{ &io, base, reference = "g/" }
+    show{ &io, base, reference = "/g" }
+    show{ &io, base, reference = "//g" }
+    show{ &io, base, reference = "?y" }
+    show{ &io, base, reference = "g?y" }
+    show{ &io, base, reference = "#s" }
+    show{ &io, base, reference = "g#s" }
+    show{ &io, base, reference = "g?y#s" }
+    show{ &io, base, reference = ";x" }
+    show{ &io, base, reference = "g;x" }
+    show{ &io, base, reference = "g;x?y#s" }
+    show{ &io, base, reference = "" }
+    show{ &io, base, reference = "." }
+    show{ &io, base, reference = "./" }
+    show{ &io, base, reference = ".." }
+    show{ &io, base, reference = "../" }
+    show{ &io, base, reference = "../g" }
+    show{ &io, base, reference = "../.." }
+    show{ &io, base, reference = "../../" }
+    show{ &io, base, reference = "../../g" }
+}
+
+//# stdout:
+//| "g:h" = "g:h"
+//| "g" = "http://a/b/c/g"
+//| "./g" = "http://a/b/c/g"
+//| "g/" = "http://a/b/c/g/"
+//| "/g" = "http://a/g"
+//| "//g" = "http://g"
+//| "?y" = "http://a/b/c/d;p?y"
+//| "g?y" = "http://a/b/c/g?y"
+//| "#s" = "http://a/b/c/d;p?q#s"
+//| "g#s" = "http://a/b/c/g#s"
+//| "g?y#s" = "http://a/b/c/g?y#s"
+//| ";x" = "http://a/b/c/;x"
+//| "g;x" = "http://a/b/c/g;x"
+//| "g;x?y#s" = "http://a/b/c/g;x?y#s"
+//| "" = "http://a/b/c/d;p?q"
+//| "." = "http://a/b/c/"
+//| "./" = "http://a/b/c/"
+//| ".." = "http://a/b/"
+//| "../" = "http://a/b/"
+//| "../g" = "http://a/b/g"
+//| "../.." = "http://a/"
+//| "../../" = "http://a/"
+//| "../../g" = "http://a/g"

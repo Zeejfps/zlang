@@ -1,0 +1,66 @@
+// An IPv6 host is in brackets, read as net::parse_ip reads one, and `host` is it without them.
+// A zone follows `%25` (RFC 6874): `host` is the address before it and `zone` what follows, and
+// `authority` keeps both as written, as a Host field would carry them. A v4 address in brackets,
+// IPvFuture, a bare `%` and a broken address are bad_url, at offsets in the whole text.
+
+fn show { mut io: Io, text: []u8 } {
+    let u = url::parse{ text } iferr err{ error } {
+        _ = @fmt(&io, "{} -> {}\n", text, error)
+        return
+    }
+    let port = u.port ifnull 0
+    _ = @fmt(&io, "{} -> host \"{}\" zone \"{}\" port {} authority \"{}\"\n", text, u.host, u.zone, port, u.authority ifnull "-")
+    // The host reads back as net's address.
+    let ip = net::parse_ip{ text = u.host } iferr { @panic("host isn't an address") }
+    if not (ip is v6) { @panic("host isn't v6") }
+}
+
+fn main { mut io: Io } {
+    show{ &io, text = "http://[::1]/" }
+    show{ &io, text = "http://[::1]:8080/" }
+    show{ &io, text = "http://[2001:DB8::1]" }
+    show{ &io, text = "http://[::ffff:1.2.3.4]:1" }
+    show{ &io, text = "http://[fe80::1%25eth0]/" }
+    show{ &io, text = "http://[fe80::1%253]:80/" }
+    show{ &io, text = "http://[fe80::1%25en%2D0]/" }    // a zone's escapes stay
+    show{ &io, text = "http://u@[::1]:2/" }
+
+    show{ &io, text = "http://[1.2.3.4]/" }              // v4 isn't bracketed
+    show{ &io, text = "http://[v1.x]/" }                 // IPvFuture
+    show{ &io, text = "http://[]/" }
+    show{ &io, text = "http://[::1/" }                   // unclosed: at the authority's end
+    show{ &io, text = "http://[::1" }
+    show{ &io, text = "http://[::1]x/" }
+    show{ &io, text = "http://[::g]/" }                  // net's offset, counted from the text's start
+    show{ &io, text = "http://[1:2:3:4:5:6:7:8:9]/" }
+    show{ &io, text = "http://[fe80::1%eth0]/" }         // a bare `%`
+    show{ &io, text = "http://[fe80::1%2]/" }
+    show{ &io, text = "http://[fe80::1%25]/" }           // an empty zone
+    show{ &io, text = "http://[fe80::1%25e:0]/" }        // a zone is unreserved bytes and escapes
+    show{ &io, text = "http://[fe80::1%25e%]/" }
+    show{ &io, text = "http://[::1]:99999/" }
+}
+
+//# stdout:
+//| http://[::1]/ -> host "::1" zone "" port 0 authority "[::1]"
+//| http://[::1]:8080/ -> host "::1" zone "" port 8080 authority "[::1]:8080"
+//| http://[2001:DB8::1] -> host "2001:DB8::1" zone "" port 0 authority "[2001:DB8::1]"
+//| http://[::ffff:1.2.3.4]:1 -> host "::ffff:1.2.3.4" zone "" port 1 authority "[::ffff:1.2.3.4]:1"
+//| http://[fe80::1%25eth0]/ -> host "fe80::1" zone "eth0" port 0 authority "[fe80::1%25eth0]"
+//| http://[fe80::1%253]:80/ -> host "fe80::1" zone "3" port 80 authority "[fe80::1%253]:80"
+//| http://[fe80::1%25en%2D0]/ -> host "fe80::1" zone "en%2D0" port 0 authority "[fe80::1%25en%2D0]"
+//| http://u@[::1]:2/ -> host "::1" zone "" port 2 authority "[::1]:2"
+//| http://[1.2.3.4]/ -> url::bad_url{ at = 8 }
+//| http://[v1.x]/ -> url::bad_url{ at = 8 }
+//| http://[]/ -> url::bad_url{ at = 8 }
+//| http://[::1/ -> url::bad_url{ at = 11 }
+//| http://[::1 -> url::bad_url{ at = 11 }
+//| http://[::1]x/ -> url::bad_url{ at = 12 }
+//| http://[::g]/ -> url::bad_url{ at = 10 }
+//| http://[1:2:3:4:5:6:7:8:9]/ -> url::bad_url{ at = 24 }
+//| http://[fe80::1%eth0]/ -> url::bad_url{ at = 15 }
+//| http://[fe80::1%2]/ -> url::bad_url{ at = 15 }
+//| http://[fe80::1%25]/ -> url::bad_url{ at = 18 }
+//| http://[fe80::1%25e:0]/ -> url::bad_url{ at = 19 }
+//| http://[fe80::1%25e%]/ -> url::bad_url{ at = 19 }
+//| http://[::1]:99999/ -> url::bad_url{ at = 13 }

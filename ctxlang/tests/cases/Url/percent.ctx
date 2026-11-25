@@ -1,0 +1,91 @@
+// decode_percent undoes %XX escapes, in either case, and copies every other byte, `+` included;
+// a `%` without two hexadecimal digits is bad_url at the `%`. encode_percent escapes every byte
+// but RFC 3986's unreserved ones, with upper-case digits, and what it writes decodes back to
+// what it was given. default_port and is_scheme match a scheme without case.
+
+fn decode { mut io: Io, text: []u8 } {
+    let mut buf: [64]u8
+    let n = url::decode_percent{ text, into = buf[..text.len] } iferr err{ error } {
+        _ = @fmt(&io, "decode \"{}\" -> {}\n", text, error)
+        return
+    }
+    _ = @fmt(&io, "decode \"{}\" = \"{}\" ({} bytes)\n", text, buf[..n], n)
+}
+
+fn encode { mut io: Io, text: []u8 } {
+    let mut buf: [192]u8
+    let n = url::encode_percent{ text, into = buf[..3 * text.len] }
+    _ = @fmt(&io, "encode \"{}\" = \"{}\"\n", text, buf[..n])
+    let mut back: [64]u8
+    let k = url::decode_percent{ text = buf[..n], into = back[..] } iferr { @panic("doesn't decode") }
+    if not slice::eq_bytes{ a = back[..k], b = text } { @panic("decodes as another") }
+}
+
+fn port { mut io: Io, scheme: []u8 } {
+    if let p = url::default_port{ scheme } {
+        _ = @fmt(&io, "{}: {}\n", scheme, p)
+    } else {
+        _ = @fmt(&io, "{}: none\n", scheme)
+    }
+}
+
+fn main { mut io: Io } {
+    decode{ &io, text = "a%20b" }
+    decode{ &io, text = "%41%62%2f%2F" }
+    decode{ &io, text = "a+b" }                 // `+` is form encoding's, not this
+    decode{ &io, text = "%E2%82%AC" }
+    decode{ &io, text = "%25%2525" }            // decoded once
+    decode{ &io, text = "" }
+    decode{ &io, text = "100%" }
+    decode{ &io, text = "%4" }
+    decode{ &io, text = "%g1" }
+    decode{ &io, text = "%1g" }
+    decode{ &io, text = "ok%41%" }
+
+    encode{ &io, text = "AZaz09-._~" }          // unreserved: as they are
+    encode{ &io, text = "a b&c=d/e?f#g" }
+    encode{ &io, text = "%" }
+    encode{ &io, text = "\x00\x7f\xff" }
+    encode{ &io, text = "\xe2\x82\xac" }
+    encode{ &io, text = "" }
+
+    port{ &io, scheme = "http" }
+    port{ &io, scheme = "HTTP" }
+    port{ &io, scheme = "https" }
+    port{ &io, scheme = "HttpS" }
+    port{ &io, scheme = "ws" }
+    port{ &io, scheme = "WSS" }
+    port{ &io, scheme = "ftp" }
+    port{ &io, scheme = "" }
+    port{ &io, scheme = "httpss" }
+    _ = @fmt(&io, "{} {} {}\n", url::is_scheme{ scheme = "HTTPS", name = "https" }, url::is_scheme{ scheme = "http", name = "https" }, url::is_scheme{ scheme = "ftp", name = "fto" })
+}
+
+//# stdout escaped:
+//| decode "a%20b" = "a b" (3 bytes)
+//| decode "%41%62%2f%2F" = "Ab//" (4 bytes)
+//| decode "a+b" = "a+b" (3 bytes)
+//| decode "%E2%82%AC" = "\xe2\x82\xac" (3 bytes)
+//| decode "%25%2525" = "%%25" (4 bytes)
+//| decode "" = "" (0 bytes)
+//| decode "100%" -> url::bad_url{ at = 3 }
+//| decode "%4" -> url::bad_url{ at = 0 }
+//| decode "%g1" -> url::bad_url{ at = 0 }
+//| decode "%1g" -> url::bad_url{ at = 0 }
+//| decode "ok%41%" -> url::bad_url{ at = 5 }
+//| encode "AZaz09-._~" = "AZaz09-._~"
+//| encode "a b&c=d/e?f#g" = "a%20b%26c%3Dd%2Fe%3Ff%23g"
+//| encode "%" = "%25"
+//| encode "\x00\x7f\xff" = "%00%7F%FF"
+//| encode "\xe2\x82\xac" = "%E2%82%AC"
+//| encode "" = ""
+//| http: 80
+//| HTTP: 80
+//| https: 443
+//| HttpS: 443
+//| ws: 80
+//| WSS: 443
+//| ftp: none
+//| : none
+//| httpss: none
+//| true false false

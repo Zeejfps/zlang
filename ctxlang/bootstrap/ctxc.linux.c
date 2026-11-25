@@ -1571,7 +1571,7 @@ struct t60 { uint32_t tag; union { struct { t6 m_value; } v1; } p; };
 struct t61 { uint32_t tag; union { struct { t54 m_value; } v1; } p; };
 struct t64 { t16 m_kind; t8 m_dir; t6 m_roots; };
 struct t66 { uint32_t tag; union { struct { t13 m_error; } v1; } p; };
-struct t69 { uint32_t tag; union { struct { t15 m_at; } v1; struct { t57 m_code; } v9; struct { t15 m_at; } v10; struct { t57 m_code; } v25; struct { t57 m_code; } v29; struct { t15 m_at; } v33; } p; };
+struct t69 { uint32_t tag; union { struct { t15 m_at; } v1; struct { t57 m_code; } v9; struct { t15 m_at; } v10; struct { t57 m_code; } v25; struct { t57 m_code; } v29; struct { t15 m_at; } v33; struct { t15 m_at; } v34; } p; };
 struct t67 { uint32_t tag; union { struct { t0 m_value; } v0; struct { t69 m_error; } v1; } p; };
 struct t68 { uint32_t tag; union { struct { t0 m_value; } v0; struct { t56 m_error; } v1; } p; };
 struct t73 { t304 m_ptr; t15 m_len; };
@@ -2722,6 +2722,7 @@ _Static_assert(offsetof(t69, p.v10.m_at) == 8, "offset in t69");
 _Static_assert(offsetof(t69, p.v25.m_code) == 8, "offset in t69");
 _Static_assert(offsetof(t69, p.v29.m_code) == 8, "offset in t69");
 _Static_assert(offsetof(t69, p.v33.m_at) == 8, "offset in t69");
+_Static_assert(offsetof(t69, p.v34.m_at) == 8, "offset in t69");
 _Static_assert(sizeof(t71) == 40 && _Alignof(t71) == 8, "layout of t71");
 _Static_assert(offsetof(t71, m_items) == 0, "offset in t71");
 _Static_assert(offsetof(t71, m_len) == 16, "offset in t71");
@@ -16764,10 +16765,12 @@ static t29 f_drive__said(CTX_UP t1 l0, t30 l1, t50 * l2, t85 l3, t8 l4, t8 l5, t
                 } } else if ((_t27.tag == 32)) { {
                     ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: thread::out_of_resources");
                 } } else if ((_t27.tag == 33)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: url::bad_url");
                 } } else if ((_t27.tag == 34)) { {
-                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
                 } } else if ((_t27.tag == 35)) { {
+                    ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                } } else if ((_t27.tag == 36)) { {
                     ctx_panic(538, 13, &w_drive__said, CTX_UPV, "try! failed: eval::halt");
                 } } }
             } } }
@@ -16865,10 +16868,12 @@ static t29 f_drive__said(CTX_UP t1 l0, t30 l1, t50 * l2, t85 l3, t8 l4, t8 l5, t
                     } } else if ((_t44.tag == 32)) { {
                         ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: thread::out_of_resources");
                     } } else if ((_t44.tag == 33)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: url::bad_url");
                     } } else if ((_t44.tag == 34)) { {
-                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
                     } } else if ((_t44.tag == 35)) { {
+                        ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                    } } else if ((_t44.tag == 36)) { {
                         ctx_panic(539, 30, &w_drive__said, CTX_UPV, "try! failed: eval::halt");
                     } } }
                 } } }
@@ -16995,10 +17000,12 @@ static t29 f_drive__said(CTX_UP t1 l0, t30 l1, t50 * l2, t85 l3, t8 l4, t8 l5, t
                     } } else if ((_t78.tag == 32)) { {
                         ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: thread::out_of_resources");
                     } } else if ((_t78.tag == 33)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: url::bad_url");
                     } } else if ((_t78.tag == 34)) { {
-                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: utf8::invalid");
                     } } else if ((_t78.tag == 35)) { {
+                        ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: eval::leave");
+                    } } else if ((_t78.tag == 36)) { {
                         ctx_panic(544, 17, &w_drive__said, CTX_UPV, "try! failed: eval::halt");
                     } } }
                 } } }
@@ -24310,10 +24317,12 @@ static t29 f_report__json_place(CTX_UP t81 l0, t185 l1) {
             } } else if ((_t63.tag == 32)) { {
                 ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: thread::out_of_resources");
             } } else if ((_t63.tag == 33)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: url::bad_url");
             } } else if ((_t63.tag == 34)) { {
-                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: utf8::invalid");
             } } else if ((_t63.tag == 35)) { {
+                ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t63.tag == 36)) { {
                 ctx_panic(168, 9, &w_report__json_place, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -24641,10 +24650,12 @@ static t29 f_report__json(CTX_UP t81 l0, t74 * l1) {
             } } else if ((_t23.tag == 32)) { {
                 ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
             } } else if ((_t23.tag == 33)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: url::bad_url");
             } } else if ((_t23.tag == 34)) { {
-                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
             } } else if ((_t23.tag == 35)) { {
+                ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t23.tag == 36)) { {
                 ctx_panic(147, 9, &w_report__json, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -24764,10 +24775,12 @@ static t29 f_report__json(CTX_UP t81 l0, t74 * l1) {
                 } } else if ((_t55.tag == 32)) { {
                     ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
                 } } else if ((_t55.tag == 33)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: url::bad_url");
                 } } else if ((_t55.tag == 34)) { {
-                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
                 } } else if ((_t55.tag == 35)) { {
+                    ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                } } else if ((_t55.tag == 36)) { {
                     ctx_panic(151, 13, &w_report__json, CTX_UPV, "try! failed: eval::halt");
                 } } }
             } } }
@@ -24917,10 +24930,12 @@ static t29 f_report__json(CTX_UP t81 l0, t74 * l1) {
                 } } else if ((_t103.tag == 32)) { {
                     ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
                 } } else if ((_t103.tag == 33)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: url::bad_url");
                 } } else if ((_t103.tag == 34)) { {
-                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
                 } } else if ((_t103.tag == 35)) { {
+                    ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                } } else if ((_t103.tag == 36)) { {
                     ctx_panic(155, 13, &w_report__json, CTX_UPV, "try! failed: eval::halt");
                 } } }
             } } }
@@ -25040,10 +25055,12 @@ static t29 f_report__json(CTX_UP t81 l0, t74 * l1) {
                     } } else if ((_t135.tag == 32)) { {
                         ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: thread::out_of_resources");
                     } } else if ((_t135.tag == 33)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: url::bad_url");
                     } } else if ((_t135.tag == 34)) { {
-                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: utf8::invalid");
                     } } else if ((_t135.tag == 35)) { {
+                        ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: eval::leave");
+                    } } else if ((_t135.tag == 36)) { {
                         ctx_panic(159, 17, &w_report__json, CTX_UPV, "try! failed: eval::halt");
                     } } }
                 } } }
@@ -46646,10 +46663,12 @@ static t29 f_check__errorf(CTX_UP t196 l0, t209 l1, t664 l2) {
             } } else if ((_t2.tag == 32)) { {
                 ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: thread::out_of_resources");
             } } else if ((_t2.tag == 33)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: url::bad_url");
             } } else if ((_t2.tag == 34)) { {
-                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: utf8::invalid");
             } } else if ((_t2.tag == 35)) { {
+                ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t2.tag == 36)) { {
                 ctx_panic(17538, 9, &w_check__errorf, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -56897,10 +56916,12 @@ static t29 f_parser__slipf(CTX_UP t216 l0, t209 l1, t664 l2) {
             } } else if ((_t2.tag == 32)) { {
                 ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: thread::out_of_resources");
             } } else if ((_t2.tag == 33)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: url::bad_url");
             } } else if ((_t2.tag == 34)) { {
-                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: utf8::invalid");
             } } else if ((_t2.tag == 35)) { {
+                ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t2.tag == 36)) { {
                 ctx_panic(2659, 9, &w_parser__slipf, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -70198,10 +70219,12 @@ static t29 f_check__notef(CTX_UP t196 l0, t209 l1, t664 l2) {
             } } else if ((_t2.tag == 32)) { {
                 ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: thread::out_of_resources");
             } } else if ((_t2.tag == 33)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: url::bad_url");
             } } else if ((_t2.tag == 34)) { {
-                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: utf8::invalid");
             } } else if ((_t2.tag == 35)) { {
+                ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t2.tag == 36)) { {
                 ctx_panic(17488, 9, &w_check__notef, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -71888,10 +71911,12 @@ static t883 f_eval__at_w(CTX_UP t424 l0, t9 l1, t9 l2) {
                 } } else if ((_t19.tag == 32)) { {
                     ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: thread::out_of_resources");
                 } } else if ((_t19.tag == 33)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: utf8::invalid");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: url::bad_url");
                 } } else if ((_t19.tag == 34)) { {
-                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: eval::leave");
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: utf8::invalid");
                 } } else if ((_t19.tag == 35)) { {
+                    ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: eval::leave");
+                } } else if ((_t19.tag == 36)) { {
                     ctx_panic(2522, 13, &w_eval__at_w, CTX_UPV, "try! failed: eval::halt");
                 } } }
             } } }
@@ -72156,10 +72181,12 @@ static t883 f_eval__at(CTX_UP t424 l0, t9 l1, t9 l2) {
             } } else if ((_t36.tag == 32)) { {
                 ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: thread::out_of_resources");
             } } else if ((_t36.tag == 33)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: url::bad_url");
             } } else if ((_t36.tag == 34)) { {
-                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: utf8::invalid");
             } } else if ((_t36.tag == 35)) { {
+                ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t36.tag == 36)) { {
                 ctx_panic(2512, 9, &w_eval__at, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -75931,10 +75958,12 @@ static t29 f_parser__failf_at(CTX_UP t216 l0, t664 l1, t210 l2) {
             } } else if ((_t2.tag == 32)) { {
                 ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: thread::out_of_resources");
             } } else if ((_t2.tag == 33)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: utf8::invalid");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: url::bad_url");
             } } else if ((_t2.tag == 34)) { {
-                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: eval::leave");
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: utf8::invalid");
             } } else if ((_t2.tag == 35)) { {
+                ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: eval::leave");
+            } } else if ((_t2.tag == 36)) { {
                 ctx_panic(2613, 9, &w_parser__failf_at, CTX_UPV, "try! failed: eval::halt");
             } } }
         } } }
@@ -94585,10 +94614,12 @@ static t29 f_decls__quote(CTX_UP t81 l0, t8 l1) {
                     } } else if ((_t17.tag == 32)) { {
                         ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: thread::out_of_resources");
                     } } else if ((_t17.tag == 33)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: utf8::invalid");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: url::bad_url");
                     } } else if ((_t17.tag == 34)) { {
-                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: eval::leave");
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: utf8::invalid");
                     } } else if ((_t17.tag == 35)) { {
+                        ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: eval::leave");
+                    } } else if ((_t17.tag == 36)) { {
                         ctx_panic(1626, 17, &w_decls__quote, CTX_UPV, "try! failed: eval::halt");
                     } } }
                 } } }
@@ -148758,10 +148789,12 @@ static t1390 f_eval__code_at(CTX_UP t424 l0, t9 l1) {
                 } } else if ((_t25.tag == 32)) { {
                     ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: thread::out_of_resources");
                 } } else if ((_t25.tag == 33)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: utf8::invalid");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: url::bad_url");
                 } } else if ((_t25.tag == 34)) { {
-                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: eval::leave");
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: utf8::invalid");
                 } } else if ((_t25.tag == 35)) { {
+                    ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: eval::leave");
+                } } else if ((_t25.tag == 36)) { {
                     ctx_panic(1460, 13, &w_eval__code_at, CTX_UPV, "try! failed: eval::halt");
                 } } }
             } } }
