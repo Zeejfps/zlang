@@ -1,3 +1,3 @@
 #test_main
-fn r { n: i32 } -> i32 { return 0 }  //~ error at 8: a `test_main` fn's context is capabilities, `args: Args`, `count: usize`, `case: &fn{ index: usize } -> test::Case` and `run: &fn{ index: usize } -> i32`, not `n: i32`
+fn r { n: i32 } -> i32 { return 0 }  //~ error at 8: a `test_main` fn's context is capabilities, `args: [][]u8`, `count: usize`, `case: &fn{ index: usize } -> test::Case` and `run: &fn{ index: usize } -> i32`, not `n: i32`
 fn main {} {}

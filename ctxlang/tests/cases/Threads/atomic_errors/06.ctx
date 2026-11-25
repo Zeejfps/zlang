@@ -1,4 +1,4 @@
 fn main {} {
     let mut f: f64 = 0.0
-    _ = @atomic_load(&f, atomic::Order::relaxed)  //~ error at 22: @atomic_load works on an integer, a bool, an enum or a pointer, not f64
+    _ = @atomic_load_relaxed(&f)  //~ error at 30: @atomic_load_relaxed works on an integer, a bool, an enum or a pointer, not f64
 }

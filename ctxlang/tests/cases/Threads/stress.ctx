@@ -7,7 +7,7 @@ struct Shared { atomic: u64, lock: mutex::Mutex, locked: u64 }
 fn add { data: *mut Shared } -> ! {
     let mut i: u32 = 0
     while i < 1000000 {
-        _ = @atomic_add(&data.atomic, 1, atomic::Order::relaxed)
+        _ = @atomic_add_relaxed(&data.atomic, 1)
         mutex::lock{ mutex = &data.lock }
         data.locked = data.locked + 1
         mutex::unlock{ mutex = &data.lock }
@@ -28,7 +28,7 @@ fn main { mut io: Io, mut threads: Threads } -> i32 {
         task::wait{ &threads, task = &ts[i] } iferr { return 1 }
         i = i + 1
     }
-    io::println_u64{ &io, n = @atomic_load(&s.atomic, atomic::Order::acquire) }
+    io::println_u64{ &io, n = @atomic_load_acquire(&s.atomic) }
     io::println_u64{ &io, n = s.locked }
     return 0
 }

@@ -18,4 +18,4 @@ fn main { mut threads: Threads, c: bool } {
 
 //# errors:
 //| 16.ctx:16:8: error: `buf[_]` is held by the task started at 14:16 until it is waited for or cancelled
-//| 16.ctx:11:1: error: `main` context field `c` must have a capability type or be `args: Args`, got bool
+//| 16.ctx:11:1: error: `main` context field `c` must have a capability type or be `args: [][]u8`, got bool

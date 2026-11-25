@@ -1,5 +1,4 @@
 fn main {} {
     let mut n: u32 = 0
-    let o = atomic::Order::relaxed
-    _ = @atomic_load(&n, o)  //~ error at 26: the order of @atomic_load must be a constant: an atomic::Order value, or a const of one
+    _ = @atomic_load_release(&n)  //~ error at 9: unknown builtin `@atomic_load_release`: `@atomic_load` is sequentially consistent, and its other orders are `@atomic_load_relaxed`, `@atomic_load_acquire`
 }

@@ -1,2 +1,2 @@
-fn f { xs: list::List(i32, arena::Arena) } { for x in xs { } }  //~ error at 55: a `for` goes over a range `lo..hi`, a slice or an array, not list::List(i32, arena::Arena): go over its items, `list::items{ list = xs }`
+fn f { xs: list::List(i32, arena::Arena) } { for x in xs { } }  //~ error at 55: a `for` goes over a range `lo..hi`, a slice or an array, not list::List(i32, arena::Arena)
 fn main {} {}

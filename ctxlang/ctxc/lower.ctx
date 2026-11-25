@@ -3684,13 +3684,13 @@ namespace lower {
         return held{ l, slot = ss, init = x, body = out }
     }
 
-    // An atomic (spec §13): the pointer, the values as the pointer's T, and the order, a
-    // constant. @atomic_compare_exchange gives null if it stored, else the value it found:
+    // An atomic (spec §13): the pointer, the values as the pointer's T, and the order its name
+    // gives (check::atomic_parts). @atomic_compare_exchange gives null if it stored, else the value it found:
     // `(with p P (with e EXPECTED (with old (atomic compare_exchange [p e DESIRED]) (old == e ? null : some old))))`.
     fn atomic { mut l: Lower, name: []u8, args: []syntax::Expr, t: Id } -> ir::Expr {
-        let k = check::atomic_arity{ n = name }
-        let order = check::atomic_order_value{ c = l.c, e = args[k] } ifnull { @panic("lower: an atomic's order that isn't a constant") }
-        let o = @trunc(u8, order)
+        let parts = check::atomic_parts{ n = name } ifnull { @panic("lower: an atomic the checker doesn't know") }
+        let k = check::atomic_arity{ op = parts.op }
+        let o = parts.order
         let ty = tid{ &l, t }
         let none = slice::empty(ir::Expr){}
         if k == 0 { return mk{ ty, k = ir::ExprKind::atomic{ op = ir::AtomicOp::fence, order = o, args = none } } }
@@ -3704,15 +3704,16 @@ namespace lower {
             i = i + 1
         }
         let vs = list::items{ list = xs }
-        let op = if slice::eq_bytes{ a = name, b = "atomic_load" } {
+        let n = parts.op
+        let op = if slice::eq_bytes{ a = n, b = "atomic_load" } {
             ir::AtomicOp::load
-        } else if slice::eq_bytes{ a = name, b = "atomic_store" } {
+        } else if slice::eq_bytes{ a = n, b = "atomic_store" } {
             ir::AtomicOp::store
-        } else if slice::eq_bytes{ a = name, b = "atomic_exchange" } {
+        } else if slice::eq_bytes{ a = n, b = "atomic_exchange" } {
             ir::AtomicOp::exchange
-        } else if slice::eq_bytes{ a = name, b = "atomic_add" } {
+        } else if slice::eq_bytes{ a = n, b = "atomic_add" } {
             ir::AtomicOp::add
-        } else if slice::eq_bytes{ a = name, b = "atomic_subtract" } {
+        } else if slice::eq_bytes{ a = n, b = "atomic_subtract" } {
             ir::AtomicOp::subtract
         } else {
             ir::AtomicOp::compare_exchange

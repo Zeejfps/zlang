@@ -1,0 +1,3 @@
+fn main {} {
+    @fence_relaxed()  //~ error at 5: unknown builtin `@fence_relaxed`: `@fence` is sequentially consistent, and its other orders are `@fence_acquire`, `@fence_release`, `@fence_acquire_release`
+}

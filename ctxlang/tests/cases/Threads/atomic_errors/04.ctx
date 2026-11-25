@@ -1,4 +1,4 @@
 fn main {} {
     let mut b = false
-    _ = @atomic_add(&b, true, atomic::Order::relaxed)  //~ error at 21: @atomic_add needs a pointer to an integer, not to bool
+    _ = @atomic_add_relaxed(&b, true)  //~ error at 29: @atomic_add_relaxed needs a pointer to an integer, not to bool
 }

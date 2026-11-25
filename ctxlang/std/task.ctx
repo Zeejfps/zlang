@@ -294,7 +294,7 @@ namespace task {
     // Fails with `cancelled` if the calling task has been asked to stop. Never outside a task.
     fn check { mut cancel: Cancel } -> ! {
         let me = cancel.current ifnull { return }
-        if @atomic_load(&me.flag, atomic::Order::acquire) != 0 { return cancelled }
+        if @atomic_load_acquire(&me.flag) != 0 { return cancelled }
     }
 
     // The calling task's cancel object, which is signalled when it is asked to stop: a Windows
@@ -311,7 +311,7 @@ namespace task {
     fn begin_synchronous { mut cancel: Cancel } -> ! {
         let me = cancel.current ifnull { return }
         lock_sync{ s = me }
-        if @atomic_load(&me.flag, atomic::Order::acquire) != 0 {
+        if @atomic_load_acquire(&me.flag) != 0 {
             unlock_sync{ s = me }
             return cancelled
         }
@@ -327,11 +327,11 @@ namespace task {
     }
 
     fn lock_sync { s: *mut Slot } {
-        while @atomic_compare_exchange(&s.sync_lock, 0, 1, atomic::Order::acquire) != null {}
+        while @atomic_compare_exchange_acquire(&s.sync_lock, 0, 1) != null {}
     }
 
     fn unlock_sync { s: *mut Slot } {
-        @atomic_store(&s.sync_lock, 0, atomic::Order::release)
+        @atomic_store_release(&s.sync_lock, 0)
     }
 
     // Interrupts slot s's synchronous call, if it is in one: whether it is.
@@ -418,14 +418,14 @@ namespace task {
     // The table, made the first time: its mutex and condition need making on some platforms.
     fn table { mut state: State } -> *mut Table {
         let t = &state.table
-        if @atomic_load(&t.ready, atomic::Order::acquire) == 2 { return t }
-        if @atomic_compare_exchange(&t.ready, 0, 1, atomic::Order::acquire_release) == null {
+        if @atomic_load_acquire(&t.ready) == 2 { return t }
+        if @atomic_compare_exchange_acquire_release(&t.ready, 0, 1) == null {
             t.lock = mutex::make{}
             t.groups = condition::make{}
-            @atomic_store(&t.ready, 2, atomic::Order::release)
+            @atomic_store_release(&t.ready, 2)
             return t
         }
-        while @atomic_load(&t.ready, atomic::Order::acquire) != 2 {}
+        while @atomic_load_acquire(&t.ready) != 2 {}
         return t
     }
 
@@ -469,7 +469,7 @@ namespace task {
         }
         let f = s ifnull { return null }
         f.state = RUNNING
-        @atomic_store(&f.flag, 0, atomic::Order::relaxed)
+        @atomic_store_relaxed(&f.flag, 0)
         f.group = null
         f.waiting = null
         f.sync = false
@@ -551,7 +551,7 @@ namespace task {
             if g.first != 0 { slot_ptr{ t, id = g.first }.prev = s.id }
             g.first = s.id
             g.tasks = g.tasks + 1
-            if g.cancelling { @atomic_store(&s.flag, 1, atomic::Order::release) }
+            if g.cancelling { @atomic_store_release(&s.flag, 1) }
         }
         t.busy = t.busy + 1
         return true
@@ -565,7 +565,7 @@ namespace task {
         let mut start = Start{ slot = s, usable, started = 0 }
         let handle = os::thread_create{ &threads, start = @cast(*mut u8, &start), stack_size = usable + room } ifnull { return false }
         // start is this frame's: the worker copies it before it says it has started.
-        while @atomic_load(&start.started, atomic::Order::acquire) == 0 { os::thread_yield{ &threads } }
+        while @atomic_load_acquire(&start.started) == 0 { os::thread_yield{ &threads } }
         os::thread_detach{ &threads, handle }
         return true
     }
@@ -586,7 +586,7 @@ namespace task {
         let first = s.slot
         rt::thread_begin{ &threads, usable = s.usable, name = "task worker" }
         os::thread_name{ &threads, name = "task worker" }
-        @atomic_store(&s.started, 1, atomic::Order::release)
+        @atomic_store_release(&s.started, 1)
         worker{ &threads, &io, first }
     }
 
@@ -729,7 +729,7 @@ namespace task {
     // the condition it waits on, if it waits, so that it notices.
     fn ask_stop { mut threads: Threads, s: *mut Slot } {
         if s.state != RUNNING { return }
-        @atomic_store(&s.flag, 1, atomic::Order::release)
+        @atomic_store_release(&s.flag, 1)
         os::event_signal{ &threads, event = s.object }
         if let c = s.waiting { condition::broadcast{ condition = c } }
         _ = interrupt{ &threads, s }
@@ -754,7 +754,7 @@ namespace task {
                 left = FOREVER
             }
             if let m = mine { m.waiting = &s.done }
-            if @atomic_load(&s.flag, atomic::Order::acquire) != 0 and interrupt{ &threads, s } {
+            if @atomic_load_acquire(&s.flag) != 0 and interrupt{ &threads, s } {
                 // A call not yet entered isn't reached: again each millisecond, until it leaves.
                 _ = condition::wait_for{ &threads, condition = &s.done, mutex = &t.lock, nanoseconds = 1000000 }
                 continue
@@ -797,6 +797,6 @@ namespace task {
     // Whether the calling task has been asked to stop.
     fn stopping { mut threads: Threads } -> bool {
         let m = me{ &threads } ifnull { return false }
-        return @atomic_load(&m.flag, atomic::Order::acquire) != 0
+        return @atomic_load_acquire(&m.flag) != 0
     }
 }

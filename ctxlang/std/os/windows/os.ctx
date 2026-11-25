@@ -821,7 +821,7 @@ namespace os {
         let mut tries: u32 = 0
         while true {
             let mut name: [64]u16
-            pipe_name{ name = name[..], pid, n = @atomic_add(&proc.pipes, 1, atomic::Order::relaxed) }
+            pipe_name{ name = name[..], pid, n = @atomic_add_relaxed(&proc.pipes, 1) }
             let ours = CreateNamedPipeW{ &proc, name = &name[0], open_mode = mode, pipe_mode = PIPE_REJECT_REMOTE_CLIENTS, instances = 1, out_size = PIPE_BUFFER, in_size = PIPE_BUFFER, timeout = 0, security = null }
             if ours == INVALID_HANDLE {
                 let e = last_error{ &proc }

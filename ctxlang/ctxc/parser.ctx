@@ -2377,16 +2377,52 @@ namespace parser {
         Builtin{ name = "fmt",      types = 0, lo = 1, hi = ANY, usage = "@fmt(b, \"format\", args...) or @fmt(\"format\", args...)" },
         Builtin{ name = "expect",   types = 0, lo = 2, hi = 2, usage = "@expect(&t, condition)" },
         Builtin{ name = "require",  types = 0, lo = 2, hi = 2, usage = "@require(&t, condition)" },
-        Builtin{ name = "atomic_load", types = 0, lo = 2, hi = 2, usage = "@atomic_load(p, order)" },
-        Builtin{ name = "atomic_store", types = 0, lo = 3, hi = 3, usage = "@atomic_store(p, value, order)" },
-        Builtin{ name = "atomic_exchange", types = 0, lo = 3, hi = 3, usage = "@atomic_exchange(p, value, order)" },
-        Builtin{ name = "atomic_compare_exchange", types = 0, lo = 4, hi = 4, usage = "@atomic_compare_exchange(p, expected, desired, order)" },
-        Builtin{ name = "atomic_add", types = 0, lo = 3, hi = 3, usage = "@atomic_add(p, value, order)" },
-        Builtin{ name = "atomic_subtract", types = 0, lo = 3, hi = 3, usage = "@atomic_subtract(p, value, order)" },
-        Builtin{ name = "fence",    types = 0, lo = 1, hi = 1, usage = "@fence(order)" },
+        Builtin{ name = "atomic_load", types = 0, lo = 1, hi = 1, usage = "@atomic_load(p)" },
+        Builtin{ name = "atomic_load_relaxed", types = 0, lo = 1, hi = 1, usage = "@atomic_load_relaxed(p)" },
+        Builtin{ name = "atomic_load_acquire", types = 0, lo = 1, hi = 1, usage = "@atomic_load_acquire(p)" },
+        Builtin{ name = "atomic_store", types = 0, lo = 2, hi = 2, usage = "@atomic_store(p, value)" },
+        Builtin{ name = "atomic_store_relaxed", types = 0, lo = 2, hi = 2, usage = "@atomic_store_relaxed(p, value)" },
+        Builtin{ name = "atomic_store_release", types = 0, lo = 2, hi = 2, usage = "@atomic_store_release(p, value)" },
+        Builtin{ name = "atomic_exchange", types = 0, lo = 2, hi = 2, usage = "@atomic_exchange(p, value)" },
+        Builtin{ name = "atomic_exchange_relaxed", types = 0, lo = 2, hi = 2, usage = "@atomic_exchange_relaxed(p, value)" },
+        Builtin{ name = "atomic_exchange_acquire", types = 0, lo = 2, hi = 2, usage = "@atomic_exchange_acquire(p, value)" },
+        Builtin{ name = "atomic_exchange_release", types = 0, lo = 2, hi = 2, usage = "@atomic_exchange_release(p, value)" },
+        Builtin{ name = "atomic_exchange_acquire_release", types = 0, lo = 2, hi = 2, usage = "@atomic_exchange_acquire_release(p, value)" },
+        Builtin{ name = "atomic_compare_exchange", types = 0, lo = 3, hi = 3, usage = "@atomic_compare_exchange(p, expected, desired)" },
+        Builtin{ name = "atomic_compare_exchange_relaxed", types = 0, lo = 3, hi = 3, usage = "@atomic_compare_exchange_relaxed(p, expected, desired)" },
+        Builtin{ name = "atomic_compare_exchange_acquire", types = 0, lo = 3, hi = 3, usage = "@atomic_compare_exchange_acquire(p, expected, desired)" },
+        Builtin{ name = "atomic_compare_exchange_release", types = 0, lo = 3, hi = 3, usage = "@atomic_compare_exchange_release(p, expected, desired)" },
+        Builtin{ name = "atomic_compare_exchange_acquire_release", types = 0, lo = 3, hi = 3, usage = "@atomic_compare_exchange_acquire_release(p, expected, desired)" },
+        Builtin{ name = "atomic_add", types = 0, lo = 2, hi = 2, usage = "@atomic_add(p, value)" },
+        Builtin{ name = "atomic_add_relaxed", types = 0, lo = 2, hi = 2, usage = "@atomic_add_relaxed(p, value)" },
+        Builtin{ name = "atomic_add_acquire", types = 0, lo = 2, hi = 2, usage = "@atomic_add_acquire(p, value)" },
+        Builtin{ name = "atomic_add_release", types = 0, lo = 2, hi = 2, usage = "@atomic_add_release(p, value)" },
+        Builtin{ name = "atomic_add_acquire_release", types = 0, lo = 2, hi = 2, usage = "@atomic_add_acquire_release(p, value)" },
+        Builtin{ name = "atomic_subtract", types = 0, lo = 2, hi = 2, usage = "@atomic_subtract(p, value)" },
+        Builtin{ name = "atomic_subtract_relaxed", types = 0, lo = 2, hi = 2, usage = "@atomic_subtract_relaxed(p, value)" },
+        Builtin{ name = "atomic_subtract_acquire", types = 0, lo = 2, hi = 2, usage = "@atomic_subtract_acquire(p, value)" },
+        Builtin{ name = "atomic_subtract_release", types = 0, lo = 2, hi = 2, usage = "@atomic_subtract_release(p, value)" },
+        Builtin{ name = "atomic_subtract_acquire_release", types = 0, lo = 2, hi = 2, usage = "@atomic_subtract_acquire_release(p, value)" },
+        Builtin{ name = "fence", types = 0, lo = 0, hi = 0, usage = "@fence()" },
+        Builtin{ name = "fence_acquire", types = 0, lo = 0, hi = 0, usage = "@fence_acquire()" },
+        Builtin{ name = "fence_release", types = 0, lo = 0, hi = 0, usage = "@fence_release()" },
+        Builtin{ name = "fence_acquire_release", types = 0, lo = 0, hi = 0, usage = "@fence_acquire_release()" },
         Builtin{ name = "record_size", types = 0, lo = 1, hi = 1, usage = "@record_size(run)" },
         Builtin{ name = "record_copy", types = 0, lo = 2, hi = 2, usage = "@record_copy(run, into)" },
     ]
+
+    // The atomic operations, each sequentially consistent, and with a suffix for each weaker
+    // order it can have (BUILTINS).
+    const ATOMIC_OPS: [_][]u8 = ["atomic_load", "atomic_store", "atomic_exchange", "atomic_compare_exchange", "atomic_add", "atomic_subtract", "fence"]
+
+    // The atomic operation whose name `name` starts with, followed by `_`: `atomic_load` for
+    // `atomic_load_release`, which isn't a builtin; "" for none.
+    fn atomic_op { name: []u8 } -> []u8 {
+        for op in ATOMIC_OPS {
+            if name.len > op.len + 1 and slice::eq_bytes{ a = name[..op.len], b = op } and name[op.len] == '_' { return op }
+        }
+        return ""
+    }
 
     fn builtin { mut p: Parser } -> syntax::Expr {
         let start = p.i
@@ -2398,7 +2434,22 @@ namespace parser {
         let mut n: usize = 0
         while n < BUILTINS.len and not slice::eq_bytes{ a = BUILTINS[n].name, b = name.text } { n = n + 1 }
         if n == BUILTINS.len {
-            failf_at{ &p, msg = @fmt("unknown builtin `@{}`", utf8::String{ bytes = name.text }), t }
+            let op = atomic_op{ name = name.text }
+            if op.len == 0 {
+                failf_at{ &p, msg = @fmt("unknown builtin `@{}`", utf8::String{ bytes = name.text }), t }
+            } else {
+                // An atomic with an order it can't have: name the ones it has.
+                let mut b = message{ p }
+                try! @fmt(&b, "unknown builtin `@{}`: `@{}` is sequentially consistent, and its other orders are", utf8::String{ bytes = name.text }, utf8::String{ bytes = op })
+                let mut first = true
+                for x in BUILTINS {
+                    if x.name.len > op.len + 1 and slice::eq_bytes{ a = x.name[..op.len], b = op } and x.name[op.len] == '_' {
+                        try! @fmt(&b, "{} `@{}`", if first { "" } else { "," }, utf8::String{ bytes = x.name })
+                        first = false
+                    }
+                }
+                fail_at{ &p, msg = utf8::view{ b }, t }
+            }
             return expr_from{ &p, start, k = syntax::ExprKind::error }
         }
         let sig = BUILTINS[n]

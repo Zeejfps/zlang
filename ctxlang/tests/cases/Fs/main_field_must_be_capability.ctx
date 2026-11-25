@@ -1,1 +1,1 @@
-fn main { n: i32 } { }  //~ error at 1: `main` context field `n` must have a capability type or be `args: Args`, got i32
+fn main { n: i32 } { }  //~ error at 1: `main` context field `n` must have a capability type or be `args: [][]u8`, got i32

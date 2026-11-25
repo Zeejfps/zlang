@@ -1919,15 +1919,14 @@ namespace check {
         if x.ret != types::VOID and x.ret != types::I32 and x.ret != types::ERROR and not exits{ c, t = x.ret } {
             errorf{ &c, at, msg = @fmt("`{}` can only return i32 (the exit code), `!` or `!i32`, not {}", str{ s = entry }, tstr{ c, t = x.ret }) }
         }
-        let args_t = std_type{ &c, name = "Args" }
         let build_cap = std_decl_top{ c, name = "Build" }
         let mut i: usize = 0
         while i < x.fields.len {
             let f = x.fields[i]
             let t = f.ty
             if slice::eq_bytes{ a = f.name, b = "args" } and not f.mutable {
-                if t != args_t and t != types::ERROR and args_t != types::ERROR {
-                    errorf{ &c, at, msg = @fmt("`{}` context field `args` must have type Args, got {}", str{ s = entry }, tstr{ c, t }) }
+                if t != types::ERROR and not args_type{ c, t } {
+                    errorf{ &c, at, msg = @fmt("`{}` context field `args` must have type [][]u8, got {}", str{ s = entry }, tstr{ c, t }) }
                 }
             } else if t != types::ERROR {
                 match types::get{ s = c.ty, id = t } {
@@ -1941,7 +1940,7 @@ namespace check {
                         }
                     }
                     else => {
-                        errorf{ &c, at, msg = @fmt("`{}` context field `{}` must have a capability type or be `args: Args`, got {}", str{ s = entry }, str{ s = f.name }, tstr{ c, t }) }
+                        errorf{ &c, at, msg = @fmt("`{}` context field `{}` must have a capability type or be `args: [][]u8`, got {}", str{ s = entry }, str{ s = f.name }, tstr{ c, t }) }
                     }
                 }
             }
@@ -2260,9 +2259,9 @@ namespace check {
                 }
             } else if f.mutable or not hook_field{ &c, which, name = f.name, t } {
                 if which == Attribute::start {
-                    errorf{ &c, at, msg = @fmt("a `start` fn's context is capabilities, `argc: i32`, `argv: *?*u8` and `main: &fn{{ args: Args }} -> i32`, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
+                    errorf{ &c, at, msg = @fmt("a `start` fn's context is capabilities, `argc: i32`, `argv: *?*u8` and `main: &fn{{ args: [][]u8 }} -> i32`, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
                 } else if which == Attribute::test_main {
-                    errorf{ &c, at, msg = @fmt("a `test_main` fn's context is capabilities, `args: Args`, `count: usize`, `case: &fn{{ index: usize }} -> test::Case` and `run: &fn{{ index: usize }} -> i32`, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
+                    errorf{ &c, at, msg = @fmt("a `test_main` fn's context is capabilities, `args: [][]u8`, `count: usize`, `case: &fn{{ index: usize }} -> test::Case` and `run: &fn{{ index: usize }} -> i32`, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
                 } else {
                     errorf{ &c, at, msg = @fmt("a `panic` fn's context is capabilities, `msg: []u8`, `file: []u8`, `line: u32` and `col: u32`, not `{}: {}`", str{ s = f.name }, tstr{ c, t }) }
                 }
@@ -2814,18 +2813,14 @@ namespace check {
                 if external or fields.len != 1 or types::prune{ s = c.ty, t = ret } != types::I32 { return false }
                 let arg = fields[0]
                 if arg.mutable or not slice::eq_bytes{ a = arg.name, b = "args" } { return false }
-                let slice{ elem, mutable } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = arg.ty } } else { return false }
-                return not mutable and is_bytes{ c, t = elem }
+                return args_type{ c, t = arg.ty }
             }
             return false
         }
         if which == Attribute::test_main {
             // `args`, as `main`'s; how many tests the program has; test `index`'s name and
             // position, a `test::Case`; and the fn that runs test `index` and gives its exit code.
-            if slice::eq_bytes{ a = name, b = "args" } {
-                let slice{ elem, mutable } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return false }
-                return not mutable and is_bytes{ c, t = elem }
-            }
+            if slice::eq_bytes{ a = name, b = "args" } { return args_type{ c, t } }
             if slice::eq_bytes{ a = name, b = "count" } { return t == types::USIZE }
             if slice::eq_bytes{ a = name, b = "case" } or slice::eq_bytes{ a = name, b = "run" } {
                 let func{ fields, ret, external } = types::get{ s = c.ty, id = t } else { return false }
@@ -2843,6 +2838,12 @@ namespace check {
     }
 
     // Whether t is `[]u8`.
+    // Whether t is `[][]u8`, an entry point's `args`: the program's arguments, read-only.
+    fn args_type { c: Checker, t: Id } -> bool {
+        let slice{ elem, mutable } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return false }
+        return not mutable and is_bytes{ c, t = elem }
+    }
+
     fn is_bytes { c: Checker, t: Id } -> bool {
         let slice{ elem, mutable } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return false }
         return not mutable and types::prune{ s = c.ty, t = elem } == types::U8
@@ -3497,14 +3498,6 @@ namespace check {
         let space{ ns } = map::get{ m = get_space{ c, ns = STD }.paths, key = space } else { return NONE }
         let decl{ i } = map::get{ m = get_space{ c, ns }.values, key = name } else { return NONE }
         return i
-    }
-
-    // A type std declares at its top level, such as `Args`.
-    fn std_type { mut c: Checker, name: []u8 } -> Id {
-        let e = lookup_path{ c, ns = STD, name, from = NONE }
-        if e == null { return types::ERROR }
-        let n = syntax::Name{ id = NONE, span = nowhere{}, text = name }
-        return decl_type{ &c, e, name = n, args = null, at = nowhere{}, partial = false, allow_bound = false }
     }
 
     // ---- type expressions
@@ -13130,16 +13123,13 @@ namespace check {
     }
 
     // A `for` over base, of type bt, which is no slice or array: what it goes over, and what to
-    // write for a number, a pointer, a list or an optional.
+    // write for a number, a pointer or an optional.
     fn each_error { mut c: Checker, base: syntax::Expr, bt: Id } {
         let text = str{ s = source_text{ c, span = base.span } }
         let mut b = message{ c }
         try! @fmt(&b, "a `for` goes over a range `lo..hi`, a slice or an array, not {}", tstr{ c, t = bt })
         match types::get{ s = c.ty, id = bt } {
             ptr => { try! @fmt(&b, ": a pointer has no length; go over `@slice({}, n)` for its `n` elements, which isn't checked", text) }
-            record{ decl } => {
-                if decl == std_decl{ c, space = "list", name = "List" } { try! @fmt(&b, ": go over its items, `list::items{{ list = {} }}`", text) }
-            }
             opt => {
                 try! utf8::push{ &b, s = ": unwrap it first, as `if let xs = ... { for x in xs { ... } }`" }
             }
@@ -15427,27 +15417,55 @@ namespace check {
 
     // ---- atomics (§13): @atomic_load and the rest, and @fence
 
-    fn atomic_name { n: []u8 } -> bool {
-        let p = "atomic_"
-        return (n.len > p.len and slice::eq_bytes{ a = n[..p.len], b = p }) or slice::eq_bytes{ a = n, b = "fence" }
+    // An atomic builtin's operation and order, from its name: `atomic_load`, `fence` and the rest
+    // are sequentially consistent, and a suffix names a weaker order, `atomic_load_acquire`. The
+    // parser knows only the names whose order the operation can have (parser.ctx, BUILTINS).
+    struct AtomicName { op: []u8, order: u8 }
+
+    // The order of an AtomicName, C11's memory orders as IR's `atomic` and emit_c take them: 0
+    // relaxed, 1 acquire, 2 release, 3 acquire_release (ATOMIC_ORDERS' indexes) and 4
+    // sequentially consistent.
+    const ORDER_SEQ_CST: u8 = 4
+
+    const ATOMIC_ORDERS: [_][]u8 = ["relaxed", "acquire", "release", "acquire_release"]
+
+    fn atomic_parts { n: []u8 } -> ?AtomicName {
+        for op in parser::ATOMIC_OPS {
+            if slice::eq_bytes{ a = n, b = op } { return AtomicName{ op, order = ORDER_SEQ_CST } }
+            if n.len > op.len + 1 and slice::eq_bytes{ a = n[..op.len], b = op } and n[op.len] == '_' {
+                let rest = n[op.len + 1..]
+                let mut o: usize = 0
+                while o < ATOMIC_ORDERS.len {
+                    if slice::eq_bytes{ a = rest, b = ATOMIC_ORDERS[o] } { return AtomicName{ op, order = @trunc(u8, o) } }
+                    o = o + 1
+                }
+            }
+        }
+        return null
     }
 
-    // The arguments an atomic takes before its order: the pointer and the values.
-    fn atomic_arity { n: []u8 } -> usize {
-        if slice::eq_bytes{ a = n, b = "fence" } { return 0 }
-        if slice::eq_bytes{ a = n, b = "atomic_load" } { return 1 }
-        if slice::eq_bytes{ a = n, b = "atomic_compare_exchange" } { return 3 }
+    fn atomic_name { n: []u8 } -> bool {
+        return atomic_parts{ n } != null
+    }
+
+    // The arguments an atomic takes: the pointer and the values.
+    fn atomic_arity { op: []u8 } -> usize {
+        if slice::eq_bytes{ a = op, b = "fence" } { return 0 }
+        if slice::eq_bytes{ a = op, b = "atomic_load" } { return 1 }
+        if slice::eq_bytes{ a = op, b = "atomic_compare_exchange" } { return 3 }
         return 2
     }
 
-    // `@atomic_OP(p, values..., order)` on the T that p, a `*T` for a load and a `*mut T`
-    // otherwise, points to: an integer, a `bool`, an enum or a pointer, an integer for add and
-    // subtract. `@fence(order)` takes the order alone.
+    // `@atomic_OP(p, values...)` on the T that p, a `*T` for a load and a `*mut T` otherwise,
+    // points to: an integer, a `bool`, an enum or a pointer, an integer for add and subtract.
+    // `@fence()` takes nothing.
     fn atomic_builtin { mut c: Checker, e: syntax::Expr, n: []u8, args: []syntax::Expr } -> Id {
-        let k = atomic_arity{ n }
-        if args.len < k + 1 { return types::ERROR }         // the parser has reported it
-        let load = slice::eq_bytes{ a = n, b = "atomic_load" }
-        let arith = slice::eq_bytes{ a = n, b = "atomic_add" } or slice::eq_bytes{ a = n, b = "atomic_subtract" }
+        let parts = atomic_parts{ n } ifnull { @panic("check: an atomic the parser doesn't know") }
+        let op = parts.op
+        let k = atomic_arity{ op }
+        if args.len < k { return types::ERROR }         // the parser has reported it
+        let load = slice::eq_bytes{ a = op, b = "atomic_load" }
+        let arith = slice::eq_bytes{ a = op, b = "atomic_add" } or slice::eq_bytes{ a = op, b = "atomic_subtract" }
         let mut t = types::ERROR
         if k > 0 {
             let pt = typed{ &c, e = args[0] }
@@ -15478,10 +15496,9 @@ namespace check {
             // What is stored through p can't hold a local's address (§14, Escape check).
             if k > 1 and not arith and t != types::ERROR { check_store{ &c, root = NONE, through = true, rhs = args[k - 1], at = expr_at{ e = args[k - 1] } } }
         }
-        atomic_order{ &c, n, e = args[k], load, store = slice::eq_bytes{ a = n, b = "atomic_store" } }
-        if k == 0 or slice::eq_bytes{ a = n, b = "atomic_store" } { return types::VOID }
+        if k == 0 or slice::eq_bytes{ a = op, b = "atomic_store" } { return types::VOID }
         if t == types::ERROR { return types::ERROR }
-        if slice::eq_bytes{ a = n, b = "atomic_compare_exchange" } { return types::opt{ s = &c.ty, elem = t } }
+        if slice::eq_bytes{ a = op, b = "atomic_compare_exchange" } { return types::opt{ s = &c.ty, elem = t } }
         return t
     }
 
@@ -15497,44 +15514,7 @@ namespace check {
         }
     }
 
-    // An atomic's order: std's `atomic::Order`, a constant. A load can't release, and a store
-    // can't acquire.
-    fn atomic_order { mut c: Checker, n: []u8, e: syntax::Expr, load: bool, store: bool } {
-        let ot = std_type_in{ &c, space = "atomic", name = "Order" }
-        if ot == types::ERROR {
-            let had = c.diags.errors
-            _ = expr{ &c, e, exp = types::NO_TYPE }
-            if c.diags.errors == had {
-                errorf{ &c, at = expr_at{ e }, msg = @fmt("@{} takes std's atomic::Order, which isn't declared", str{ s = n }) }
-            }
-            return
-        }
-        let before = c.diags.errors
-        expect{ &c, e, t = ot }
-        if c.diags.errors != before { return }
-        let v = atomic_order_value{ &c, e }
-        if v == null {
-            errorf{ &c, at = expr_at{ e }, msg = @fmt("the order of @{} must be a constant: an atomic::Order value, or a const of one", str{ s = n }) }
-            return
-        }
-        if load and (v == 2 or v == 3) {
-            error{ &c, at = expr_at{ e }, msg = "@atomic_load can't be `release` or `acquire_release`: a load only acquires" }
-        }
-        if store and (v == 1 or v == 3) {
-            error{ &c, at = expr_at{ e }, msg = "@atomic_store can't be `acquire` or `acquire_release`: a store only releases" }
-        }
-    }
-
-    // The value of an atomic's order, once checked: 0 relaxed, 1 acquire, 2 release, 3
-    // acquire_release, 4 sequentially_consistent; null if it isn't a constant.
-    fn atomic_order_value { mut c: Checker, e: syntax::Expr } -> ?u64 {
-        let v = fold{ &c, e } ifnull { return null }
-        let int{ magnitude } = v else { return null }
-        if magnitude > 4 { return null }
-        return magnitude
-    }
-
-    // A type std declares in its namespace `space`, such as `atomic::Order`; ERROR without one.
+    // A type std declares in its namespace `space`, such as `io::Stderr`; ERROR without one.
     fn std_type_in { mut c: Checker, space: []u8, name: []u8 } -> Id {
         let d = std_decl{ c, space, name }
         if d == NONE { return types::ERROR }

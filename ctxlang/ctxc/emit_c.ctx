@@ -3830,7 +3830,7 @@ namespace emit {
         put{ &e, a = "); })" }
     }
 
-    // atomic::Order's value as C's memory order.
+    // An atomic's order (check::atomic_parts) as C's memory order.
     fn memory_order { mut e: E, order: u8 } {
         put{ &e, a = match order {
             0 => { "__ATOMIC_RELAXED" }

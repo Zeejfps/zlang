@@ -1,4 +1,4 @@
 fn main {} {
     let mut n: u32 = 0
-    _ = @atomic_load(&n, atomic::Order::release)  //~ error at 26: @atomic_load can't be `release` or `acquire_release`: a load only acquires
+    @atomic_store_acquire(&n, 1)  //~ error at 5: unknown builtin `@atomic_store_acquire`: `@atomic_store` is sequentially consistent, and its other orders are `@atomic_store_relaxed`, `@atomic_store_release`
 }

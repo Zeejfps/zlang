@@ -101,9 +101,9 @@ namespace test {
     // A check, of either kind: counted, and if it didn't hold its line started, with `word`
     // before the condition's text.
     fn note { mut t: Test, held: bool, file: []u8, line: u32, word: []u8, text: []u8 } -> bool {
-        _ = @atomic_add(&t.checks, 1, atomic::Order::relaxed)
+        _ = @atomic_add_relaxed(&t.checks, 1)
         if held { return true }
-        @atomic_store(&t.failed, 1, atomic::Order::relaxed)
+        @atomic_store_relaxed(&t.failed, 1)
         start_line{ &t, file, line, word = ": fail: " }
         io::write{ io = &t, to = io::Stream::err, bytes = word }
         io::write{ io = &t, to = io::Stream::err, bytes = text }
@@ -137,7 +137,7 @@ namespace test {
     // failed stays failed: no line is written, and the exit code is 1. The checks that held
     // before a skip change nothing: the test is skipped, not passed.
     fn skip { mut t: Test, why: []u8 } {
-        if @atomic_load(&t.failed, atomic::Order::relaxed) != 0 { end{ &t, code = 1 } }
+        if @atomic_load_relaxed(&t.failed) != 0 { end{ &t, code = 1 } }
         io::flush{ io = &t }            // so that the skip's line is the last the test writes
         start_line{ &t, file = t.file, line = t.line, word = ": skip: " }
         io::write{ io = &t, to = io::Stream::err, bytes = why }
@@ -166,7 +166,7 @@ namespace test {
     // How many checks the running test has made so far, `@expect`s and `@require`s, held or
     // not: after `run_here`, those of the test it ran.
     fn checks { mut t: Test } -> u64 {
-        return @atomic_load(&t.checks, atomic::Order::relaxed)
+        return @atomic_load_relaxed(&t.checks)
     }
 
     #c_symbol{ name = "exit" }

@@ -73,17 +73,17 @@ namespace audio {
     // handle `pump`. `dev` and `m` must stay where they are until `stop`. It must run alongside
     // the game, so it fails if it can't (task::start_concurrent); `update` then still works.
     fn start { mut sdl: sdl::Sdl, mut threads: Threads, mut dev: Device, m: *mut mix::Mixer, mut pump: task::Task(!) } -> ! {
-        if @atomic_load(&dev.pumping, atomic::Order::acquire) != 0 { return }
+        if @atomic_load_acquire(&dev.pumping) != 0 { return }
         dev.mixer = m
         dev.want = dev.ahead
         try task::start_concurrent{ &threads, task = &pump, run = pumping{ &sdl, &threads, dev = &dev, _ } }
-        @atomic_store(&dev.pumping, 1, atomic::Order::release)
+        @atomic_store_release(&dev.pumping, 1)
     }
 
     // Cancels the mixer's task and waits for it: after this nothing renders until `update`.
     fn stop { mut threads: Threads, mut dev: Device, mut pump: task::Task(!) } {
         task::end{ &threads, task = &pump }
-        @atomic_store(&dev.pumping, 0, atomic::Order::release)
+        @atomic_store_release(&dev.pumping, 0)
     }
 
     // The task: tops the queue up to `ahead`, sleeps a little, and again, until `stop` cancels
@@ -102,7 +102,7 @@ namespace audio {
 
     // How often the queue ran dry, from any thread.
     fn underruns { dev: *Device } -> u32 {
-        return @atomic_load(&dev.underruns, atomic::Order::relaxed)
+        return @atomic_load_relaxed(&dev.underruns)
     }
 
     // ---- topping up once a frame (no thread)
@@ -124,7 +124,7 @@ namespace audio {
     // Mixes what the queue lacks to cover the next frame: `ahead` frames, or the slow gap of late
     // and a margin. Once a frame; nothing while the task runs.
     fn update { mut sdl: sdl::Sdl, mut dev: Device, m: *mut mix::Mixer } -> ! {
-        if @atomic_load(&dev.pumping, atomic::Order::acquire) != 0 { return }
+        if @atomic_load_acquire(&dev.pumping) != 0 { return }
         let now = sdl::counter{ &sdl }
         if dev.last != 0 {
             // A stall longer than the most we would queue (a module loading) can't be covered: it counts as that.
@@ -147,21 +147,21 @@ namespace audio {
     // Before slow frames that are known to come (a new area's first ones): queues the most `update`
     // would, and keeps that until frames are seen to be quick again. Nothing while the task runs.
     fn brace { mut sdl: sdl::Sdl, mut dev: Device, m: *mut mix::Mixer } -> ! {
-        if @atomic_load(&dev.pumping, atomic::Order::acquire) != 0 { return }
+        if @atomic_load_acquire(&dev.pumping) != 0 { return }
         dev.slow = @as(f64, MOST_MS) / 1000.0 - MARGIN_S
         try top_up{ &sdl, &dev, m, frames = dev.rate * MOST_MS / 1000 }
     }
 
     // Mixes until `frames` are queued: more before a known stall. Nothing while the task runs.
     fn fill { mut sdl: sdl::Sdl, mut dev: Device, m: *mut mix::Mixer, frames: u32 } -> ! {
-        if @atomic_load(&dev.pumping, atomic::Order::acquire) != 0 { return }
+        if @atomic_load_acquire(&dev.pumping) != 0 { return }
         try top_up{ &sdl, &dev, m, frames }
     }
 
     // Mixes until `frames` are queued, on whichever thread tops the queue up.
     fn top_up { mut sdl: sdl::Sdl, mut dev: Device, m: *mut mix::Mixer, frames: u32 } -> ! {
         let mut have = queued{ &sdl, dev }
-        if have == 0 and dev.started { _ = @atomic_add(&dev.underruns, 1, atomic::Order::relaxed) }
+        if have == 0 and dev.started { _ = @atomic_add_relaxed(&dev.underruns, 1) }
         while have < frames {
             let want: usize = frames - have
             let n = if want < mix::BLOCK { want } else { mix::BLOCK }

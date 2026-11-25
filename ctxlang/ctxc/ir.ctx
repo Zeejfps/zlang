@@ -249,7 +249,7 @@ namespace ir {
         wrap{ op: ArithOp, a: *Expr, b: *Expr },
         cast{ e: *Expr },
         ptraddr{ e: *Expr },
-        // (atomic T OP ORDER [ARG...]): order is atomic::Order's value, 0 relaxed to 4
+        // (atomic T OP ORDER [ARG...]): order is 0 relaxed to 4
         // sequentially consistent.
         atomic{ op: AtomicOp, order: u8, args: []Expr },
     }

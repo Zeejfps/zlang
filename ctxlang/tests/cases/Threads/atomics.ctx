@@ -3,29 +3,29 @@ enum State: u8 { idle, busy, done }
 
 fn main { mut io: Io, mut mem: Mem } {
     let mut n: u32 = 5
-    _ = @atomic_add(&n, 3, atomic::Order::relaxed)
-    let before = @atomic_subtract(&n, 1, atomic::Order::acquire_release)
+    _ = @atomic_add_relaxed(&n, 3)
+    let before = @atomic_subtract_acquire_release(&n, 1)
     io::println_u64{ &io, n = @as(u64, before) }
-    @atomic_store(&n, 40, atomic::Order::release)
-    io::println_u64{ &io, n = @as(u64, @atomic_load(&n, atomic::Order::acquire)) }
-    let old = @atomic_exchange(&n, 41, atomic::Order::sequentially_consistent)
+    @atomic_store_release(&n, 40)
+    io::println_u64{ &io, n = @as(u64, @atomic_load_acquire(&n)) }
+    let old = @atomic_exchange(&n, 41)
     io::println_u64{ &io, n = @as(u64, old) }
-    match @atomic_compare_exchange(&n, 41, 42, atomic::Order::acquire_release) {
+    match @atomic_compare_exchange_acquire_release(&n, 41, 42) {
         null => { io::println{ &io, s = "stored" } }
         some{ value } => { io::println_u64{ &io, n = @as(u64, value) } }
     }
-    match @atomic_compare_exchange(&n, 41, 43, atomic::Order::relaxed) {
+    match @atomic_compare_exchange_relaxed(&n, 41, 43) {
         null => { io::println{ &io, s = "stored" } }
         some{ value } => { io::println_u64{ &io, n = @as(u64, value) } }
     }
     let mut i: i8 = -100
-    _ = @atomic_subtract(&i, 100, atomic::Order::relaxed)
+    _ = @atomic_subtract_relaxed(&i, 100)
     io::println_i64{ &io, n = @as(i64, i) }
     let mut flag = false
-    io::println_bool{ &io, n = @atomic_exchange(&flag, true, atomic::Order::sequentially_consistent) }
-    io::println_bool{ &io, n = @atomic_load(&flag, atomic::Order::relaxed) }
+    io::println_bool{ &io, n = @atomic_exchange(&flag, true) }
+    io::println_bool{ &io, n = @atomic_load_relaxed(&flag) }
     let mut s = State::idle
-    _ = @atomic_compare_exchange(&s, State::idle, State::done, atomic::Order::sequentially_consistent)
+    _ = @atomic_compare_exchange(&s, State::idle, State::done)
     io::println_u64{ &io, n = @as(u64, @as(u8, s)) }
     // pointers to memory that isn't a local's, which an atomic may store (§14, Escape check)
     let words = mem::pages{ &mem, size = 16 } ifnull { return }
@@ -34,11 +34,11 @@ fn main { mut io: Io, mut mem: Mem } {
     x.* = 1
     y.* = 2
     let mut p: *mut u64 = x
-    let q: *mut u64 = @atomic_exchange(&p, y, atomic::Order::acquire_release)
-    io::println_u64{ &io, n = q.* + @atomic_load(&p, atomic::Order::acquire).* }
+    let q: *mut u64 = @atomic_exchange_acquire_release(&p, y)
+    io::println_u64{ &io, n = q.* + @atomic_load_acquire(&p).* }
     let mut np: ?*mut u64 = null
-    io::println_bool{ &io, n = @atomic_compare_exchange(&np, null, x, atomic::Order::sequentially_consistent) == null }
-    @fence(atomic::Order::sequentially_consistent)
+    io::println_bool{ &io, n = @atomic_compare_exchange(&np, null, x) == null }
+    @fence()
 }
 
 //# stdout:

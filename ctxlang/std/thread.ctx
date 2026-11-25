@@ -50,12 +50,6 @@ namespace thread {
     }
 }
 
-namespace atomic {
-    // How an atomic (spec §13) orders the memory accesses around it, as C11's memory_order: a
-    // load may acquire, a store release, and a read-modify-write either or both.
-    enum Order: u8 { relaxed, acquire, release, acquire_release, sequentially_consistent }
-}
-
 // A lock that one thread at a time holds: Windows' slim reader/writer lock, or a
 // pthread_mutex_t. It lives in the memory the threads share, and doesn't move while one is
 // locked or waited on. Not recursive: locking one the calling thread holds never returns.

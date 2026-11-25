@@ -1,4 +1,4 @@
 fn main {} {
     let mut n: u32 = 0
-    @atomic_store(&n, 1, atomic::Order::acquire)  //~ error at 26: @atomic_store can't be `acquire` or `acquire_release`: a store only releases
+    _ = @atomic_load(&n, 4)  //~ error at 26: wrong number of arguments: @atomic_load(p)
 }

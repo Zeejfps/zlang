@@ -282,7 +282,7 @@ fn spin_render { mut threads: Threads, data: *mut Spin } -> ! {
         thread::yield_now{ &threads }
         i = i + 1
     }
-    @atomic_store(&data.done, 1, atomic::Order::release)
+    @atomic_store_release(&data.done, 1)
 }
 
 // A task renders block after block while this code plays, stops, fades and releases sounds: no
@@ -294,7 +294,7 @@ fn lock_stress { mut io: Io, mut t: Tally, mut heap: arena::Arena, mut threads: 
     try task::start_concurrent{ &threads, task = &th, run = spin_render{ &threads, data = &spin, _ } }
     let mut calls: u32 = 0
     let mut wrong: u32 = 0
-    while @atomic_load(&spin.done, atomic::Order::acquire) == 0 {
+    while @atomic_load_acquire(&spin.done) == 0 {
         let bytes = if calls % 2 == 0 { dc } else { short }
         let h = mix::play{ m, bytes, p = mix::sound_2d{ group = mix::Group::sfx, volume = 0.3 } } iferr { mix::Handle{ slot = 0, id = 0 } }
         mix::set_volume{ m, h, volume = 0.2 }
