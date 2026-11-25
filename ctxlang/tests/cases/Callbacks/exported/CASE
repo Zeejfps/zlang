@@ -1,0 +1,42 @@
+// `#c::export` (spec §18, Callbacks, rule 8): C linked into the program calls a callback by its
+// symbol. C is lib/hooks.c, as libctxexport.a.
+//# needs: ar
+//# $ cc -c {dir}/lib/hooks.c -o {dir}/lib/hooks.o
+//# exit: 0
+//# $ ar rcs {dir}/lib/libctxexport.a {dir}/lib/hooks.o
+//# exit: 0
+//# project
+//# $ {exported}
+//# exit: 0
+//# stdout:
+//| tick 7
+//| tick 8
+//| 42210111
+//| 3
+//| 3
+
+// A panic in one has C code on its path, between it and the function that called the C.
+//# $ {exported} fail
+//# stdout:
+//| tick 7
+//| tick 8
+//| 42210111
+//| 3
+//| 3
+//# panic: {dir}/src/main.ctx:24:16: panic: too many
+//# path:
+//|   at check ({dir}/src/main.ctx:24:16)
+//|   at C code (no position)
+//|   at main ({dir}/src/main.ctx:37:63)
+
+// With each function in a unit of its own, an export is defined in its function's unit, and
+// still the one function C compares.
+//# $ ctxc run {dir}
+//# env: CTX_UNIT_SIZE=1
+//# exit: 0
+//# stdout:
+//| tick 7
+//| tick 8
+//| 42210111
+//| 3
+//| 3

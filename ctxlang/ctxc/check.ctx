@@ -80,7 +80,8 @@ namespace check {
         ty:       Id = types::ERROR,
         values:   []i64,                // an enum's, one per variant
         symbol:   []u8 = "",            // an extern fn's C symbol
-        callback: bool = false,         // a fn with `#c::callback`: C may call it (§18)
+        callback: bool = false,         // a fn with `#c::callback` or `#c::export`: C may call it (§18)
+        export:   []u8 = "",            // and with `#c::export{ name }`: its public C symbol
         any_thread: bool = false,       // and `any_thread = true`: from any thread, holding no capability
         task:     bool = false,         // a fn with `#task`: a task's entry (§15, Tasks)
         starts_task: bool = false,      // a fn with a valid `#starts_task`: std's task::start and its kin
@@ -754,6 +755,7 @@ namespace check {
         settle_const_as{ &c }
         each{ &c, xs = c.consts, what = Phase::fold }
         attributes{ &c }
+        export_symbols{ &c }
         entry_site{ &c }
         // The bodies, then their inferred error sets, then the borrow summaries made from both;
         // then what the bodies' checks do that waits for the summaries (Late).
@@ -2971,8 +2973,7 @@ namespace check {
     }
 
     fn attribute_list { mut c: Checker, file: u32, decls: []syntax::Decl, ns: u32 } {
-        let symbol_decl = std_decl{ c, space = "c", name = "symbol" }
-        let callback_decl = std_decl{ c, space = "c", name = "callback" }
+        let cd = CDecls{ symbol = std_decl{ c, space = "c", name = "symbol" }, callback = std_decl{ c, space = "c", name = "callback" }, export = std_decl{ c, space = "c", name = "export" } }
         let mut i: usize = 0
         while i < decls.len {
             let x = decls[i]
@@ -2982,6 +2983,7 @@ namespace check {
             }
             let mut seen = false
             let mut seen_callback = false
+            let mut seen_export = false
             let mut k: usize = 0
             while k < x.attrs.len {
                 let a = x.attrs[k]
@@ -2990,41 +2992,42 @@ namespace check {
                 } else if attribute{ &c, a, ns } is record{ ty, fields } {
                     let rd = record_decl{ c, t = ty }
                     if rd == NONE {
-                    } else if rd == symbol_decl {
+                    } else if rd == cd.symbol {
                         symbol_attr{ &c, x, file, a, fields, seen }
                         seen = true
-                    } else if rd == callback_decl {
-                        callback_attr{ &c, x, file, a, fields, seen = seen_callback }
-                        seen_callback = true
+                    } else if rd == cd.callback {
+                        if callback_attr{ &c, x, file, a, fields, export = false, seen = seen_callback, other = seen_export } { seen_callback = true }
+                    } else if rd == cd.export {
+                        if callback_attr{ &c, x, file, a, fields, export = true, seen = seen_export, other = seen_callback } { seen_export = true }
                     }
                 }
                 k = k + 1
             }
-            unchecked_decl{ &c, x, callback = seen_callback }
+            unchecked_decl{ &c, x, callback = seen_callback, export = seen_export }
             match x.k {
                 space{ decls = inner } => {
                     let child = map::get{ m = c.space_of, key = key{ file, id = x.id } }
                     if child != null { attribute_list{ &c, file, decls = inner, ns = child } }
                 }
                 cap{ fields } => {
-                    if fields != null { field_attributes{ &c, x, file, fields, ns, symbol_decl, callback_decl } }
+                    if fields != null { field_attributes{ &c, x, file, fields, ns, cd } }
                 }
-                record{ fields } => { check_data_fields{ &c, fields, ns, symbol_decl, callback_decl } }
+                record{ fields } => { check_data_fields{ &c, fields, ns, cd } }
                 sum{ variants } => {
                     let mut v: usize = 0
                     while v < variants.len {
                         let fields = variants[v].fields
-                        if fields != null { check_data_fields{ &c, fields, ns, symbol_decl, callback_decl } }
+                        if fields != null { check_data_fields{ &c, fields, ns, cd } }
                         v = v + 1
                     }
                 }
                 fault{ fields } => {
-                    if fields != null { check_data_fields{ &c, fields, ns, symbol_decl, callback_decl } }
+                    if fields != null { check_data_fields{ &c, fields, ns, cd } }
                 }
                 func{ params } => {
                     let mut p: usize = 0
                     while p < params.len {
-                        check_data_attrs{ &c, attrs = params[p].attrs, ns, symbol_decl, callback_decl }
+                        check_data_attrs{ &c, attrs = params[p].attrs, ns, cd }
                         p = p + 1
                     }
                 }
@@ -3035,10 +3038,13 @@ namespace check {
     }
 
     // The attributes of the fields of a struct, an extern union, a union's variant or an error.
-    fn check_data_fields { mut c: Checker, fields: []syntax::Field, ns: u32, symbol_decl: u32, callback_decl: u32 } {
+    // std's struct declarations of the attributes the compiler acts on, NONE for one std lacks.
+    struct CDecls { symbol: u32, callback: u32, export: u32 }
+
+    fn check_data_fields { mut c: Checker, fields: []syntax::Field, ns: u32, cd: CDecls } {
         let mut i: usize = 0
         while i < fields.len {
-            check_data_attrs{ &c, attrs = fields[i].attrs, ns, symbol_decl, callback_decl }
+            check_data_attrs{ &c, attrs = fields[i].attrs, ns, cd }
             i = i + 1
         }
     }
@@ -3046,7 +3052,7 @@ namespace check {
     // The attributes of a field that isn't a capability's: of a struct, an extern union, a
     // union's variant, an error or a fn's context. They are data alone (§18, rule 3), so one the
     // compiler acts on is misplaced there, as it is on a declaration it doesn't apply to.
-    fn check_data_attrs { mut c: Checker, attrs: []syntax::Attr, ns: u32, symbol_decl: u32, callback_decl: u32 } {
+    fn check_data_attrs { mut c: Checker, attrs: []syntax::Attr, ns: u32, cd: CDecls } {
         let mut k: usize = 0
         while k < attrs.len {
             let a = attrs[k]
@@ -3067,10 +3073,12 @@ namespace check {
             } else if attribute{ &c, a, ns } is record{ ty } {
                 let rd = record_decl{ c, t = ty }
                 if rd == NONE {
-                } else if rd == symbol_decl {
+                } else if rd == cd.symbol {
                     error{ &c, at = a.span, msg = "`c::symbol` on a field applies only to a capability's C variable, `extern name: T`" }
-                } else if rd == callback_decl {
+                } else if rd == cd.callback {
                     error{ &c, at = a.span, msg = "`c::callback` applies only to a fn" }
+                } else if rd == cd.export {
+                    error{ &c, at = a.span, msg = "`c::export` applies only to a fn" }
                 }
             }
             k = k + 1
@@ -3078,8 +3086,8 @@ namespace check {
     }
 
     // The attributes of capability x's fields: `c::symbol` on a C variable gives its symbol (§15,
-    // rule 12), and the rest but `c::callback` are checked and ignored.
-    fn field_attributes { mut c: Checker, x: syntax::Decl, file: u32, fields: []syntax::Field, ns: u32, symbol_decl: u32, callback_decl: u32 } {
+    // rule 12), and the rest but `c::callback` and `c::export` are checked and ignored.
+    fn field_attributes { mut c: Checker, x: syntax::Decl, file: u32, fields: []syntax::Field, ns: u32, cd: CDecls } {
         let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         let mut i: usize = 0
         while i < fields.len {
@@ -3107,11 +3115,13 @@ namespace check {
                 } else if attribute{ &c, a, ns } is record{ ty, fields = vals } {
                     let rd = record_decl{ c, t = ty }
                     if rd == NONE {
-                    } else if rd == symbol_decl {
+                    } else if rd == cd.symbol {
                         var_symbol_attr{ &c, d, f, a, fields = vals, seen }
                         seen = true
-                    } else if rd == callback_decl {
+                    } else if rd == cd.callback {
                         error{ &c, at = a.span, msg = "`c::callback` applies only to a fn" }
+                    } else if rd == cd.export {
+                        error{ &c, at = a.span, msg = "`c::export` applies only to a fn" }
                     }
                 }
                 k = k + 1
@@ -3274,27 +3284,48 @@ namespace check {
     // `#c::callback` on a fn: C may call it through a pointer, so it converts to an extern fn
     // type (§12, C function pointers) whose fields include its own. Its fields and result must
     // have C equivalents, and it can't be generic: C's pointer is to one function.
-    fn callback_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, fields: []Val, seen: bool } {
+    // `#c::export{ name }` (`export`) makes it a callback that C may also call as the public
+    // symbol `name` (§18, Callbacks, rule 8), so a fn has one or the other (`other`). Whether
+    // it counts as the fn's attribute, for `seen` and `other` on the next.
+    fn callback_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, fields: []Val, export: bool, seen: bool, other: bool } -> bool {
+        let attr = if export { "c::export" } else { "c::callback" }
         let func{ tparams, params, ret, external } = x.k else {
-            error{ &c, at = a.span, msg = "`c::callback` applies only to a fn" }
-            return
+            errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr }) }
+            return false
         }
         if external {
-            error{ &c, at = a.span, msg = "`c::callback` applies only to a fn with a body, not an extern fn" }
-            return
+            errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn with a body, not an extern fn", str{ s = attr }) }
+            return false
         }
         if seen {
-            error{ &c, at = a.span, msg = "duplicate `c::callback` attribute" }
-            return
+            errorf{ &c, at = a.span, msg = @fmt("duplicate `{}` attribute", str{ s = attr }) }
+            return true
+        }
+        if other {
+            error{ &c, at = a.span, msg = "a fn has `c::callback` or `c::export`, not both: an exported fn is a callback already" }
+            return true
         }
         if tparams.len > 0 {
-            error{ &c, at = a.span, msg = "a `c::callback` fn can't be generic" }
-            return
+            errorf{ &c, at = a.span, msg = @fmt("a `{}` fn can't be generic", str{ s = attr }) }
+            return true
         }
+        let mut any_thread = false
+        let mut name = ""
+        let mut i: usize = 0
+        while i < fields.len {
+            match fields[i] {
+                boolean{ value } => { any_thread = value }
+                sbytes{ bytes } => { name = bytes }
+                else => {}
+            }
+            i = i + 1
+        }
+        if export and not export_name{ &c, at = a.span, name } { return true }
         let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } }
-        if d == null { return }
+        if d == null { return true }
         let at = list::at{ list = c.decls, i = d }
         at.callback = true
+        if export { at.export = name }
         let mut what = message{ c }
         try! @fmt(&what, "callback `{}`", str{ s = at.name.text })
         let ret_at: ?source::Span = if ret == null { null } else { ret.span }
@@ -3305,17 +3336,88 @@ namespace check {
         }
         // `any_thread = true` (§18, Callbacks, rule 6): C may call it from any thread, which holds
         // no capability.
-        if fields.len == 1 and fields[0] is boolean{ value } and value {
+        if any_thread {
             at.any_thread = true
-            let mut i: usize = 0
-            while i < at.fields.len {
-                let f = at.fields[i]
+            let mut k: usize = 0
+            while k < at.fields.len {
+                let f = at.fields[k]
                 if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = f.ty } } is cap {
                     errorf{ &c, at = x.span, msg = @fmt("callback `{}` can't take `{}`: C may call it from any thread, and a thread the program didn't start holds no capability", str{ s = at.name.text }, str{ s = f.name }) }
-                    return
+                    return true
                 }
-                i = i + 1
+                k = k + 1
             }
+        }
+        return true
+    }
+
+    // Whether name may be an exported fn's C symbol (§18, Callbacks, rule 8), after reporting
+    // why not. The thunk C calls has it as its assembler name, so it may not be one the program's
+    // C has already: C's `main`, the runtime's, which start with `ctx_` or `CTX_`, or ctxc's
+    // own, a lowercase letter and then a digit or `_` (emit_c.ctx: tN, f_NAME and the rest).
+    fn export_name { mut c: Checker, at: source::Span, name: []u8 } -> bool {
+        if not c_ident{ s = name } {
+            errorf{ &c, at, msg = @fmt("`{}` is not a C identifier", str{ s = name }) }
+            return false
+        }
+        let mut why = ""
+        if slice::eq_bytes{ a = name, b = "main" } {
+            why = "the program's C defines `main`, which calls its start fn"
+        } else if name.len >= 4 and (slice::eq_bytes{ a = name[..4], b = "ctx_" } or slice::eq_bytes{ a = name[..4], b = "CTX_" }) {
+            why = "a name starting with `ctx_` or `CTX_` is the runtime's"
+        } else if name.len > 1 and ascii::is_lower{ c = name[0] } and (ascii::is_digit{ c = name[1] } or name[1] == '_') {
+            why = "a lowercase letter and then a digit or `_` starts the names ctxc gives its own C"
+        }
+        if why.len > 0 {
+            errorf{ &c, at, msg = @fmt("`{}` can't be an exported fn's C symbol: {}", str{ s = name }, str{ s = why }) }
+            return false
+        }
+        return true
+    }
+
+    // Each exported fn's symbol is C's name of one function (§18, Callbacks, rule 8): no other
+    // exported fn's, and none that an extern fn calls or a C variable reads, which would be the
+    // program's own.
+    fn export_symbols { mut c: Checker } {
+        let fns = list::items{ list = c.fns }
+        let mut i: usize = 0
+        while i < fns.len {
+            let x = get_decl{ c, d = fns[i] }
+            if x.export.len == 0 {
+                i = i + 1
+                continue
+            }
+            let mut j: usize = 0
+            while j < i {
+                let y = get_decl{ c, d = fns[j] }
+                if slice::eq_bytes{ a = x.export, b = y.export } {
+                    errorf{ &c, at = x.name.span, msg = @fmt("`{}` exports C symbol `{}`, which `{}` exports already", str{ s = x.qual }, str{ s = x.export }, str{ s = y.qual }) }
+                }
+                j = j + 1
+            }
+            let externs = list::items{ list = c.externs }
+            j = 0
+            while j < externs.len {
+                let y = get_decl{ c, d = externs[j] }
+                if slice::eq_bytes{ a = x.export, b = y.symbol } {
+                    errorf{ &c, at = x.name.span, msg = @fmt("`{}` exports C symbol `{}`, which extern fn `{}` calls: C would call the export", str{ s = x.qual }, str{ s = x.export }, str{ s = y.qual }) }
+                }
+                j = j + 1
+            }
+            let caps = list::items{ list = c.caps }
+            j = 0
+            while j < caps.len {
+                let vs = get_decl{ c, d = caps[j] }.vars
+                let mut k: usize = 0
+                while k < vs.len {
+                    if vs[k].owner == caps[j] and not vs[k].stat and slice::eq_bytes{ a = x.export, b = vs[k].symbol } {
+                        errorf{ &c, at = x.name.span, msg = @fmt("`{}` exports C symbol `{}`, which C variable `{}` of `{}` reads", str{ s = x.qual }, str{ s = x.export }, str{ s = vs[k].name }, str{ s = get_decl{ c, d = caps[j] }.qual }) }
+                    }
+                    k = k + 1
+                }
+                j = j + 1
+            }
+            i = i + 1
         }
     }
 
@@ -17100,14 +17202,16 @@ namespace check {
     }
 
     // The declarations that bring in what C says, which nothing checks against C: an extern fn,
-    // an extern union, a capability's C variable and a `#c::callback` fn.
-    fn unchecked_decl { mut c: Checker, x: syntax::Decl, callback: bool } {
+    // an extern union, a capability's C variable and a `#c::callback` or `#c::export` fn.
+    fn unchecked_decl { mut c: Checker, x: syntax::Decl, callback: bool, export: bool } {
         match x.k {
             func{ name, external } => {
                 if external {
                     unchecked{ &c, at = name.span, what = "an extern fn", checked = "" }
                 } else if callback {
                     unchecked{ &c, at = name.span, what = "a `#c::callback` fn", checked = "" }
+                } else if export {
+                    unchecked{ &c, at = name.span, what = "a `#c::export` fn", checked = "" }
                 }
             }
             record{ name, untagged } => {

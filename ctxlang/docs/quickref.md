@@ -126,10 +126,10 @@ types). Through a pointer, `p.x` is the field and `p.*` the value: no `->`, no `
   `(s.ptr + i).*` skips a slice's check. Keep these to hot loops whose bounds are checked once.
 - The **unchecked operations** (§13, Unchecked operations) are `@cast`, `@slice`, pointer
   arithmetic (`q + n`, so `(q + i).*` too), a `c::String` from a pointer, and declaring an
-  `extern fn`, an `extern union`, a C variable or a `#c::callback` fn. A build can make them
-  errors outside the directories it names (`build::deny_unchecked`, §19); the error names the
-  checked form: `s[i]` and `a[lo..hi]`, `alloc::free` for one object from `alloc::new`, std's
-  `math` for libm, a string literal for a `c::String`.
+  `extern fn`, an `extern union`, a C variable or a `#c::callback` or `#c::export` fn. A build
+  can make them errors outside the directories it names (`build::deny_unchecked`, §19); the
+  error names the checked form: `s[i]` and `a[lo..hi]`, `alloc::free` for one object from
+  `alloc::new`, std's `math` for libm, a string literal for a `c::String`.
 - `==` and `!=` compare structs, unions, arrays, slices (by contents: two `[]u8` with the same
   bytes are equal) and optionals of these, part by part, with nothing written; `@hash(x)` is a
   `u64` that equal values share (§13, Hashing). Not for a type with a pointer, a function or an
@@ -313,6 +313,8 @@ libm's functions, `#pure`; they are the only extern fns a const may call
 (`const T: [8]f32 = make_table{}` with `math::cos` in `make_table`), and the const has the bits
 the same call gives at run time. A program's own namespace of the same name (a `math` of its own) hides std's
 whole (§10, rule 4).
+C calls a fn through a pointer if it is `#c::callback`, and by name too if it is
+`#c::export{ name = "symbol" }`, one or the other (§18, Callbacks).
 
 ## Printing and text
 

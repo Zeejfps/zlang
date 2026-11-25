@@ -76,7 +76,7 @@ program asks for one (spec §19).
 | `?*T`, `?*mut T` | `T*` | `null` is 0. IR type `nptr`. |
 | `c::String`, `?c::String` | `struct { uint8_t *m_ptr; }`, and the same under a typedef | Passed to C by value, which 64-bit C ABIs pass and return as the pointer; a literal's is `((uint8_t *)"...")`, whose NUL is the hidden zero. `?c::String` is null when `m_ptr` is 0. |
 | `extern union` | C `union` | Every field at offset 0. IR `(cunion ...)`. A literal zeroes the other bytes with `memset`. |
-| `extern fn{C} -> R`, and its `?` | `R (*)(P...)`, capabilities dropped | IR type `cfn`, params in order; `null` is 0. A named extern fn as a value is `xN`; a `#c::callback` fn is `kK`, a C function calling `fN`. |
+| `extern fn{C} -> R`, and its `?` | `R (*)(P...)`, capabilities dropped | IR type `cfn`, params in order; `null` is 0. A named extern fn as a value is `xN`; a `#c::callback` fn is `kK`, a C function calling `fN`. A `#c::export` fn's `kK` is never static and has the exported symbol as its assembler name. |
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`), as a `match` on an integer does: a case lists values and ranges, `lo <= v && v <= hi`. |
 | `Io`, `Fs`, `Mem` | empty struct | Size 0 with GNU C. |
 | `capability Gl { f: extern fn{C} -> R, ... }` | struct of function pointers | `x.f{ ... }` calls the pointer; dropped from extern and `cfn` params, as other capabilities are. |

@@ -27,6 +27,17 @@ namespace c {
     //   fn fill_audio { data: *mut Ring, stream: *mut u8, length: i32 } { ... }
     struct callback { any_thread: bool }
 
+    // On a fn: a callback that C may also call by name, as the public C symbol `name`, so that
+    // C linked into the program can call it without being handed a pointer. Its C parameters
+    // are its own fields in the order they are declared, without the capabilities, which it is
+    // supplied as any callback is (§18, Callbacks, rules 4 and 8). A C declaration of it is C's to write:
+    //
+    //   #c::export{ name = "game_tick" }
+    //   fn tick { mut io: Io, frame: u64 } -> i32 { ... }     // int32_t game_tick(uint64_t frame);
+    //
+    // `any_thread` is a callback's. A fn has `c::export` or `c::callback`, never both.
+    struct export { name: []u8, any_thread: bool }
+
     // A NUL-terminated string, as C's `const char *`: read-only, and not owned by its holder. A
     // string literal where one is expected is its static bytes, which the hidden zero after them
     // ends (from_literal). C takes and returns it as a plain pointer, and `?String` as one that

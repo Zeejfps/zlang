@@ -99,8 +99,9 @@ namespace emit {
     // An adapter from function type `from` to `to`, emitted as aN.
     struct Pair { from: ir::TypeId, to: ir::TypeId }
 
-    // A C function k_NAME calling function callee, of C function type ty.
-    struct Callback { callee: u32, ty: ir::TypeId }
+    // A C function k_NAME calling function callee, of C function type ty, and the C symbol it
+    // is exported as (`#c::export`), or "".
+    struct Callback { callee: u32, ty: ir::TypeId, export: []u8 }
 
     // A function's C, with markers: its body, the bind records it makes, which go before it, and
     // the types of its expressions, whose definitions it needs whether or not it names them, and
@@ -264,6 +265,14 @@ namespace emit {
         i = 0
         while i < p.types.len {
             try! list::push{ list = &e.marks, item = 0 }
+            i = i + 1
+        }
+        // The exported callbacks come first, so that a conversion of one to its own type is the
+        // same C function, as C may compare their addresses.
+        i = 0
+        while i < p.exports.len {
+            let x = p.exports[i]
+            try! list::push{ list = &e.callbacks, item = Callback{ callee = x.callee, ty = x.ty, export = x.name } }
             i = i + 1
         }
         i = 0
@@ -667,10 +676,12 @@ namespace emit {
             i = i + 1
         }
         if entry { rewrite{ &e, src = e.entry_text, into = &body } }
-        // A callback is defined in its function's unit, whether that uses it or not.
+        // A callback is defined in its function's unit, whether that uses it or not, and an
+        // exported one in the only unit too, since C calls it by its symbol.
         i = 0
-        while e.split and i < e.callbacks.len {
-            if list::items{ list = e.unit_of }[list::items{ list = e.callbacks }[i].callee] == unit {
+        while i < e.callbacks.len {
+            let c = list::items{ list = e.callbacks }[i]
+            if (e.split and list::items{ list = e.unit_of }[c.callee] == unit) or (not e.split and c.export.len > 0) {
                 _ = number{ l = &e.lk, id = @as(u32, i) }
             }
             i = i + 1
@@ -734,10 +745,16 @@ namespace emit {
             } else if nk < e.lk.order.len {
                 let k = list::items{ list = e.lk.order }[nk]
                 nk = nk + 1
+                let c = list::items{ list = e.callbacks }[k]
+                //   R k_NAME(P a1, ...) __asm__(CTX_SYMBOL("symbol"));   when exported
                 callback_head{ &e, k }
+                if c.export.len > 0 {
+                    put{ &e, a = " __asm__(CTX_SYMBOL(\"" }
+                    raw{ &e, b = c.export }
+                    put{ &e, a = "\"))" }
+                }
                 put{ &e, a = ";\n" }
                 rewrite{ &e, src = list::items{ list = e.o.bytes }, into = &proto }
-                let c = list::items{ list = e.callbacks }[k]
                 if not e.split or list::items{ list = e.unit_of }[c.callee] == e.unit {
                     list::clear{ list = &e.o.bytes }
                     callback_def{ &e, k }
@@ -3569,17 +3586,18 @@ namespace emit {
             if q.callee == callee and q.ty == t { return @as(u32, k) }
             k = k + 1
         }
-        try! list::push{ list = &e.callbacks, item = Callback{ callee, ty = t } }
+        try! list::push{ list = &e.callbacks, item = Callback{ callee, ty = t, export = "" } }
         return @as(u32, k)
     }
 
     //   R k_NAME(P a1, ...)
     // static unless there are several units: C may compare its address, so it is one function,
-    // in its callee's unit.
+    // in its callee's unit. An exported one is never static: its prototype gives it the
+    // exported symbol as its assembler name (`callback_proto`).
     fn callback_head { mut e: E, k: u32 } {
         let c = list::items{ list = e.callbacks }[k]
         let cfn{ params, ret } = ty{ e, id = c.ty } else { @panic("emit: a callback of a non-C function type") }
-        mark_id{ &e, kind = 's', id = 0 }
+        if c.export.len == 0 { mark_id{ &e, kind = 's', id = 0 } }
         tn{ &e, t = ret }
         ch{ &e, c = ' ' }
         mark_id{ &e, kind = 'k', id = k }

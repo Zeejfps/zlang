@@ -37,7 +37,14 @@ namespace ir {
         // the start fn takes `Threads`, or C may call a callback from any thread. Only then are
         // `#thread_local` statics and the stack limit per thread.
         threaded: bool,
+        // The `#c::export` fns (§18, Callbacks, rule 8), each a C function the program defines
+        // under a public symbol.
+        exports: []Export,
     }
+
+    // A C function of C function type ty (a cfn: callee's own fields, in order) that calls
+    // callee, as the C symbol `name`.
+    struct Export { callee: u32, ty: TypeId, name: Bytes }
 
     // A const of array, struct or union type. Its value is literals only: the checker computed it.
     // The array of an array literal's static view is one too, and a view's value points into

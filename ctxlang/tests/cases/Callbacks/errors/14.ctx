@@ -1,0 +1,4 @@
+#c::export{ name = "one" }
+#c::export{ name = "two" }  //~ error at 1: duplicate `c::export` attribute
+fn f {} {}
+fn main {} {}

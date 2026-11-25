@@ -7,6 +7,7 @@
 //| lib/game/game.ctx:5:18: error: an extern union is unchecked, and `build::deny_unchecked` in build.ctx denies it here: use a `union`, which says which variant it holds, or write it in a directory its `except` lists
 //| lib/game/game.ctx:6:29: error: a C variable is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
 //| lib/game/game.ctx:8:8: error: a `#c::callback` fn is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
+//| lib/game/game.ctx:20:8: error: a `#c::export` fn is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
 //| lib/game/game.ctx:11:17: error: `@cast` is unchecked, and `build::deny_unchecked` in build.ctx denies it here: it has no checked form, so write it in a directory its `except` lists
 //| lib/game/game.ctx:12:17: error: `@slice` is unchecked, and `build::deny_unchecked` in build.ctx denies it here: slice an array or a slice (`a[lo..hi]`, which is bounds-checked), or write it in a directory its `except` lists
 //| lib/game/game.ctx:14:11: error: a `c::String` made from a pointer is unchecked, and `build::deny_unchecked` in build.ctx denies it here: use a string literal, which its hidden zero ends, or write it in a directory its `except` lists

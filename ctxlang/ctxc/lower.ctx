@@ -14,7 +14,7 @@ namespace lower {
     type Id = types::Id
 
     const NONE: u32 = 4294967295
-    const VERSION: u64 = 24
+    const VERSION: u64 = 25
 
     // A function instance: a declaration and its generic arguments. The hidden fn of an @fmt
     // without a sink is an instance too, under the declaration it is in: site is its Site,
@@ -82,7 +82,16 @@ namespace lower {
         let panic = if h == NONE { NONE } else { fn_id{ &l, decl = h, targs = no_ids{} } }
         let v = check::stack_limit{ c }
         let limit = if let value = v { static_of{ &l, v = value } } else { NONE }
-        let p = finish{ &l, main, start, panic, stack_limit = limit, adapters = true }
+        // Each `#c::export` fn is lowered whether or not the program calls it, since C does.
+        let mut exports = list::new(ir::Export){ realloc = arena::alloc, heap = l.heap }
+        for d in list::items{ list = c.fns } {
+            let x = check::get_decl{ c, d }
+            if x.export.len > 0 {
+                let ty = tid{ &l, t = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true, keeps = slice::empty(types::Keep){} } }
+                try! list::push{ list = &exports, item = ir::Export{ callee = fn_id{ &l, decl = d, targs = no_ids{} }, ty, name = x.export } }
+            }
+        }
+        let p = finish{ &l, main, start, panic, stack_limit = limit, adapters = true, exports = list::items{ list = exports } }
         if l.failed { @panic("lower: a const or literal without a value") }
         return p
     }
@@ -95,7 +104,7 @@ namespace lower {
     fn alone { mut c: check::Checker, d: u32 } -> ?ir::Program {
         let mut l = lowering{ &c }
         let main = fn_id{ &l, decl = d, targs = no_ids{} }
-        let p = finish{ &l, main, start = NONE, panic = NONE, stack_limit = NONE, adapters = false }
+        let p = finish{ &l, main, start = NONE, panic = NONE, stack_limit = NONE, adapters = false, exports = slice::empty(ir::Export){} }
         if l.failed { return null }
         return p
     }
@@ -132,7 +141,7 @@ namespace lower {
 
     // Lowers the queued instances, and those they reach, into a program, with the functions that
     // run it (adapters: entry_fns) for a program, but not for a const's.
-    fn finish { mut l: Lower, main: u32, start: u32, panic: u32, stack_limit: u32, adapters: bool } -> ir::Program {
+    fn finish { mut l: Lower, main: u32, start: u32, panic: u32, stack_limit: u32, adapters: bool, exports: []ir::Export } -> ir::Program {
         let mut i: usize = 0
         while i < l.queue.len {
             let inst = list::items{ list = l.queue }[i]
@@ -169,7 +178,7 @@ namespace lower {
             vars = list::items{ list = l.vars },
             statics = list::items{ list = l.statics },
             fns = list::items{ list = l.fns },
-            main, start, panic, entry = ends.entry, on_panic = ends.on_panic, stack_limit, threaded,
+            main, start, panic, entry = ends.entry, on_panic = ends.on_panic, stack_limit, threaded, exports,
         }
     }
 

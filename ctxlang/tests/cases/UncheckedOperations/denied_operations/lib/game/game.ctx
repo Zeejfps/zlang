@@ -16,4 +16,6 @@ namespace game {
         let made = c::String{ ptr = p }
         return (p + 1).* + v.len
     }
+    #c::export{ name = "game_tick" }
+    fn tick {} {}
 }

@@ -99,6 +99,17 @@ namespace ir_print {
             text{ &o, a = ")\n" }
         }
         if p.threaded { text{ &o, a = "(threaded)\n" } }
+        i = 0
+        while i < p.exports.len {
+            let x = p.exports[i]
+            text{ &o, a = "(export " }
+            num{ &o, n = x.callee }
+            spaced{ &o, n = x.ty }
+            char{ &o, c = ' ' }
+            quote{ &o, b = x.name }
+            text{ &o, a = ")\n" }
+            i = i + 1
+        }
         if p.stack_limit != lower::NONE {
             text{ &o, a = "(stack_limit " }
             num{ &o, n = p.stack_limit }

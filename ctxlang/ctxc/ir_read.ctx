@@ -61,6 +61,7 @@ namespace ir_read {
         let mut entry = lower::NONE
         let mut on_panic = lower::NONE
         let mut threaded = false
+        let mut exports = list::new(ir::Export){ realloc = arena::alloc, heap = r.heap }
         while true {
             expect{ &r, c = '(' }
             if r.failed { break }
@@ -98,6 +99,10 @@ namespace ir_read {
                 on_panic = id32{ &r }
             } else if spells{ s = tag, lit = "threaded" } {
                 threaded = true
+            } else if spells{ s = tag, lit = "export" } {
+                let callee = id32{ &r }
+                let ty = id32{ &r }
+                try list::push{ list = &exports, item = ir::Export{ callee, ty, name = try string{ &r } } }
             } else if spells{ s = tag, lit = "stack_limit" } {
                 stack_limit = id32{ &r }
             } else if spells{ s = tag, lit = "main" } {
@@ -114,7 +119,7 @@ namespace ir_read {
         return ir::Program{
             version, files, types = list::items{ list = types }, consts = list::items{ list = consts },
             vars = list::items{ list = vars }, statics = list::items{ list = statics }, fns = list::items{ list = fns },
-            main, start, panic, entry, on_panic, stack_limit, threaded,
+            main, start, panic, entry, on_panic, stack_limit, threaded, exports = list::items{ list = exports },
         }
     }
 

@@ -2,7 +2,6 @@
 
 The goal is real programs over C libraries: OpenGL or Vulkan rendering, windowing, audio.
 
-- **`#c::export{ name }`**, for a public symbol, over the callback thunk.
 - **Loading a library at run time**, where the capability means "it loaded".
 - **Floats as text in ctxlang.** `ctxc/rt/ctxfloat.c` is the last of std's natives in C:
   shortest round-trip printing over `snprintf`, as Python's `repr`, and parsing over `strtod`,

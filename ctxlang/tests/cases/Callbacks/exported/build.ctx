@@ -1,0 +1,5 @@
+fn build { mut b: Build } {
+    let exe = build::exe{ &b, name = "exported", root = "src" }
+    build::lib_path{ &b, exe, path = "lib" }
+    build::link{ &b, exe, lib = "ctxexport" }
+}

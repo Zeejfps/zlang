@@ -1,0 +1,8 @@
+// An exported fn is a callback already, in either order.
+#c::callback
+#c::export{ name = "one" }  //~ error at 1: a fn has `c::callback` or `c::export`, not both: an exported fn is a callback already
+fn f {} {}
+#c::export{ name = "two" }
+#c::callback  //~ error at 1: a fn has `c::callback` or `c::export`, not both: an exported fn is a callback already
+fn g {} {}
+fn main {} {}
