@@ -225,8 +225,8 @@ namespace build {
 
     // The C library's, to write CTX_BUILD_OUT's file as the program goes. A FILE * is a number
     // here, as a DIR * is in std/os/posix.
-    extern fn getenv { mut b: Build, name: c::String } -> ?c::String
-    extern fn fopen { mut b: Build, path: c::String, mode: c::String } -> u64
+    extern fn getenv { mut b: Build, name: cstr } -> ?cstr
+    extern fn fopen { mut b: Build, path: cstr, mode: cstr } -> u64
     extern fn fwrite { mut b: Build, bytes: *u8, size: usize, count: usize, file: u64 } -> usize
     extern fn fflush { mut b: Build, file: u64 } -> i32
 

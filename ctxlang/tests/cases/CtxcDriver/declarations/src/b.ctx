@@ -12,7 +12,7 @@ namespace game {
     capability Plain
     error bad{ code: i64 }
     error plain
-    extern fn puts { s: c::String } -> i32
+    extern fn puts { s: cstr } -> i32
     extern union Bits { i: u32, f: f32 }
 }
 fn main {} {}

@@ -3,7 +3,7 @@
 namespace glsl {
     // glsl::SCENE_VS's skinning and dangle, left in world space for the tessellation stages, with the vertex's smooth
     // normal (location 10: the normal shared by every vertex at its position, made at create_mesh) skinned too.
-    const TESS_VS: c::String =
+    const TESS_VS: cstr =
         \\#version 410 core
         \\uniform mat4 u_model;
         \\uniform mat3 u_normal;
@@ -73,7 +73,7 @@ namespace glsl {
     // The PN triangle's control points (from the corners and their smooth normals, so a seam's two sides curve
     // alike) and how finely each edge is cut: u_tess.x at most, falling to 1 (flat) between u_tess.y and u_tess.z
     // metres from the eye, by the edge's own midpoint, so two triangles sharing an edge cut it alike.
-    const TESS_CS: c::String =
+    const TESS_CS: cstr =
         \\#version 410 core
         \\layout(std140) uniform Frame {
         \\    mat4 u_view_proj;
@@ -149,7 +149,7 @@ namespace glsl {
 
     // The curved surface at the tessellator's point: the cubic PN patch for the position, the corners' own normals,
     // tangents, UVs and colours interpolated for shading, as the scene's fragment program reads them.
-    const TESS_ES: c::String =
+    const TESS_ES: cstr =
         \\#version 410 core
         \\layout(std140) uniform Frame {
         \\    mat4 u_view_proj;

@@ -8,7 +8,7 @@ namespace os {
     // What std's Proc holds on this platform: C's `char **environ`, the "KEY=VALUE" strings of
     // this program's environment, ending with null.
     capability Proc {
-        extern environ: ?*?c::String,
+        extern environ: ?*?cstr,
     }
 
     // The operating system this layer is for, and whether its environment's keys are
@@ -278,7 +278,7 @@ namespace os {
     // call.
     fn dir_next { mut fs: Fs, mut dir: Dir } -> ?[]u8 {
         let e = readdir{ &fs, dir = dir.handle } ifnull { return null }
-        return c::bytes{ s = c::String{ ptr = e + sys::DIRENT_NAME } }
+        return c::bytes{ s = @cast(cstr, e + sys::DIRENT_NAME) }
     }
 
     fn dir_close { mut fs: Fs, mut dir: Dir } {
@@ -421,7 +421,7 @@ namespace os {
         while inherited != null and i < n {
             let entry = (inherited + i).* ifnull { break }
             if not proc::overridden{ entry = c::bytes{ s = entry }, env = extra } {
-                ptrs[k] = entry.ptr
+                ptrs[k] = entry
                 k = k + 1
             }
             i = i + 1

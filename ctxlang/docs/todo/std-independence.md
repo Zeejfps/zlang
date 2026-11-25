@@ -1,8 +1,9 @@
 # The compiler knowing nothing of std: what is left
 
 The checker, lowering and runtime should never name a std declaration. Still naming std:
-- [ ] `c::String`'s C layout: a `?c::String` is a nullable pointer, and an extern fn passes it as a
-  `const char *` (`cstr_decl`).
+- [x] `c::String`'s C layout: a `?c::String` was a nullable pointer, an extern fn passed it as a
+  `const char *`, and making one from a pointer was unchecked (`cstr_decl`). C's string is the
+  language's `cstr` now, a `*u8` whose bytes a NUL ends, made from a pointer by `@cast`.
 - [x] `c::symbol`, `c::callback` and `c::export` were attributes std declared (std/c.ctx) and the
   compiler acted on. They are the compiler's own now, `#c_symbol`, `#c_callback` and `#c_export`,
   beside `#convert` and `#write`.

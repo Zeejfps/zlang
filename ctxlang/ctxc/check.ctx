@@ -128,6 +128,7 @@ namespace check {
         prim{ p: types::Prim },
         anyerr,                         // `error`: the type of any error (§8, Errors)
         strlit,                         // a string literal's type (§11, Literals)
+        cstr,                           // C's `const char *` (§18)
         attr{ a: Attribute },           // an attribute the compiler declares
     }
 
@@ -154,6 +155,7 @@ namespace check {
         local{ var: u32 },
         anyerr,
         strlit,
+        cstr,
         attr{ a: Attribute },
     }
 
@@ -225,7 +227,6 @@ namespace check {
         // std's (stack_limit).
         limit_caps:  [2]u32 = [NONE, NONE],
         limit_names: [2][]u8 = ["", ""],
-        cstr_decl: u32 = NONE,                   // c::String, for its C layout, or NONE
         calling:   u64 = NO_CALLEE,              // the callee being checked, whose field may be a capability's
         // The body being checked: a const's initializer or a function's body.
         sc:        Scope,
@@ -726,6 +727,7 @@ namespace check {
         }
         put_name{ &c, ns = UNIVERSE, values = false, name = "error", e = Entry::anyerr }
         put_name{ &c, ns = UNIVERSE, values = false, name = "strlit", e = Entry::strlit }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "cstr", e = Entry::cstr }
         put_name{ &c, ns = UNIVERSE, values = false, name = "convert", e = Entry::attr{ a = Attribute::convert } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "write", e = Entry::attr{ a = Attribute::write } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "start", e = Entry::attr{ a = Attribute::start } }
@@ -823,7 +825,6 @@ namespace check {
             f = f + 1
         }
         settle_modules{ &c }
-        c.cstr_decl = std_decl{ c, space = "c", name = "String" }
         generic_params{ &c, xs = c.structs }
         generic_params{ &c, xs = c.unions }
         generic_params{ &c, xs = c.fns }
@@ -3856,6 +3857,10 @@ namespace check {
                 if given > 0 { no_targs{ &c, what = "strlit", at } }
                 return types::STRLIT
             }
+            cstr => {
+                if given > 0 { no_targs{ &c, what = "cstr", at } }
+                return types::CSTR
+            }
             attr => {
                 errorf{ &c, at, msg = @fmt("`{}` is an attribute, not a type", str{ s = name.text }) }
                 return types::ERROR
@@ -4930,6 +4935,7 @@ namespace check {
             prim{ p } => { use{ &c, n, r = Ref::prim{ p } } }
             anyerr => { use{ &c, n, r = Ref::anyerr } }
             strlit => { use{ &c, n, r = Ref::strlit } }
+            cstr => { use{ &c, n, r = Ref::cstr } }
             attr{ a } => { use{ &c, n, r = Ref::attr{ a } } }
         }
     }
@@ -5003,7 +5009,8 @@ namespace check {
             strlit => { return utf8::push{ &b, s = "strlit" } }
             prim{ p } => { return utf8::push{ &b, s = str{ s = types::PRIM_NAMES[@as(usize, p)] } } }
             cap{ decl } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.name.text } } }
-            ptr{ elem, mutable } => {
+            ptr{ elem, mutable, c_string } => {
+                if c_string { return utf8::push{ &b, s = "cstr" } }
                 try utf8::push{ &b, s = if mutable { "*mut " } else { "*" } }
                 return write_type{ c, t = elem, &b }
             }
@@ -6503,7 +6510,6 @@ namespace check {
         }
         let lt = expr{ &c, e = place, exp = types::NO_TYPE }
         check_mutable{ &c, e = place }
-        if cstr_ptr{ c, e = place } { unchecked_cstr{ &c, at = expr_at{ e = place } } }
         expect{ &c, e = value, t = lt }
         check_cap_assign{ &c, t = lt, once = false, at = expr_at{ e = place } }
         handle_local{ &c, t = lt, value = true, at = expr_at{ e = place } }
@@ -12923,7 +12929,6 @@ namespace check {
             addr{ e = x } => {
                 let t = expr{ &c, e = x.*, exp = types::NO_TYPE }
                 if not check_place{ &c, e = x.* } { return types::ERROR }
-                if cstr_ptr{ c, e = x.* } { unchecked_cstr{ &c, at = expr_at{ e } } }
                 let m = place_mutable{ c, e = x.* }
                 return types::ptr{ s = &c.ty, elem = t, mutable = m }
             }
@@ -14224,7 +14229,6 @@ namespace check {
         if opaque_here{ &c, t, at = seg.name.span, what = "made with a literal" } { return types::ERROR }
         same_decl{ &c, t, exp }
         no_spread{ &c, e, items }
-        if decl == c.cstr_decl { unchecked_cstr{ &c, at = expr_at{ e } } }
         let mut b = message{ c }
         if is_untagged{ c, d = decl } {
             try! @fmt(&b, "extern union `{}`", str{ s = get_decl{ c, d = decl }.name.text })
@@ -17087,14 +17091,13 @@ namespace check {
 
     // Whether t is a `?*T` or `?*mut T`, which is a pointer whose null is the address 0: a `*T`
     // is never null (§12), so the tag isn't needed, and the layout is C's. So are a `?extern fn`
-    // and a `?c::String`, a struct around a pointer that is never null.
+    // and a `?cstr`, which are pointers too.
     fn nullable_ptr { c: Checker, t: Id } -> bool {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             opt{ elem } => {
                 match types::get{ s = c.ty, id = types::undistinct{ s = c.ty, t = elem } } {
                     ptr => { return true }
                     func{ external } => { return external }
-                    record{ decl } => { return decl == c.cstr_decl and decl != NONE }
                     else => { return false }
                 }
             }
@@ -17195,21 +17198,6 @@ namespace check {
         } else {
             errorf{ &c, at, msg = @fmt("{} is unchecked, and `build::deny_unchecked` in build.ctx denies it here: {}, or write it in a directory its `except` lists", what, checked) }
         }
-    }
-
-    // A `c::String` made from a pointer: its literal, or its `ptr` written or its address taken.
-    // Nothing checks that a NUL ends the bytes it points to.
-    fn unchecked_cstr { mut c: Checker, at: source::Span } {
-        unchecked{ &c, at, what = "a `c::String` made from a pointer", checked = "use a string literal, which its hidden zero ends" }
-    }
-
-    // Whether place e is the `ptr` of a `c::String`, or of one a pointer points to.
-    fn cstr_ptr { c: Checker, e: syntax::Expr } -> bool {
-        let field{ base, name } = e.k else { return false }
-        if c.cstr_decl == NONE or not slice::eq_bytes{ a = name.text, b = "ptr" } { return false }
-        let mut t = types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } }
-        if types::get{ s = c.ty, id = t } is ptr{ elem } { t = types::prune{ s = c.ty, t = elem } }
-        return types::get{ s = c.ty, id = t } is record{ decl } and decl == c.cstr_decl
     }
 
     // The declarations that bring in what C says, which nothing checks against C: an extern fn,

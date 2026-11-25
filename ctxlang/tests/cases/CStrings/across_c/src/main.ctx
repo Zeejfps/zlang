@@ -1,10 +1,10 @@
 
-struct Named { name: ?c::String, n: i32 }
-type Pick = extern fn{ i: i32 } -> ?c::String
+struct Named { name: ?cstr, n: i32 }
+type Pick = extern fn{ i: i32 } -> ?cstr
 #pure
 extern fn ctxtest_named { x: Named } -> u64
 #pure
-extern fn ctxtest_echo { s: ?c::String } -> ?c::String
+extern fn ctxtest_echo { s: ?cstr } -> ?cstr
 #pure
 extern fn ctxtest_picker {} -> Pick
 

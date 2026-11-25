@@ -1084,7 +1084,7 @@ namespace emit {
                 members{ &e, fields }
                 put{ &e, a = "};\n" }
             }
-            nptr{ ptr } => { define{ &e, id = ptr } }      // a ?c::String's struct
+            nptr{ ptr } => { define{ &e, id = ptr } }      // a struct around the pointer
             else => {}
         }
     }
@@ -1980,14 +1980,14 @@ namespace emit {
         return ty{ e, id = t } is nptr
     }
 
-    // Whether t is a nullable pointer whose payload is a struct around the pointer (a
-    // ?c::String) rather than the pointer itself.
+    // Whether t is a nullable pointer whose payload is a struct around the pointer, rather than
+    // the pointer itself: IR allows one, though nothing lowers to it.
     fn nptr_record { e: E, t: ir::TypeId } -> bool {
         let nptr{ ptr } = ty{ e, id = t } else { return false }
         return ty{ e, id = ptr } is record
     }
 
-    // `.m_NAME`, the pointer inside a ?c::String's struct; nothing for a ?*T.
+    // `.m_NAME`, the pointer inside such a struct; nothing for a ?*T.
     fn nptr_member { mut e: E, t: ir::TypeId } {
         let nptr{ ptr } = ty{ e, id = t } else { return }
         if ty{ e, id = ptr } is record{ fields } {

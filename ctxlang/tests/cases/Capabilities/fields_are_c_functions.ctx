@@ -9,11 +9,11 @@ namespace clib {
     extern fn long_abs { n: i64 } -> i64
     #c_symbol{ name = "strlen" }
     #pure
-    extern fn str_len { s: c::String } -> usize
+    extern fn str_len { s: cstr } -> usize
 
     capability Math {
         abs: extern fn{ n: i64 } -> i64,
-        len: extern fn{ s: c::String } -> usize,
+        len: extern fn{ s: cstr } -> usize,
     }
 
     fn load { mut loader: Loader } -> ?Math {

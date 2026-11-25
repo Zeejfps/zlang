@@ -1,0 +1,18 @@
+// A cstr is a *u8 (spec §12, Pointers, rule 9): it reads, steps and widens as one, and a *u8
+// becomes one only through @cast.
+fn first { p: *u8 } -> u8 { return p.* }
+fn main { mut io: Io } {
+    let s: cstr = "abc"
+    io::println_u64{ &io, n = @as(u64, first{ p = s }) }
+    io::println_u64{ &io, n = @as(u64, (s + 2).*) }
+    let b: [3]u8 = ['x', 'y', 0]
+    let t = @cast(cstr, b[..].ptr)
+    io::println_u64{ &io, n = c::len{ s = t } }
+    let none: ?cstr = null
+    io::println_u64{ &io, n = if none == null { 1 } else { 0 } }
+}
+//# stdout:
+//| 97
+//| 99
+//| 2
+//| 1

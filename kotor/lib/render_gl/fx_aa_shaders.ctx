@@ -22,7 +22,7 @@ namespace glsl {
     //
     // u_ldr: the picture (unit 0). u_size: 1 / its size. u_area: the view's pixels, x0 y0 x1 y1: taps stay inside it.
     // u_cfg: x contrast floor, y contrast share, z sub-pixel strength, w the level (1 or 2).
-    const AA_FS: c::String =
+    const AA_FS: cstr =
         \\#version 410 core
         \\uniform sampler2D u_ldr;
         \\uniform vec2 u_size;

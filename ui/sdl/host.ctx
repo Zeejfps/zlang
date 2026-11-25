@@ -12,7 +12,7 @@
 // the program's lengths by.
 namespace ui_sdl {
     // An SDL call that failed; `get_last_error` says why.
-    error failed{ call: c::String }
+    error failed{ call: cstr }
     error bad_layout                               // this binding's structs are not SDL's size here
 
     // Starts SDL's video. Windows is told first that the program handles each monitor's scaling
@@ -26,7 +26,7 @@ namespace ui_sdl {
     fn quit { mut sdl: Sdl } { SDL_Quit{ &sdl } }
 
     // The message of the SDL call that failed last; SDL's, valid until the next SDL call.
-    fn get_last_error { mut sdl: Sdl } -> c::String { return SDL_GetError{ &sdl } }
+    fn get_last_error { mut sdl: Sdl } -> cstr { return SDL_GetError{ &sdl } }
 
     // A window with its GL context, and what the host keeps between frames.
     struct Host {
@@ -47,7 +47,7 @@ namespace ui_sdl {
     // clipboard text the host carries each way; longer text is cut at a character and counted.
     fn open_gl_window(S) {
         mut sdl: Sdl, realloc: alloc::Fn(S), mut heap: S,
-        title: c::String, width: i32, height: i32, hidden: bool, resizable: bool, clipboard: u32,
+        title: cstr, width: i32, height: i32, hidden: bool, resizable: bool, clipboard: u32,
     } -> !Host {
         let room = @as(usize, if clipboard < 16 { 16 } else { clipboard })
         let copy = try alloc::make(u8, S){ realloc, &heap, count = room + 1 }
@@ -106,7 +106,7 @@ namespace ui_sdl {
 
     // The GL function `name` of the current context, or null: what ui_gl::open takes, bound as
     // `ui_sdl::get_gl_proc{ &sdl, _ }`.
-    fn get_gl_proc { mut sdl: Sdl, name: c::String } -> ?extern fn{} {
+    fn get_gl_proc { mut sdl: Sdl, name: cstr } -> ?extern fn{} {
         return SDL_GL_GetProcAddress{ &sdl, name }
     }
 

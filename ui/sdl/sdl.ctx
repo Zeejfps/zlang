@@ -12,8 +12,8 @@ namespace ui_sdl {
 
     extern fn SDL_Init { mut sdl: Sdl, flags: u32 } -> i32
     extern fn SDL_Quit { mut sdl: Sdl }
-    extern fn SDL_GetError { mut sdl: Sdl } -> c::String          // the last error, owned by SDL
-    extern fn SDL_SetHint { mut sdl: Sdl, name: c::String, value: c::String } -> i32
+    extern fn SDL_GetError { mut sdl: Sdl } -> cstr          // the last error, owned by SDL
+    extern fn SDL_SetHint { mut sdl: Sdl, name: cstr, value: cstr } -> i32
     extern fn SDL_free { mut sdl: Sdl, mem: ?*mut u8 }
 
     // ---- windows and OpenGL
@@ -29,7 +29,7 @@ namespace ui_sdl {
     const WINDOW_ALLOW_HIGHDPI: u32 = 0x2000       // macOS: a drawable in pixels, larger than the window
     const WINDOWPOS_CENTERED: i32 = 0x2FFF0000
 
-    extern fn SDL_CreateWindow { mut sdl: Sdl, title: c::String, x: i32, y: i32, w: i32, h: i32, flags: u32 } -> ?*mut Window
+    extern fn SDL_CreateWindow { mut sdl: Sdl, title: cstr, x: i32, y: i32, w: i32, h: i32, flags: u32 } -> ?*mut Window
     extern fn SDL_DestroyWindow { mut sdl: Sdl, window: *mut Window }
     extern fn SDL_GetWindowSize { mut sdl: Sdl, window: *mut Window, w: ?*mut i32, h: ?*mut i32 }
     extern fn SDL_SetWindowSize { mut sdl: Sdl, window: *mut Window, w: i32, h: i32 }
@@ -59,7 +59,7 @@ namespace ui_sdl {
     extern fn SDL_GL_GetDrawableSize { mut sdl: Sdl, window: *mut Window, w: ?*mut i32, h: ?*mut i32 }
     // The address of GL function `name` in the current context, or null, typed as a C function of no
     // particular type for ui_gl to cast to each function's own.
-    extern fn SDL_GL_GetProcAddress { mut sdl: Sdl, name: c::String } -> ?extern fn{}
+    extern fn SDL_GL_GetProcAddress { mut sdl: Sdl, name: cstr } -> ?extern fn{}
 
     // ---- the cursor, text input, the clipboard, time
 

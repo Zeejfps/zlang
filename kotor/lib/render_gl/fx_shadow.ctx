@@ -89,7 +89,7 @@ namespace gpu {
 
     fn make_shadow_program { mut dev: Device } -> ! {
         let vs = glsl::SCENE_VS
-        let fs: [1]c::String = [glsl::CASTER_FS]
+        let fs: [1]cstr = [glsl::CASTER_FS]
         let mut n: usize = 0
         let p = try_link{ gl = &dev.gl, vertex = &vs, fragment = fs[..], log = dev.log, log_len = &n }
         if p == 0 { return shader_failed{ log = dev.log[..n] } }

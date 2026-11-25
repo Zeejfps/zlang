@@ -1,9 +1,9 @@
 
-const NONE: ?c::String = null
-const SOME: ?c::String = "set"
+const NONE: ?cstr = null
+const SOME: ?cstr = "set"
 fn main { mut io: Io } {
-    io::println_u64{ &io, n = @size_of(?c::String) + @size_of(c::String) }
-    let mut z: ?c::String
+    io::println_u64{ &io, n = @size_of(?cstr) + @size_of(cstr) }
+    let mut z: ?cstr
     let s = SOME
     io::println_bool{ &io, n = z == null and NONE == null and s != null }
     if s != null { io::println_u64{ &io, n = c::len{ s } } }

@@ -1,6 +1,6 @@
 
 fn main { mut io: Io } {
-    let s: c::String = "abc"
+    let s: cstr = "abc"
     io::println_u64{ &io, n = c::len{ s } }
     io::println{ &io, s = utf8::of{ chars = c::bytes{ s } } }
     io::println_u64{ &io, n = c::len{ s = "" } }

@@ -5,10 +5,10 @@
 // normals would open cracks along those seams).
 namespace gpu {
     fn make_tess_program { mut dev: Device } -> ! {
-        let vs: [1]c::String = [glsl::TESS_VS]
-        let tcs: [1]c::String = [glsl::TESS_CS]
-        let tes: [1]c::String = [glsl::TESS_ES]
-        let fs: [1]c::String = [glsl::SCENE_FX_FS]
+        let vs: [1]cstr = [glsl::TESS_VS]
+        let tcs: [1]cstr = [glsl::TESS_CS]
+        let tes: [1]cstr = [glsl::TESS_ES]
+        let fs: [1]cstr = [glsl::SCENE_FX_FS]
         let stages: [4]gl::Stage = [
             gl::Stage{ kind = gl::VERTEX_SHADER, source = vs[..] },
             gl::Stage{ kind = gl::TESS_CONTROL_SHADER, source = tcs[..] },

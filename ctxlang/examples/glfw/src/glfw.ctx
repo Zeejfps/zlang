@@ -1,7 +1,7 @@
 // A small binding of GLFW 3 (https://www.glfw.org): what main.ctx uses.
 //
 // GLFW's handles are opaque: a window is only ever a *mut Window, and C's NULL is null, since a
-// ?*T is a C pointer (spec §8). Text C reads is a c::String, so a literal gets its NUL from the
+// ?*T is a C pointer (spec §8). Text C reads is a cstr, so a literal gets its NUL from the
 // compiler (spec §11, Literals).
 namespace glfw {
     // Permission to call GLFW.
@@ -13,7 +13,7 @@ namespace glfw {
     extern fn glfwInit { mut glfw: Glfw } -> i32
     extern fn glfwTerminate { mut glfw: Glfw }
     extern fn glfwGetVersion { mut glfw: Glfw, mut major: i32, mut minor: i32, mut rev: i32 }
-    extern fn glfwCreateWindow { mut glfw: Glfw, width: i32, height: i32, title: c::String, monitor: ?*mut Monitor, share: ?*mut Window } -> ?*mut Window
+    extern fn glfwCreateWindow { mut glfw: Glfw, width: i32, height: i32, title: cstr, monitor: ?*mut Monitor, share: ?*mut Window } -> ?*mut Window
     extern fn glfwDestroyWindow { mut glfw: Glfw, window: *mut Window }
     extern fn glfwWindowShouldClose { mut glfw: Glfw, window: *mut Window } -> i32
     extern fn glfwPollEvents { mut glfw: Glfw }
@@ -21,7 +21,7 @@ namespace glfw {
     extern fn glfwMakeContextCurrent { mut glfw: Glfw, window: *mut Window }
     extern fn glfwSwapBuffers { mut glfw: Glfw, window: *mut Window }
     // GLFWglproc: the address of a GL function, as a C function pointer of no particular type.
-    extern fn glfwGetProcAddress { mut glfw: Glfw, name: c::String } -> ?extern fn{}
+    extern fn glfwGetProcAddress { mut glfw: Glfw, name: cstr } -> ?extern fn{}
     extern fn glfwSetWindowShouldClose { mut glfw: Glfw, window: *mut Window, value: i32 }
     extern fn glfwSetWindowUserPointer { mut glfw: Glfw, window: *mut Window, pointer: ?*mut u8 }
     extern fn glfwGetWindowUserPointer { mut glfw: Glfw, window: *mut Window } -> ?*mut u8
@@ -39,7 +39,7 @@ namespace glfw {
     fn terminate { mut glfw: Glfw } { glfwTerminate{ &glfw } }
 
     // A window, or null if GLFW couldn't make one.
-    fn create_window { mut glfw: Glfw, width: i32, height: i32, title: c::String } -> ?*mut Window {
+    fn create_window { mut glfw: Glfw, width: i32, height: i32, title: cstr } -> ?*mut Window {
         return glfwCreateWindow{ &glfw, width, height, title, monitor = null, share = null }
     }
 
@@ -75,7 +75,7 @@ namespace glfw {
     }
 
     // The GL function `name` of the current context, or null.
-    fn proc_address { mut glfw: Glfw, name: c::String } -> ?extern fn{} {
+    fn proc_address { mut glfw: Glfw, name: cstr } -> ?extern fn{} {
         return glfwGetProcAddress{ &glfw, name }
     }
 }

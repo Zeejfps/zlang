@@ -29,6 +29,7 @@ namespace types {
     const USIZE: Id = 11
     const BOOL: Id = 14
     const STRLIT: Id = 15
+    const CSTR: Id = 16
 
     // A context field of a function type, in declaration order.
     struct Field { name: []u8, mutable: bool, ty: Id }
@@ -46,7 +47,9 @@ namespace types {
         nil,                                    // the type of `null` before it meets a ?T
         prim{ p: Prim },
         cap{ decl: u32 },                       // a capability
-        ptr{ elem: Id, mutable: bool },
+        // c_string: `cstr` (§18), C's `const char *`, a `*u8` whose bytes a NUL ends. It is the
+        // pointer in every way, but a `*u8` becomes one only through `@cast`.
+        ptr{ elem: Id, mutable: bool, c_string: bool },
         slice{ elem: Id, mutable: bool },
         array{ n: u64, elem: Id },
         opt{ elem: Id },
@@ -114,6 +117,7 @@ namespace types {
             _ = intern{ &s, t = Type::prim{ p = @as(Prim, i) } }
         }
         _ = intern{ &s, t = Type::strlit }
+        _ = intern{ &s, t = Type::ptr{ elem = U8, mutable = false, c_string = true } }
         return s
     }
 
@@ -137,7 +141,7 @@ namespace types {
     // ---- building
 
     fn ptr { mut s: Store, elem: Id, mutable: bool } -> Id {
-        return intern{ &s, t = Type::ptr{ elem, mutable } }
+        return intern{ &s, t = Type::ptr{ elem, mutable, c_string = false } }
     }
 
     fn slice { mut s: Store, elem: Id, mutable: bool } -> Id {
@@ -264,7 +268,10 @@ namespace types {
                 if d == decl and index < args.len { return args[index] }
                 return t
             }
-            ptr{ elem, mutable } => { return ptr{ &s, elem = subst{ &s, t = elem, decl, args }, mutable } }
+            ptr{ elem, mutable, c_string } => {
+                if c_string { return t }
+                return ptr{ &s, elem = subst{ &s, t = elem, decl, args }, mutable }
+            }
             slice{ elem, mutable } => { return slice{ &s, elem = subst{ &s, t = elem, decl, args }, mutable } }
             opt{ elem } => { return opt{ &s, elem = subst{ &s, t = elem, decl, args } } }
             array{ n, elem } => { return array{ &s, n, elem = subst{ &s, t = elem, decl, args } } }
@@ -383,7 +390,10 @@ namespace types {
     fn zonk { mut s: Store, t: Id } -> Id {
         let x = prune{ s, t }
         match get{ s, id = x } {
-            ptr{ elem, mutable } => { return ptr{ &s, elem = zonk{ &s, t = elem }, mutable } }
+            ptr{ elem, mutable, c_string } => {
+                if c_string { return x }
+                return ptr{ &s, elem = zonk{ &s, t = elem }, mutable }
+            }
             slice{ elem, mutable } => { return slice{ &s, elem = zonk{ &s, t = elem }, mutable } }
             opt{ elem } => { return opt{ &s, elem = zonk{ &s, t = elem } } }
             array{ n, elem } => { return array{ &s, n, elem = zonk{ &s, t = elem } } }
@@ -488,7 +498,7 @@ namespace types {
         if vy != null { return bind{ &s, n = vy, t = x } }
         let tb = get{ s, id = y }
         match get{ s, id = x } {
-            ptr{ elem, mutable } => { return tb is ptr{ elem = e, mutable = m } and mutable == m and unify{ &s, a = elem, b = e } }
+            ptr{ elem, mutable, c_string } => { return tb is ptr{ elem = e, mutable = m, c_string = cs } and mutable == m and c_string == cs and unify{ &s, a = elem, b = e } }
             slice{ elem, mutable } => { return tb is slice{ elem = e, mutable = m } and mutable == m and unify{ &s, a = elem, b = e } }
             opt{ elem } => { return tb is opt{ elem = e } and unify{ &s, a = elem, b = e } }
             array{ n, elem } => { return tb is array{ n = k, elem = e } and n == k and unify{ &s, a = elem, b = e } }
@@ -531,7 +541,7 @@ namespace types {
         if x == y { return true }
         let tb = get{ s, id = y }
         match get{ s, id = x } {
-            ptr{ elem, mutable } => { return tb is ptr{ elem = e, mutable = m } and mutable == m and instance{ s, p = elem, t = e, decl, args } }
+            ptr{ elem, mutable, c_string } => { return tb is ptr{ elem = e, mutable = m, c_string = cs } and mutable == m and c_string == cs and instance{ s, p = elem, t = e, decl, args } }
             slice{ elem, mutable } => { return tb is slice{ elem = e, mutable = m } and mutable == m and instance{ s, p = elem, t = e, decl, args } }
             opt{ elem } => { return tb is opt{ elem = e } and instance{ s, p = elem, t = e, decl, args } }
             array{ n, elem } => { return tb is array{ n = k, elem = e } and n == k and instance{ s, p = elem, t = e, decl, args } }
@@ -615,13 +625,15 @@ namespace types {
     }
 
     // Does a convert implicitly to b (spec §11, Widening)? Only when every value of a is a
-    // value of b. `*mut T` converts to `*T` and `[]mut T` to `[]T`.
+    // value of b. `*mut T` converts to `*T`, `cstr` to `*u8` and `[]mut T` to `[]T`.
     fn widens { mut s: Store, a: Id, b: Id } -> bool {
         let x = prune{ s, t = a }
         let y = prune{ s, t = b }
         match get{ s, id = x } {
-            ptr{ elem, mutable } => {
-                return get{ s, id = y } is ptr{ elem = e, mutable = m } and mutable and not m and unify{ &s, a = elem, b = e }
+            ptr{ elem, mutable, c_string } => {
+                let ptr{ elem = e, mutable = m, c_string = cs } = get{ s, id = y } else { return false }
+                if cs { return false }
+                return (mutable and not m or c_string and not m) and unify{ &s, a = elem, b = e }
             }
             slice{ elem, mutable } => {
                 return get{ s, id = y } is slice{ elem = e, mutable = m } and mutable and not m and unify{ &s, a = elem, b = e }

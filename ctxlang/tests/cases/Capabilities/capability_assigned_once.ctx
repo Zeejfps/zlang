@@ -8,13 +8,13 @@ namespace m {
     extern fn abs { n: i64 } -> i64
     #c_symbol{ name = "strlen" }
     #pure
-    extern fn len { s: c::String } -> usize
+    extern fn len { s: cstr } -> usize
     #c_symbol{ name = "atoi" }
     #pure
-    extern fn int { s: c::String } -> i32
+    extern fn int { s: cstr } -> i32
     capability A { abs: extern fn{ n: i64 } -> i64 }
-    capability B { ..A, len: extern fn{ s: c::String } -> usize }
-    capability C { int: extern fn{ s: c::String } -> i32, ..B }
+    capability B { ..A, len: extern fn{ s: cstr } -> usize }
+    capability C { int: extern fn{ s: cstr } -> i32, ..B }
     fn load_a { mut l: L } -> A { return A{ abs } }
     fn load_b { mut l: L } -> B { return B{ ..load_a{ &l }, len } }
     fn load_c { mut l: L } -> C { return C{ int, ..load_b{ &l } } }

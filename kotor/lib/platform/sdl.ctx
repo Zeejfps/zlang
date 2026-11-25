@@ -26,8 +26,8 @@ namespace sdl {
     extern fn SDL_InitSubSystem { mut sdl: Sdl, flags: u32 } -> i32
     extern fn SDL_QuitSubSystem { mut sdl: Sdl, flags: u32 }
     extern fn SDL_Quit { mut sdl: Sdl }
-    extern fn SDL_GetError { mut sdl: Sdl } -> c::String          // the last error, owned by SDL
-    extern fn SDL_SetHint { mut sdl: Sdl, name: c::String, value: c::String } -> i32
+    extern fn SDL_GetError { mut sdl: Sdl } -> cstr          // the last error, owned by SDL
+    extern fn SDL_SetHint { mut sdl: Sdl, name: cstr, value: cstr } -> i32
     extern fn SDL_free { mut sdl: Sdl, mem: ?*mut u8 }
 
     struct Version { major: u8, minor: u8, patch: u8 }
@@ -52,10 +52,10 @@ namespace sdl {
     const WINDOWPOS_UNDEFINED: i32 = 0x1FFF0000
     const WINDOWPOS_CENTERED: i32 = 0x2FFF0000
 
-    extern fn SDL_CreateWindow { mut sdl: Sdl, title: c::String, x: i32, y: i32, w: i32, h: i32, flags: u32 } -> ?*mut Window
+    extern fn SDL_CreateWindow { mut sdl: Sdl, title: cstr, x: i32, y: i32, w: i32, h: i32, flags: u32 } -> ?*mut Window
     extern fn SDL_DestroyWindow { mut sdl: Sdl, window: *mut Window }
     extern fn SDL_GetWindowFlags { mut sdl: Sdl, window: *mut Window } -> u32
-    extern fn SDL_SetWindowTitle { mut sdl: Sdl, window: *mut Window, title: c::String }
+    extern fn SDL_SetWindowTitle { mut sdl: Sdl, window: *mut Window, title: cstr }
     extern fn SDL_GetWindowSize { mut sdl: Sdl, window: *mut Window, w: ?*mut i32, h: ?*mut i32 }
     extern fn SDL_SetWindowSize { mut sdl: Sdl, window: *mut Window, w: i32, h: i32 }
     extern fn SDL_ShowWindow { mut sdl: Sdl, window: *mut Window }
@@ -92,7 +92,7 @@ namespace sdl {
     const MESSAGEBOX_ERROR: u32 = 0x10
     const MESSAGEBOX_WARNING: u32 = 0x20
     const MESSAGEBOX_INFORMATION: u32 = 0x40
-    extern fn SDL_ShowSimpleMessageBox { mut sdl: Sdl, flags: u32, title: c::String, message: c::String, window: ?*mut Window } -> i32
+    extern fn SDL_ShowSimpleMessageBox { mut sdl: Sdl, flags: u32, title: cstr, message: cstr, window: ?*mut Window } -> i32
 
     // ---- OpenGL
 
@@ -123,7 +123,7 @@ namespace sdl {
     extern fn SDL_GL_GetDrawableSize { mut sdl: Sdl, window: *mut Window, w: ?*mut i32, h: ?*mut i32 }
     // The address of GL function `name` in the current context, or null. Typed as a C function
     // of no particular type, for gl.ctx to cast to each function's own.
-    extern fn SDL_GL_GetProcAddress { mut sdl: Sdl, name: c::String } -> ?extern fn{}
+    extern fn SDL_GL_GetProcAddress { mut sdl: Sdl, name: cstr } -> ?extern fn{}
 
     // ---- input state
 
@@ -148,8 +148,8 @@ namespace sdl {
     extern fn SDL_GetModState { mut sdl: Sdl } -> i32
     extern fn SDL_GetMouseState { mut sdl: Sdl, x: ?*mut i32, y: ?*mut i32 } -> u32
     extern fn SDL_GetRelativeMouseState { mut sdl: Sdl, x: ?*mut i32, y: ?*mut i32 } -> u32
-    extern fn SDL_GetKeyName { mut sdl: Sdl, key: i32 } -> c::String
-    extern fn SDL_GetScancodeName { mut sdl: Sdl, scancode: i32 } -> c::String
+    extern fn SDL_GetKeyName { mut sdl: Sdl, key: i32 } -> cstr
+    extern fn SDL_GetScancodeName { mut sdl: Sdl, scancode: i32 } -> cstr
 
     // ---- time
 
@@ -190,8 +190,8 @@ namespace sdl {
     const AUDIO_PLAYING: i32 = 1
     const AUDIO_PAUSED: i32 = 2
 
-    extern fn SDL_GetCurrentAudioDriver { mut sdl: Sdl } -> ?c::String
-    extern fn SDL_OpenAudioDevice { mut sdl: Sdl, device: ?c::String, iscapture: i32, desired: *AudioSpec, obtained: ?*mut AudioSpec, allowed_changes: i32 } -> u32
+    extern fn SDL_GetCurrentAudioDriver { mut sdl: Sdl } -> ?cstr
+    extern fn SDL_OpenAudioDevice { mut sdl: Sdl, device: ?cstr, iscapture: i32, desired: *AudioSpec, obtained: ?*mut AudioSpec, allowed_changes: i32 } -> u32
     extern fn SDL_CloseAudioDevice { mut sdl: Sdl, dev: u32 }
     extern fn SDL_PauseAudioDevice { mut sdl: Sdl, dev: u32, pause_on: i32 }
     extern fn SDL_GetAudioDeviceStatus { mut sdl: Sdl, dev: u32 } -> i32
@@ -417,7 +417,7 @@ namespace sdl {
     // ---- the platform calls, in ctxlang shapes
 
     // An SDL call that failed; SDL_GetError (`last_error`) says why.
-    error failed{ call: c::String }
+    error failed{ call: cstr }
 
     // Starts SDL. Windows is told first that the game handles each monitor's scaling itself
     // (permonitorv2): without that a 150% desktop reports a smaller screen and stretches our
@@ -431,7 +431,7 @@ namespace sdl {
     fn quit { mut sdl: Sdl } { SDL_Quit{ &sdl } }
 
     // The message of the SDL call that failed last. It is SDL's, valid until the next SDL call.
-    fn last_error { mut sdl: Sdl } -> c::String { return SDL_GetError{ &sdl } }
+    fn last_error { mut sdl: Sdl } -> cstr { return SDL_GetError{ &sdl } }
 
     // A window with an OpenGL context, current on this thread.
     struct GlWindow { window: *mut Window, context: *mut GlContext }
@@ -441,7 +441,7 @@ namespace sdl {
     // framebuffer. `hidden` makes no visible window, for rendering offscreen. `debug` asks for a
     // debug context, which drivers that have KHR_debug report through; macOS ignores it.
     fn open_gl_window {
-        mut sdl: Sdl, title: c::String, width: i32, height: i32,
+        mut sdl: Sdl, title: cstr, width: i32, height: i32,
         major: i32, minor: i32, hidden: bool, resizable: bool, debug: bool,
     } -> !GlWindow {
         SDL_GL_ResetAttributes{ &sdl }
@@ -495,7 +495,7 @@ namespace sdl {
 
     // The GL function `name` of the current context, or null: what gl::load takes, bound to an
     // Sdl as `sdl::gl_proc{ &sdl, _ }`.
-    fn gl_proc { mut sdl: Sdl, name: c::String } -> ?extern fn{} {
+    fn gl_proc { mut sdl: Sdl, name: cstr } -> ?extern fn{} {
         return SDL_GL_GetProcAddress{ &sdl, name }
     }
 

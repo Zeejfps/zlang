@@ -61,7 +61,7 @@ namespace rt {
         let mut i: usize = 0
         while i < n {
             let p = (argv + (i + 1)).* ifnull { break }
-            items[i] = c::bytes{ s = c::String{ ptr = p } }
+            items[i] = c::bytes{ s = @cast(cstr, p) }
             i = i + 1
         }
         return items[..i]

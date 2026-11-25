@@ -15,13 +15,13 @@ namespace gpu {
     fn make_ao_programs { mut dev: Device } -> ! {
         let vs = glsl::POST_VS
         let mut n: usize = 0
-        let ao_fs: [1]c::String = [glsl::AO_FS]
+        let ao_fs: [1]cstr = [glsl::AO_FS]
         let ao = try_link{ gl = &dev.gl, vertex = &vs, fragment = ao_fs[..], log = dev.log, log_len = &n }
         if ao == 0 { return shader_failed{ log = dev.log[..n] } }
-        let blur_fs: [1]c::String = [glsl::AO_BLUR_FS]
+        let blur_fs: [1]cstr = [glsl::AO_BLUR_FS]
         let blur = try_link{ gl = &dev.gl, vertex = &vs, fragment = blur_fs[..], log = dev.log, log_len = &n }
         if blur == 0 { return shader_failed{ log = dev.log[..n] } }
-        let apply_fs: [1]c::String = [glsl::AO_APPLY_FS]
+        let apply_fs: [1]cstr = [glsl::AO_APPLY_FS]
         let apply = try_link{ gl = &dev.gl, vertex = &vs, fragment = apply_fs[..], log = dev.log, log_len = &n }
         if apply == 0 { return shader_failed{ log = dev.log[..n] } }
         dev.gl.use_program{ program = ao }

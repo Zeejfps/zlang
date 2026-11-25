@@ -7,7 +7,7 @@ namespace gpu {
     fn make_aa_programs { mut dev: Device } -> ! {
         let post_vs = glsl::POST_VS
         let mut n: usize = 0
-        let edge_fs: [1]c::String = [glsl::AA_FS]
+        let edge_fs: [1]cstr = [glsl::AA_FS]
         let edge = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = edge_fs[..], log = dev.log, log_len = &n }
         if edge == 0 { return shader_failed{ log = dev.log[..n] } }
         dev.gl.use_program{ program = edge }

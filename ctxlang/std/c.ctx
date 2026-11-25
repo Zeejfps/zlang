@@ -1,5 +1,6 @@
-// std: c. C's strings, for calling C (spec §18). The attributes `c_symbol`, `c_callback` and
-// `c_export` are the compiler's own (§18, Attributes, rule 4).
+// std: c. What calling C needs besides the language's (spec §18): functions over `cstr`, C's
+// `const char *`. The type, and the attributes `c_symbol`, `c_callback` and `c_export`, are the
+// compiler's own.
 //
 // An extern fn is a function that C provides. Its context fields are C's parameters in the order
 // they are declared, and capability fields aren't passed: they only say who may call it.
@@ -7,46 +8,40 @@
 //   #c_symbol{ name = "labs" }
 //   extern fn long_abs { n: i64 } -> i64      // C's labs; without the attribute, `long_abs`
 //
-//   extern fn puts { s: c::String } -> i32
+//   extern fn puts { s: cstr } -> i32
 //   _ = puts{ s = "hello" }                   // a literal ends in its hidden zero (from_literal)
 
 namespace c {
-    // A NUL-terminated string, as C's `const char *`: read-only, and not owned by its holder. A
-    // string literal where one is expected is its static bytes, which the hidden zero after them
-    // ends (from_literal). C takes and returns it as a plain pointer, and `?String` as one that
-    // may be NULL.
-    struct String { ptr: *u8 }
-
     // The bytes before the NUL.
-    fn len { s: String } -> usize {
+    fn len { s: cstr } -> usize {
         let mut n: usize = 0
-        while (s.ptr + n).* != 0 { n = n + 1 }
+        while (s + n).* != 0 { n = n + 1 }
         return n
     }
 
     // A view of the bytes before the NUL, for utf8::from and the rest of std.
-    fn bytes { s: String } -> []u8 {
-        return @slice(s.ptr, len{ s })
+    fn bytes { s: cstr } -> []u8 {
+        return @slice(s, len{ s })
     }
 
     error has_nul{ at: usize }      // C would end the string at this byte
 
-    // A string literal where a String is expected: a pointer to its bytes, checked while
+    // A string literal where a cstr is expected: a pointer to its bytes, checked while
     // compiling. The hidden zero after them ends it, so they can't hold a NUL themselves.
     #convert
-    fn from_literal { s: strlit } -> !String {
+    fn from_literal { s: strlit } -> !cstr {
         let mut i: usize = 0
         while i < s.bytes.len {
             if s.bytes[i] == 0 { return has_nul{ at = i } }
             i = i + 1
         }
-        return String{ ptr = s.bytes.ptr }
+        return @cast(cstr, s.bytes.ptr)
     }
 
-    // A String holding a copy of `bytes` and a NUL, from the allocator: for text built at run
-    // time. It lives as long as the allocator's memory, as with an arena; a String is read-only,
+    // A cstr holding a copy of `bytes` and a NUL, from the allocator: for text built at run
+    // time. It lives as long as the allocator's memory, as with an arena; a cstr is read-only,
     // so it can't be given back on its own. Fails with has_nul or alloc::out_of_memory.
-    fn copy(S) { realloc: alloc::Fn(S), mut heap: S, bytes: []u8 } -> !String {
+    fn copy(S) { realloc: alloc::Fn(S), mut heap: S, bytes: []u8 } -> !cstr {
         let mut i: usize = 0
         while i < bytes.len {
             if bytes[i] == 0 { return has_nul{ at = i } }
@@ -55,6 +50,6 @@ namespace c {
         let mem = try alloc::make(u8, S){ realloc, &heap, count = bytes.len + 1 }
         slice::copy(u8){ dst = mem[..bytes.len], src = bytes }
         mem[bytes.len] = 0
-        return String{ ptr = mem.ptr }
+        return @cast(cstr, mem.ptr)
     }
 }

@@ -10,10 +10,10 @@ namespace game {
         let p = s.ptr
         let q = @cast(*u32, p)
         let v = @slice(p, 2)
-        let mut cs: c::String = "x"
-        cs.ptr = p
-        let pp = &cs.ptr
-        let made = c::String{ ptr = p }
+        let cs: cstr = "x"
+        let first = cs.*
+        let wide: *u8 = cs
+        let made = @cast(cstr, p)
         return (p + 1).* + v.len
     }
     #c_export{ name = "game_tick" }

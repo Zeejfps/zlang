@@ -13,7 +13,7 @@ namespace glsl {
     // draw through alpha-to-coverage (the cut becomes a coverage alpha a pixel wide: fx_aa.ctx).
     // u_fx2: x the extra light of self-illumination, y the extra light of additive surfaces, z the floor that
     // lift_dark raises the lightmaps' near-black texels to (0 off; fx.ctx's LIGHTMAP_FLOOR).
-    const SCENE_FX_FS: c::String =
+    const SCENE_FX_FS: cstr =
         \\#version 410 core
         \\layout(std140) uniform Frame {
         \\    mat4 u_view_proj;
@@ -310,7 +310,7 @@ namespace glsl {
 
     // Shadow casters into the shadow atlas (fx_shadow.ctx), with glsl::SCENE_VS: depth only, alpha-tested and
     // alpha-depth surfaces cut by their diffuse alpha. u_mode: x the blend, y a diffuse is bound.
-    const CASTER_FS: c::String =
+    const CASTER_FS: cstr =
         \\#version 410 core
         \\uniform sampler2D u_diffuse;
         \\uniform ivec4 u_mode;
@@ -333,7 +333,7 @@ namespace glsl {
 
     // Particles, enhanced: the original's, with additive ones brighter than white (u_gain), for the bloom.
     // u_mode.w is 1 for a punch-through emitter through alpha-to-coverage (the cut becomes a coverage alpha, fx_aa.ctx).
-    const PARTICLE_FX_FS: c::String =
+    const PARTICLE_FX_FS: cstr =
         \\#version 410 core
         \\layout(std140) uniform Frame {
         \\    mat4 u_view_proj;
@@ -382,7 +382,7 @@ namespace glsl {
     // size. The first step keeps only what is brighter than the threshold (a soft knee), each group weighted
     // by 1 / (1 + brightness) so single bright pixels don't flicker.
     // u_texel: one texel of the source. u_params: x threshold, y knee, z 1 for the first step.
-    const BLOOM_DOWN_FS: c::String =
+    const BLOOM_DOWN_FS: cstr =
         \\#version 410 core
         \\uniform sampler2D u_tex;
         \\uniform vec2 u_texel;
@@ -436,7 +436,7 @@ namespace glsl {
 
     // Bloom, up: a 3x3 tent over the smaller level, added (by blending) onto the larger one.
     // u_texel: one texel of the source; u_radius: the tent's reach in texels.
-    const BLOOM_UP_FS: c::String =
+    const BLOOM_UP_FS: cstr =
         \\#version 410 core
         \\uniform sampler2D u_tex;
         \\uniform vec2 u_texel;
@@ -461,7 +461,7 @@ namespace glsl {
     // channel smoothly to 1 at 1.1 (white itself shows at 0.975); colours scale with it, keeping their hue,
     // and what is far past white fades toward white as film does (a lightsaber's core).
     // u_params: x exposure, y bloom strength, z grade on, w noise on. u_size: 1 / the screen's size.
-    const COMPOSITE_FS: c::String =
+    const COMPOSITE_FS: cstr =
         \\#version 410 core
         \\uniform sampler2D u_hdr;
         \\uniform sampler2D u_bloom;

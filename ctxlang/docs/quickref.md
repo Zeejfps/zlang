@@ -125,11 +125,12 @@ types). Through a pointer, `p.x` is the field and `p.*` the value: no `->`, no `
   an error: the element without a check is `(q + i).*` (`(q + i).f` for a field), and
   `(s.ptr + i).*` skips a slice's check. Keep these to hot loops whose bounds are checked once.
 - The **unchecked operations** (§13, Unchecked operations) are `@cast`, `@slice`, pointer
-  arithmetic (`q + n`, so `(q + i).*` too), a `c::String` from a pointer, and declaring an
+  arithmetic (`q + n`, so `(q + i).*` too), and declaring an
   `extern fn`, an `extern union`, a C variable or a `#c_callback` or `#c_export` fn. A build
   can make them errors outside the directories it names (`build::deny_unchecked`, §19); the
   error names the checked form: `s[i]` and `a[lo..hi]`, `alloc::free` for one object from
-  `alloc::new`, std's `math` for libm, a string literal for a `c::String`.
+  `alloc::new`, std's `math` for libm. A `cstr` from a `*u8` is a `@cast`; a string literal
+  is one without it.
 - `==` and `!=` compare structs, unions, arrays, slices (by contents: two `[]u8` with the same
   bytes are equal) and optionals of these, part by part, with nothing written; `@hash(x)` is a
   `u64` that equal values share (§13, Hashing). Not for a type with a pointer, a function or an
@@ -330,7 +331,7 @@ point; no wrapper type or writer for these. Floats print plainly where short (`1
 with writers of `fmt::Int`, `fmt::Uint`, `fmt::F64`, `fmt::F32` and `fmt::Text`
 ([std/fmt.ctx](../std/fmt.ctx)).
 
-String literals convert to `[]u8`, `utf8::String` or `c::String` as the context expects; a
+String literals convert to `[]u8`, `utf8::String` or `cstr` as the context expects; a
 literal is read-only, so it is no `[]mut u8` (compare a `[]mut u8` with one after
 `let s: []u8 = bytes`). A multi-line literal (GLSL) is lines that each start with `\\`, raw,
 joined with `\n` (§11, Literals, rule 9):
@@ -339,7 +340,7 @@ joined with `\n` (§11, Literals, rule 9):
 fn main {} {}
 -->
 ```ctx
-const MESH_VS: c::String =
+const MESH_VS: cstr =
     \\#version 410 core
     \\void main() { gl_Position = vec4(0.0); }
 ```

@@ -42,7 +42,7 @@ namespace render {
     // What gpu::open makes: a window (hidden for offscreen runs) of width by height and the
     // device drawing into it. The `max_*` bound the backend's resource tables.
     struct Config {
-        title: c::String,
+        title: cstr,
         width: i32, height: i32,
         hidden: bool,           // offscreen: nothing is shown, read_screen still works
         vsync: bool,
@@ -50,7 +50,7 @@ namespace render {
         max_textures: u32, max_meshes: u32, max_targets: u32,
     }
 
-    fn make_config { title: c::String, width: i32, height: i32, hidden: bool } -> Config {
+    fn make_config { title: cstr, width: i32, height: i32, hidden: bool } -> Config {
         return Config{ title, width, height, hidden, vsync = true, debug = false, max_textures = 16384, max_meshes = 65536, max_targets = 64 }
     }
 

@@ -21,13 +21,13 @@ namespace gpu {
     fn make_atmos_programs { mut dev: Device } -> ! {
         let post_vs = glsl::POST_VS
         let mut n: usize = 0
-        let shaft_fs: [1]c::String = [glsl::SHAFT_FS]
+        let shaft_fs: [1]cstr = [glsl::SHAFT_FS]
         let shaft = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = shaft_fs[..], log = dev.log, log_len = &n }
         if shaft == 0 { return shader_failed{ log = dev.log[..n] } }
-        let add_fs: [1]c::String = [glsl::SHAFT_ADD_FS]
+        let add_fs: [1]cstr = [glsl::SHAFT_ADD_FS]
         let add = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = add_fs[..], log = dev.log, log_len = &n }
         if add == 0 { return shader_failed{ log = dev.log[..n] } }
-        let fog_fs: [1]c::String = [glsl::HEIGHT_FOG_FS]
+        let fog_fs: [1]cstr = [glsl::HEIGHT_FOG_FS]
         let fog = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = fog_fs[..], log = dev.log, log_len = &n }
         if fog == 0 { return shader_failed{ log = dev.log[..n] } }
         dev.gl.use_program{ program = shaft }

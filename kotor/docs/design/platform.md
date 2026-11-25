@@ -112,7 +112,7 @@ GLsizeiptr/GLintptr `i64`, GLboolean `u8` (`gl::TRUE`, `gl::FALSE`), data GL rea
 `*T`, and buffer offsets GL takes as pointers `usize` (64-bit ABIs pass the two alike, and
 ctxlang can't make a pointer from an integer).
 
-Helpers: `compile` and `link` (shader source as lines, `[]c::String`; the info log goes into a
+Helpers: `compile` and `link` (shader source as lines, `[]cstr`; the info log goes into a
 caller's buffer and the error says how long it is), `has_extension`, `get_int`, `string`,
 `check` (glGetError as a `gl::failed{ code, what }`), `error_name`, one-name `gen_*` and
 `delete_*`, `make_buffer`, `bytes_of(T)` (any slice as bytes for GL), and the offscreen target:

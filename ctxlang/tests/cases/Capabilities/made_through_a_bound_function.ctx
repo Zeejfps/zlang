@@ -6,12 +6,12 @@ namespace lib {
     #c_symbol{ name = "llabs" }
     #pure
     extern fn long_abs { n: i64 } -> i64
-    fn find { mut l: Lib, name: c::String } -> ?extern fn{ n: i64 } -> i64 { return long_abs }
+    fn find { mut l: Lib, name: cstr } -> ?extern fn{ n: i64 } -> i64 { return long_abs }
 }
 
 namespace m {
     capability M { f: extern fn{ n: i64 } -> i64 }
-    fn load { find: &fn{ name: c::String } -> ?extern fn{ n: i64 } -> i64 } -> ?M {
+    fn load { find: &fn{ name: cstr } -> ?extern fn{ n: i64 } -> i64 } -> ?M {
         let some{ value = f } = find{ name = "llabs" } else { return null }
         return M{ f }
     }

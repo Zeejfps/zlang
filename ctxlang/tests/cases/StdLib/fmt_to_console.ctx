@@ -10,7 +10,7 @@ fn main { mut io: Io } {
     let mut err = io::to_stderr{ &io }
     _ = @fmt(&err, "warning: {} of {}\n", 3, @as(u16, 4))
     let raw: []u8 = "\xff"
-    let cs: c::String = "hi"
+    let cs: cstr = "hi"
     _ = @fmt(&io, "{}|{}\n", raw.len, cs)
 }
 

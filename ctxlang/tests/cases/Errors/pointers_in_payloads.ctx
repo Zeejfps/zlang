@@ -33,7 +33,7 @@ fn show { mut io: Io, r: !u64 } {
 }
 
 error bad{ text: []u8 }
-error named{ c: c::String, u: utf8::String }
+error named{ c: cstr, u: utf8::String }
 fn head { s: []u8 } -> !u64 {
     if s[0] == 'x' { return bad{ text = s[0..3] } }
     return s.len

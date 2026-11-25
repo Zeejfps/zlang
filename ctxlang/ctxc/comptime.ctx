@@ -291,7 +291,7 @@ namespace comptime {
             ptr{ elem, mutable } => {
                 let p = word{ &r, a } ifnull { return unread{ &c, r } }
                 // A *u8 into a literal's bytes: the rest of them, with the hidden zero after them,
-                // as a c::String's pointer is.
+                // as a cstr is.
                 if types::prune{ s = c.ty, t = elem } == types::U8 and not mutable {
                     let rest = eval::literal_rest{ m = r.m.*, a = p }
                     if rest != null { return check::Val::cstr{ ty, bytes = rest } }

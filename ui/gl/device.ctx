@@ -19,9 +19,9 @@
 // skipped and counted (`stats.dropped`). GL errors are reported with glGetError's code and where
 // (`gl_failed`), a shader that does not compile or link with the driver's log.
 namespace ui_gl {
-    error compile_failed{ shader: c::String, log_len: usize }   // the driver's log is log[..log_len] of open's `log`
-    error link_failed{ program: c::String, log_len: usize }
-    error gl_failed{ code: u32, what: c::String }               // glGetError's code after `what`
+    error compile_failed{ shader: cstr, log_len: usize }   // the driver's log is log[..log_len] of open's `log`
+    error link_failed{ program: cstr, log_len: usize }
+    error gl_failed{ code: u32, what: cstr }               // glGetError's code after `what`
     error incomplete{ status: u32 }                             // the offscreen target's framebuffer status
     error no_room                                               // the image table is full
     error bad_image                                             // an image this device does not have
@@ -122,7 +122,7 @@ namespace ui_gl {
     // Starts the backend on the context current on this thread. `get_proc` finds GL's functions in
     // it (`ui_sdl::get_gl_proc{ &sdl, _ }`). A shader that does not compile or link fails with the
     // driver's log in `log`.
-    fn open(S) { get_proc: &fn{ name: c::String } -> ?extern fn{}, realloc: alloc::Fn(S), mut heap: S, options: Options, log: []mut u8 } -> !Device {
+    fn open(S) { get_proc: &fn{ name: cstr } -> ?extern fn{}, realloc: alloc::Fn(S), mut heap: S, options: Options, log: []mut u8 } -> !Device {
         let mut gl = try load{ get_proc }
         let base_instance = load_base_instance{ get_proc, &gl }
         let clip_rows = try alloc::make(f32, S){ realloc, &heap, count = CLIP_ROW_FLOATS * 3 }
@@ -212,7 +212,7 @@ namespace ui_gl {
     }
 
     // Fails with `gl_failed` when a GL call since the last check went wrong; `what` says where.
-    fn check_gl { mut gl: Gl, what: c::String } -> ! {
+    fn check_gl { mut gl: Gl, what: cstr } -> ! {
         let code = gl.get_error{}
         if code != NO_ERROR {
             while gl.get_error{} != NO_ERROR {}     // GL may hold several
@@ -222,7 +222,7 @@ namespace ui_gl {
 
     // ---- programs and vertex arrays
 
-    fn compile_shader { mut gl: Gl, stage: u32, source: []c::String, name: c::String, log: []mut u8 } -> !u32 {
+    fn compile_shader { mut gl: Gl, stage: u32, source: []cstr, name: cstr, log: []mut u8 } -> !u32 {
         let shader = gl.create_shader{ kind = stage }
         gl.shader_source{ shader, count = @as(i32, source.len), strings = source.ptr, lengths = null }
         gl.compile_shader{ shader }
@@ -238,7 +238,7 @@ namespace ui_gl {
     }
 
     // A program of the two stages, with its blocks bound and its sampler on texture unit 0.
-    fn make_program { mut gl: Gl, vertex: []c::String, fragment: []c::String, vertex_name: c::String, fragment_name: c::String, log: []mut u8 } -> !u32 {
+    fn make_program { mut gl: Gl, vertex: []cstr, fragment: []cstr, vertex_name: cstr, fragment_name: cstr, log: []mut u8 } -> !u32 {
         let vs = try compile_shader{ &gl, stage = VERTEX_SHADER, source = vertex, name = vertex_name, log }
         let fs = compile_shader{ &gl, stage = FRAGMENT_SHADER, source = fragment, name = fragment_name, log } iferr err{ error } {
             gl.delete_shader{ shader = vs }
@@ -272,7 +272,7 @@ namespace ui_gl {
     }
 
     // A block the driver dropped (unused in both stages) has no index and needs no binding.
-    fn bind_block { mut gl: Gl, program: u32, name: c::String, binding: u32 } {
+    fn bind_block { mut gl: Gl, program: u32, name: cstr, binding: u32 } {
         let index = gl.get_uniform_block_index{ program, name }
         if index != INVALID_INDEX { gl.uniform_block_binding{ program, block_index = index, binding } }
     }

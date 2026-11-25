@@ -13,7 +13,7 @@ namespace glsl {
     // (k (h1 - h0)) between the ends' heights h0 and h1.
     // u_inv_vp: clip space to world. u_eye: xyz the eye, w the base height. u_fog: x d0, y k, z the most fog there
     // can be, w the distance past which there is none (the far plane). u_color: the fog's colour.
-    const HEIGHT_FOG_FS: c::String =
+    const HEIGHT_FOG_FS: cstr =
         \\#version 410 core
         \\uniform sampler2D u_depth;
         \\uniform sampler2D u_normal;
@@ -49,7 +49,7 @@ namespace glsl {
     // u_area: the view's rectangle in the full-size target's pixels. u_sun: xy the sun on the view (0..1, y up),
     // z the strength, w the aspect (width / height). u_params: x the longest march (in view heights), y the decay
     // per step, z the sun's glow radius (view heights), w how many pixels of the full-size target one of this pass's is.
-    const SHAFT_FS: c::String =
+    const SHAFT_FS: cstr =
         \\#version 410 core
         \\uniform sampler2D u_normal;
         \\uniform vec4 u_area;
@@ -89,7 +89,7 @@ namespace glsl {
     // at 12 m, nearly all by 60 m; the sky itself gets a quarter, so the sky's colour stays the artists'.
     // u_params: x the distance the shafts are half there, y the share on the sky. u_proj: the projection's [2][2] and
     // [3][2]. u_inv_size: 1 / the target's size. u_color: the sun's colour.
-    const SHAFT_ADD_FS: c::String =
+    const SHAFT_ADD_FS: cstr =
         \\#version 410 core
         \\uniform sampler2D u_depth;
         \\uniform sampler2D u_shafts;

@@ -220,7 +220,7 @@ namespace ui_fonts {
         let slot = try find_free_face{ lib }
         slice::copy(u8){ dst = lib.name[..path.len], src = path }
         lib.name[path.len] = 0
-        let blob = hb_blob_create_from_file_or_fail{ &lib.fonts, file_name = c::String{ ptr = lib.name.ptr } } ifnull { return no_file{ path } }
+        let blob = hb_blob_create_from_file_or_fail{ &lib.fonts, file_name = @cast(cstr, lib.name.ptr) } ifnull { return no_file{ path } }
         let length = hb_blob_get_length{ &lib.fonts, blob }
         if length == 0 or length > 2147483647 {
             hb_blob_destroy{ &lib.fonts, blob }

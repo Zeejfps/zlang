@@ -30,9 +30,9 @@ fn word {} -> []u8 {
     return s[7..]
 }
 fn greeting {} -> utf8::String { return "hello" }
-fn tail {} -> c::String {
-    let s: c::String = "a C string"
-    return c::String{ ptr = s.ptr + 2 }
+fn tail {} -> cstr {
+    let s: cstr = "a C string"
+    return s + 2
 }
 fn squares {} -> [8]u32 {
     let mut buf: [256]u8
@@ -58,7 +58,7 @@ const NEXT: u64 = FIB + @as(u64, T[3])
 const FIFTH: u64 = FIB / 5
 const WORD: []u8 = word{}
 const HI: utf8::String = greeting{}
-const TAIL: c::String = tail{}
+const TAIL: cstr = tail{}
 const SQ: [8]u32 = squares{}
 fn main { mut io: Io } {
     io::println_u64{ &io, n = @as(u64, T[3]) }

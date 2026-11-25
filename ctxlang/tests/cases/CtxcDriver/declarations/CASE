@@ -42,7 +42,7 @@
 //|   code: i64
 //| error game::plain @ src/b.ctx:14:5
 //| extern fn game::puts -> i32 @ src/b.ctx:15:5
-//|   s: c::String
+//|   s: cstr
 //| extern union game::Bits @ src/b.ctx:16:5
 //|   i: u32
 //|   f: f32

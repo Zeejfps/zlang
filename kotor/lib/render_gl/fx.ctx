@@ -46,21 +46,21 @@ namespace gpu {
     fn make_fx_programs { mut dev: Device } -> ! {
         let post_vs = glsl::POST_VS
         let mut n: usize = 0
-        let scene_fs: [1]c::String = [glsl::SCENE_FX_FS]
+        let scene_fs: [1]cstr = [glsl::SCENE_FX_FS]
         let scene_vs = glsl::SCENE_VS
         let scene = try_link{ gl = &dev.gl, vertex = &scene_vs, fragment = scene_fs[..], log = dev.log, log_len = &n }
         if scene == 0 { return shader_failed{ log = dev.log[..n] } }
         let particle_vs = glsl::PARTICLE_VS
-        let particle_fs: [1]c::String = [glsl::PARTICLE_FX_FS]
+        let particle_fs: [1]cstr = [glsl::PARTICLE_FX_FS]
         let particle = try_link{ gl = &dev.gl, vertex = &particle_vs, fragment = particle_fs[..], log = dev.log, log_len = &n }
         if particle == 0 { return shader_failed{ log = dev.log[..n] } }
-        let down_fs: [1]c::String = [glsl::BLOOM_DOWN_FS]
+        let down_fs: [1]cstr = [glsl::BLOOM_DOWN_FS]
         let down = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = down_fs[..], log = dev.log, log_len = &n }
         if down == 0 { return shader_failed{ log = dev.log[..n] } }
-        let up_fs: [1]c::String = [glsl::BLOOM_UP_FS]
+        let up_fs: [1]cstr = [glsl::BLOOM_UP_FS]
         let up = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = up_fs[..], log = dev.log, log_len = &n }
         if up == 0 { return shader_failed{ log = dev.log[..n] } }
-        let comp_fs: [1]c::String = [glsl::COMPOSITE_FS]
+        let comp_fs: [1]cstr = [glsl::COMPOSITE_FS]
         let comp = try_link{ gl = &dev.gl, vertex = &post_vs, fragment = comp_fs[..], log = dev.log, log_len = &n }
         if comp == 0 { return shader_failed{ log = dev.log[..n] } }
 

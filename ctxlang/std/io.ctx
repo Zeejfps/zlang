@@ -150,7 +150,7 @@ namespace io {
     //   _ = @fmt(&err, "{}: {}\n", path, e)                    // standard error
     //
     // A writer for each type a hole may have: every integer type, f32, f64, bool, utf8::String,
-    // []u8 (bytes, as they are), c::String and strlit; a []mut u8 takes the []u8 one. They don't
+    // []u8 (bytes, as they are), cstr and strlit; a []mut u8 takes the []u8 one. They don't
     // fail, but an @fmt's result is still a `!` to discard. A program's own writer of a type to
     // an Io replaces std's (§13).
 
@@ -168,7 +168,7 @@ namespace io {
     #write
     fn write_bytes { mut io: Io, b: []u8 } { write{ &io, to = Stream::out, bytes = b } }
     #write
-    fn write_cstring { mut io: Io, s: c::String } { write{ &io, to = Stream::out, bytes = c::bytes{ s } } }
+    fn write_cstring { mut io: Io, s: cstr } { write{ &io, to = Stream::out, bytes = c::bytes{ s } } }
     #write
     fn write_bool { mut io: Io, v: bool } { emit_bool{ &io, to = Stream::out, v } }
     #write
@@ -213,7 +213,7 @@ namespace io {
     #write
     fn ewrite_bytes { mut e: Stderr, b: []u8 } { write{ io = e.io, to = Stream::err, bytes = b } }
     #write
-    fn ewrite_cstring { mut e: Stderr, s: c::String } { write{ io = e.io, to = Stream::err, bytes = c::bytes{ s } } }
+    fn ewrite_cstring { mut e: Stderr, s: cstr } { write{ io = e.io, to = Stream::err, bytes = c::bytes{ s } } }
     #write
     fn ewrite_bool { mut e: Stderr, v: bool } { emit_bool{ io = e.io, to = Stream::err, v } }
     #write

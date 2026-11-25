@@ -19,8 +19,8 @@
 // binding is `uniform_block_binding`, after linking.
 namespace gl {
     error too_old{ major: i32, minor: i32 }     // the context's version, older than 4.1
-    error missing{ name: c::String }            // a 4.1 function the context didn't give
-    error failed{ code: u32, what: c::String }  // glGetError's code after `what`
+    error missing{ name: cstr }            // a 4.1 function the context didn't give
+    error failed{ code: u32, what: cstr }  // glGetError's code after `what`
     error compile_failed{ stage: u32, log_len: usize }      // the info log is in the caller's buffer
     error link_failed{ log_len: usize }
     error incomplete{ status: u32 }             // glCheckFramebufferStatus
@@ -28,8 +28,8 @@ namespace gl {
     capability Gl {
         // state and queries
         get_error: extern fn{} -> u32,
-        get_string: extern fn{ name: u32 } -> ?c::String,
-        get_stringi: extern fn{ name: u32, index: u32 } -> ?c::String,
+        get_string: extern fn{ name: u32 } -> ?cstr,
+        get_stringi: extern fn{ name: u32, index: u32 } -> ?cstr,
         get_integerv: extern fn{ pname: u32, data: *mut i32 },
         get_floatv: extern fn{ pname: u32, data: *mut f32 },
         enable: extern fn{ cap: u32 },
@@ -65,7 +65,7 @@ namespace gl {
 
         // shaders and programs
         create_shader: extern fn{ kind: u32 } -> u32,
-        shader_source: extern fn{ shader: u32, count: i32, strings: *c::String, lengths: ?*i32 },
+        shader_source: extern fn{ shader: u32, count: i32, strings: *cstr, lengths: ?*i32 },
         compile_shader: extern fn{ shader: u32 },
         get_shaderiv: extern fn{ shader: u32, pname: u32, params: *mut i32 },
         get_shader_info_log: extern fn{ shader: u32, buf_size: i32, length: *mut i32, info_log: *mut u8 },
@@ -78,11 +78,11 @@ namespace gl {
         get_program_info_log: extern fn{ program: u32, buf_size: i32, length: *mut i32, info_log: *mut u8 },
         use_program: extern fn{ program: u32 },
         delete_program: extern fn{ program: u32 },
-        get_uniform_location: extern fn{ program: u32, name: c::String } -> i32,
-        get_attrib_location: extern fn{ program: u32, name: c::String } -> i32,
-        bind_attrib_location: extern fn{ program: u32, index: u32, name: c::String },
-        bind_frag_data_location: extern fn{ program: u32, color: u32, name: c::String },
-        get_uniform_block_index: extern fn{ program: u32, name: c::String } -> u32,
+        get_uniform_location: extern fn{ program: u32, name: cstr } -> i32,
+        get_attrib_location: extern fn{ program: u32, name: cstr } -> i32,
+        bind_attrib_location: extern fn{ program: u32, index: u32, name: cstr },
+        bind_frag_data_location: extern fn{ program: u32, color: u32, name: cstr },
+        get_uniform_block_index: extern fn{ program: u32, name: cstr } -> u32,
         uniform_block_binding: extern fn{ program: u32, block_index: u32, binding: u32 },
         uniform1i: extern fn{ location: i32, v0: i32 },
         uniform1f: extern fn{ location: i32, v0: f32 },
@@ -180,7 +180,7 @@ namespace gl {
     // Loads every function of `Gl` from `get_proc`, which finds one by name in the context current
     // on this thread. Fails with `too_old` for a context before 4.1, and `missing` if one wasn't
     // found.
-    fn load { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> !Gl {
+    fn load { get_proc: &fn{ name: cstr } -> ?extern fn{} } -> !Gl {
         // The version first, through glGetIntegerv alone: on an old context the rest needn't exist.
         let get_integerv = @cast(extern fn{ pname: u32, data: *mut i32 }, try proc{ get_proc, name = "glGetIntegerv" })
         let mut major: i32 = 0
@@ -335,7 +335,7 @@ namespace gl {
     }
 
     // get_proc's function `name`. The literal names it for get_proc and the error alike.
-    fn proc { get_proc: &fn{ name: c::String } -> ?extern fn{}, name: c::String } -> !extern fn{} {
+    fn proc { get_proc: &fn{ name: cstr } -> ?extern fn{}, name: cstr } -> !extern fn{} {
         return get_proc{ name } ifnull { return missing{ name } }
     }
 
@@ -352,13 +352,13 @@ namespace gl {
     capability Debug {
         debug_message_callback: extern fn{ callback: ?DebugProc, log: ?*mut DebugLog },
         debug_message_control: extern fn{ source: u32, kind: u32, severity: u32, count: i32, ids: ?*u32, enabled: u8 },
-        object_label: extern fn{ identifier: u32, name: u32, length: i32, label: c::String },
-        push_debug_group: extern fn{ source: u32, id: u32, length: i32, message: c::String },
+        object_label: extern fn{ identifier: u32, name: u32, length: i32, label: cstr },
+        push_debug_group: extern fn{ source: u32, id: u32, length: i32, message: cstr },
         pop_debug_group: extern fn{},
     }
 
     // KHR_debug's functions, or null if the context hasn't them.
-    fn load_debug { get_proc: &fn{ name: c::String } -> ?extern fn{}, mut gl: Gl } -> ?Debug {
+    fn load_debug { get_proc: &fn{ name: cstr } -> ?extern fn{}, mut gl: Gl } -> ?Debug {
         if not has_extension{ &gl, name = "GL_KHR_debug" } { return null }
         return Debug{
             debug_message_callback = @cast(_, get_proc{ name = "glDebugMessageCallback" } ifnull { return null }),
@@ -437,7 +437,7 @@ namespace gl {
     }
 
     // Fails with `failed` if a GL call since the last check went wrong; `what` says where.
-    fn check { mut gl: Gl, what: c::String } -> ! {
+    fn check { mut gl: Gl, what: cstr } -> ! {
         let code = gl.get_error{}
         if code != NO_ERROR {
             while gl.get_error{} != NO_ERROR {}     // GL may hold several
@@ -457,7 +457,7 @@ namespace gl {
 
     // Compiles one shader stage from `source`, lines GL joins as they are. On failure, the
     // driver's log is in log[..log_len].
-    fn compile { mut gl: Gl, stage: u32, source: []c::String, log: []mut u8 } -> !u32 {
+    fn compile { mut gl: Gl, stage: u32, source: []cstr, log: []mut u8 } -> !u32 {
         let shader = gl.create_shader{ kind = stage }
         gl.shader_source{ shader, count = @as(i32, source.len), strings = source.ptr, lengths = null }
         gl.compile_shader{ shader }
@@ -474,7 +474,7 @@ namespace gl {
 
     // A program of a vertex and a fragment stage. Its attributes and outputs are placed by
     // `layout(location = N)` in the source.
-    fn link { mut gl: Gl, vertex: []c::String, fragment: []c::String, log: []mut u8 } -> !u32 {
+    fn link { mut gl: Gl, vertex: []cstr, fragment: []cstr, log: []mut u8 } -> !u32 {
         let vs = try compile{ &gl, stage = VERTEX_SHADER, source = vertex, log }
         let fs = compile{ &gl, stage = FRAGMENT_SHADER, source = fragment, log } iferr err{ error } {
             gl.delete_shader{ shader = vs }
@@ -500,7 +500,7 @@ namespace gl {
     }
 
     // A program of any stages (vertex, tessellation control and evaluation, fragment), each from its sources.
-    struct Stage { kind: u32, source: []c::String }
+    struct Stage { kind: u32, source: []cstr }
 
     fn link_stages { mut gl: Gl, stages: []Stage, log: []mut u8 } -> !u32 {
         let mut shaders: [5]u32 = [0; 5]

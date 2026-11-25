@@ -1,0 +1,5 @@
+fn main {} {
+    let b: [2]u8 = ['x', 0]
+    let p: *u8 = b[..].ptr
+    let s: cstr = p  //~ error at 19: expected cstr, got *u8
+}

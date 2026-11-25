@@ -802,7 +802,7 @@ namespace eval {
                 return try value{ &m, x = body.* }
             }
             some{ e } => {
-                // a ?*T, or a ?c::String, is its payload's bytes
+                // a ?*T, or a ?cstr, is its payload's bytes
                 if m.types[x.ty] is nptr { return try value{ &m, x = e.* } }
                 let r = try temp{ &m, t = x.ty }
                 try store{ &m, a = r, n = 4, v = 1 }

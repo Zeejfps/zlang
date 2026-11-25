@@ -1,6 +1,6 @@
-// `c::String` (spec §11 Literals, §18): C's NUL-terminated `const char *`, across C (lib/op.c
+// `cstr` (spec §11 Literals, §18): C's NUL-terminated `const char *`, across C (lib/op.c
 // as libctxtest.a): in a struct by value, as an argument and a result, from a function
-// pointer, and `?c::String`, whose null is NULL.
+// pointer, and `?cstr`, whose null is NULL.
 //# needs: ar
 //# $ cc -c {dir}/lib/op.c -o {dir}/lib/op.o
 //# exit: 0

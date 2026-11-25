@@ -12,7 +12,7 @@
 // A loader fails with an error that says why (spec §8, Errors): `too_old` or `missing`.
 namespace gl {
     error too_old{ have: i32, need: i32 }       // versions as major * 10 + minor
-    error missing{ name: c::String }            // a function the version has that wasn't found
+    error missing{ name: cstr }            // a function the version has that wasn't found
     error no_legacy                             // the context dropped the fixed-function functions
 
     capability Gl1_1 {
@@ -62,14 +62,14 @@ namespace gl {
     // Each loader gives its version's functions and every earlier version's, from get_proc,
     // which finds one by name in the context current on this thread, or gives null. It fails
     // with `too_old` if the context is older, or `missing` if a function wasn't found.
-    fn load_1_1 { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> !Gl1_1 { return fns_1_1{ get_proc, at_least = 11 } }
-    fn load_2_0 { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> !Gl2_0 { return fns_2_0{ get_proc, at_least = 20 } }
-    fn load_3_0 { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> !Gl3_0 { return fns_3_0{ get_proc, at_least = 30 } }
-    fn load_3_3 { get_proc: &fn{ name: c::String } -> ?extern fn{} } -> !Gl3_3 { return fns_3_3{ get_proc, at_least = 33 } }
+    fn load_1_1 { get_proc: &fn{ name: cstr } -> ?extern fn{} } -> !Gl1_1 { return fns_1_1{ get_proc, at_least = 11 } }
+    fn load_2_0 { get_proc: &fn{ name: cstr } -> ?extern fn{} } -> !Gl2_0 { return fns_2_0{ get_proc, at_least = 20 } }
+    fn load_3_0 { get_proc: &fn{ name: cstr } -> ?extern fn{} } -> !Gl3_0 { return fns_3_0{ get_proc, at_least = 30 } }
+    fn load_3_3 { get_proc: &fn{ name: cstr } -> ?extern fn{} } -> !Gl3_3 { return fns_3_3{ get_proc, at_least = 33 } }
 
     // get_proc's function `name`. The name is written once, a literal that serves get_proc and
     // the error.
-    fn proc { get_proc: &fn{ name: c::String } -> ?extern fn{}, name: c::String } -> !extern fn{} {
+    fn proc { get_proc: &fn{ name: cstr } -> ?extern fn{}, name: cstr } -> !extern fn{} {
         return get_proc{ name } ifnull { return missing{ name } }
     }
 
@@ -77,7 +77,7 @@ namespace gl {
     // before and adds what its own added, and 1.1's, which come first, ask the context its
     // version once, before anything later is looked up.
 
-    fn fns_1_1 { get_proc: &fn{ name: c::String } -> ?extern fn{}, at_least: i32 } -> !Gl1_1 {
+    fn fns_1_1 { get_proc: &fn{ name: cstr } -> ?extern fn{}, at_least: i32 } -> !Gl1_1 {
         let clear_color = try proc{ get_proc, name = "glClearColor" }
         let clear = try proc{ get_proc, name = "glClear" }
         let viewport = try proc{ get_proc, name = "glViewport" }
@@ -97,7 +97,7 @@ namespace gl {
         return gl
     }
 
-    fn fns_2_0 { get_proc: &fn{ name: c::String } -> ?extern fn{}, at_least: i32 } -> !Gl2_0 {
+    fn fns_2_0 { get_proc: &fn{ name: cstr } -> ?extern fn{}, at_least: i32 } -> !Gl2_0 {
         let base = try fns_1_1{ get_proc, at_least }
         let create_shader = try proc{ get_proc, name = "glCreateShader" }
         let compile_shader = try proc{ get_proc, name = "glCompileShader" }
@@ -112,7 +112,7 @@ namespace gl {
         }
     }
 
-    fn fns_3_0 { get_proc: &fn{ name: c::String } -> ?extern fn{}, at_least: i32 } -> !Gl3_0 {
+    fn fns_3_0 { get_proc: &fn{ name: cstr } -> ?extern fn{}, at_least: i32 } -> !Gl3_0 {
         let base = try fns_2_0{ get_proc, at_least }
         let gen_vertex_arrays = try proc{ get_proc, name = "glGenVertexArrays" }
         let bind_vertex_array = try proc{ get_proc, name = "glBindVertexArray" }
@@ -123,7 +123,7 @@ namespace gl {
         }
     }
 
-    fn fns_3_3 { get_proc: &fn{ name: c::String } -> ?extern fn{}, at_least: i32 } -> !Gl3_3 {
+    fn fns_3_3 { get_proc: &fn{ name: cstr } -> ?extern fn{}, at_least: i32 } -> !Gl3_3 {
         let base = try fns_3_0{ get_proc, at_least }
         let vertex_attrib_divisor = try proc{ get_proc, name = "glVertexAttribDivisor" }
         let gen_samplers = try proc{ get_proc, name = "glGenSamplers" }
@@ -137,7 +137,7 @@ namespace gl {
     // The fixed-function functions. Fails with `no_legacy` if the context is a core profile, or a
     // 3.0 or 3.1 one that left them out: get_proc may find them on such a context all the same,
     // so the context is asked.
-    fn load_legacy { get_proc: &fn{ name: c::String } -> ?extern fn{}, mut gl: Gl1_1 } -> !Legacy {
+    fn load_legacy { get_proc: &fn{ name: cstr } -> ?extern fn{}, mut gl: Gl1_1 } -> !Legacy {
         if not has_legacy{ &gl } { return no_legacy }
         let begin = try proc{ get_proc, name = "glBegin" }
         let end = try proc{ get_proc, name = "glEnd" }

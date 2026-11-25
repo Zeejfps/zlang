@@ -11,20 +11,20 @@ namespace gpu {
         apply: u32 = 0, apply_proj: i32 = -1, apply_focus: i32 = -1, apply_size: i32 = -1, apply_lens: i32 = -1,
     }
 
-    const GLSL_410: c::String =
+    const GLSL_410: cstr =
         \\#version 410 core
         \\
 
     fn make_dof_programs { mut dev: Device } -> ! {
         let vs = glsl::POST_VS
         let mut n: usize = 0
-        let down_fs: [3]c::String = [GLSL_410, glsl::DOF_COC, glsl::DOF_DOWN_FS]
+        let down_fs: [3]cstr = [GLSL_410, glsl::DOF_COC, glsl::DOF_DOWN_FS]
         let down = try_link{ gl = &dev.gl, vertex = &vs, fragment = down_fs[..], log = dev.log, log_len = &n }
         if down == 0 { return shader_failed{ log = dev.log[..n] } }
-        let blur_fs: [2]c::String = [GLSL_410, glsl::DOF_BLUR_FS]
+        let blur_fs: [2]cstr = [GLSL_410, glsl::DOF_BLUR_FS]
         let blur = try_link{ gl = &dev.gl, vertex = &vs, fragment = blur_fs[..], log = dev.log, log_len = &n }
         if blur == 0 { return shader_failed{ log = dev.log[..n] } }
-        let apply_fs: [3]c::String = [GLSL_410, glsl::DOF_COC, glsl::DOF_APPLY_FS]
+        let apply_fs: [3]cstr = [GLSL_410, glsl::DOF_COC, glsl::DOF_APPLY_FS]
         let apply = try_link{ gl = &dev.gl, vertex = &vs, fragment = apply_fs[..], log = dev.log, log_len = &n }
         if apply == 0 { return shader_failed{ log = dev.log[..n] } }
         dev.gl.use_program{ program = down }

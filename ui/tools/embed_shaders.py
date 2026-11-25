@@ -3,7 +3,7 @@
 
     embed_shaders.py SHADER_DIR OUT_FILE      (ui/tools/build_shaders runs it; OUT_FILE - is stdout)
 
-It copies bytes and reads no ctxlang. Each shader becomes a `[_]c::String`, one literal a line
+It copies bytes and reads no ctxlang. Each shader becomes a `[_]cstr`, one literal a line
 (GL joins the elements as they are), with every byte kept: `\\`, `"` and the bytes outside printable
 ASCII are escaped, because a ctxlang literal holds ASCII only and the shaders' comments have UTF-8
 in them, which a multi-line literal (no escapes) could not carry.
@@ -55,7 +55,7 @@ def make_constant(name: str, data: bytes) -> str:
     if ends_with_newline:
         lines.pop()
     const = name.replace(".glsl", "").replace(".", "_").upper()
-    out = ["    // ui/shaders/%s" % name, "    const %s: [_]c::String = [" % const]
+    out = ["    // ui/shaders/%s" % name, "    const %s: [_]cstr = [" % const]
     for i, line in enumerate(lines):
         newline = "\\n" if (i + 1 < len(lines) or ends_with_newline) else ""
         out.append('        "%s%s",' % (escape_line(line), newline))

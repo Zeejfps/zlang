@@ -163,7 +163,7 @@ struct Scene {
     clamped: u32,
 }
 
-const MESH_VS: [_]c::String = [
+const MESH_VS: [_]cstr = [
     "#version 410 core\n",
     "layout(std140) uniform Frame {\n",
     "    mat4 view;\n",
@@ -183,7 +183,7 @@ const MESH_VS: [_]c::String = [
     "}\n",
 ]
 
-const MESH_FS: [_]c::String = [
+const MESH_FS: [_]cstr = [
     "#version 410 core\n",
     "layout(std140) uniform Frame {\n",
     "    mat4 view;\n",
@@ -203,7 +203,7 @@ const MESH_FS: [_]c::String = [
     "}\n",
 ]
 
-const SKY_VS: [_]c::String = [
+const SKY_VS: [_]cstr = [
     "#version 410 core\n",
     "layout(std140) uniform Frame {\n",
     "    mat4 view;\n",
@@ -219,7 +219,7 @@ const SKY_VS: [_]c::String = [
     "}\n",
 ]
 
-const SKY_FS: [_]c::String = [
+const SKY_FS: [_]cstr = [
     "#version 410 core\n",
     "uniform samplerCube sky;\n",
     "in vec3 v_dir;\n",
@@ -980,7 +980,7 @@ namespace out {
     #write
     fn put_mut_bytes { mut io: Io, b: []mut u8 } { io::write{ &io, to = io::Stream::out, bytes = b } }
     #write
-    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+    fn put_cstring { mut io: Io, s: cstr } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
     #write
     fn put_bool { mut io: Io, b: bool } { io::print_bool{ &io, n = b } }
     #write

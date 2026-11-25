@@ -359,5 +359,5 @@ fn usage { mut io: Io } -> ?Options {
 
 namespace cstrings {
     #write
-    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+    fn put_cstring { mut io: Io, s: cstr } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
 }

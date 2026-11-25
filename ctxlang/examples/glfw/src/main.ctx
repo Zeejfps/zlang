@@ -23,7 +23,7 @@ fn print_version { mut io: Io, mut gl: gl::Gl1_1 } {
 }
 
 // Pushes C string s, for an @fmt hole, or `?` if it isn't valid UTF-8.
-fn write_c { s: c::String, mut b: utf8::Builder(arena::Arena) } -> ! {
+fn write_c { s: cstr, mut b: utf8::Builder(arena::Arena) } -> ! {
     let text = utf8::from{ bytes = c::bytes{ s } } iferr { return utf8::push{ &b, s = "?" } }
     return utf8::push{ &b, s = text }
 }

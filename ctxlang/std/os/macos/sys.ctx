@@ -65,7 +65,7 @@ namespace sys {
         let mut size: u32 = 4096
         if executable_path{ &proc, buf, size = &size } != 0 { return "" }
         let real = realpath{ &proc, path = buf, resolved = null } ifnull { return "" }
-        return c::bytes{ s = c::String{ ptr = real } }
+        return c::bytes{ s = @cast(cstr, real) }
     }
 
     // Nothing: the executable reserves its stack (ctxc/drive.ctx, link_flags).
@@ -100,7 +100,7 @@ namespace sys {
     #c_symbol{ name = "fcntl" }
     extern fn c_fcntl { mut proc: os::Proc, fd: i32, cmd: i32, arg: i64, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: i64 } -> i32
     #c_symbol{ name = "open" }
-    extern fn proc_open { mut proc: os::Proc, path: c::String, flags: i32, mode: u32, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: u32 } -> i32
+    extern fn proc_open { mut proc: os::Proc, path: cstr, flags: i32, mode: u32, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: u32 } -> i32
 
     // posix_spawnattr_setflags' flags: the child in the process group setpgroup gives, and
     // only the descriptors the file actions name open in it, so that it gets no other, a pipe

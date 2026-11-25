@@ -1,7 +1,7 @@
 
 namespace game {
     fn sum { s: []u8 } -> u64 {
-        let cs: c::String = "xy"
+        let cs: cstr = "xy"
         let b = raw::Bits{ u = 0 }
         let mut buf: [64]u8
         let mut heap = arena::new{ buf = buf[..] }

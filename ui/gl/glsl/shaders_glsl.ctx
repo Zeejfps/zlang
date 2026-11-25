@@ -5,7 +5,7 @@
 // Each shader is its file's bytes, one literal a line, for glShaderSource to join.
 namespace ui_gl {
     // ui/shaders/canvas_rect.vert.glsl
-    const CANVAS_RECT_VERT: [_]c::String = [
+    const CANVAS_RECT_VERT: [_]cstr = [
         "#version 410\n",
         "\n",
         "// Per-vertex\n",
@@ -71,7 +71,7 @@ namespace ui_gl {
     ]
 
     // ui/shaders/canvas_rect.frag.glsl
-    const CANVAS_RECT_FRAG: [_]c::String = [
+    const CANVAS_RECT_FRAG: [_]cstr = [
         "#version 410\n",
         "\n",
         "layout(location = 0) flat in vec2 v_rectOrigin;\n",
@@ -257,7 +257,7 @@ namespace ui_gl {
     ]
 
     // ui/shaders/canvas_glyph.vert.glsl
-    const CANVAS_GLYPH_VERT: [_]c::String = [
+    const CANVAS_GLYPH_VERT: [_]cstr = [
         "#version 410\n",
         "\n",
         "// Per-vertex\n",
@@ -304,7 +304,7 @@ namespace ui_gl {
     ]
 
     // ui/shaders/canvas_glyph.frag.glsl
-    const CANVAS_GLYPH_FRAG: [_]c::String = [
+    const CANVAS_GLYPH_FRAG: [_]cstr = [
         "#version 410\n",
         "\n",
         "layout(location = 0) in vec2 v_pixelPos;\n",
@@ -369,7 +369,7 @@ namespace ui_gl {
     ]
 
     // ui/shaders/canvas_image.vert.glsl
-    const CANVAS_IMAGE_VERT: [_]c::String = [
+    const CANVAS_IMAGE_VERT: [_]cstr = [
         "#version 410\n",
         "\n",
         "// Per-vertex\n",
@@ -439,7 +439,7 @@ namespace ui_gl {
     ]
 
     // ui/shaders/canvas_image.frag.glsl
-    const CANVAS_IMAGE_FRAG: [_]c::String = [
+    const CANVAS_IMAGE_FRAG: [_]cstr = [
         "#version 410\n",
         "\n",
         "layout(location = 0) in vec2 v_pixelPos;\n",
@@ -543,7 +543,7 @@ namespace ui_gl {
     ]
 
     // ui/shaders/canvas_shape.vert.glsl
-    const CANVAS_SHAPE_VERT: [_]c::String = [
+    const CANVAS_SHAPE_VERT: [_]cstr = [
         "#version 410\n",
         "\n",
         "// Per-vertex\n",
@@ -594,7 +594,7 @@ namespace ui_gl {
     ]
 
     // ui/shaders/canvas_shape.frag.glsl
-    const CANVAS_SHAPE_FRAG: [_]c::String = [
+    const CANVAS_SHAPE_FRAG: [_]cstr = [
         "#version 410\n",
         "\n",
         "// Generic anti-aliased SDF primitive: filled circle, ring (stroked circle) and\n",

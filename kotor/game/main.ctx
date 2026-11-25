@@ -84,5 +84,5 @@ fn run {
 // @fmt of C strings (SDL's error text) to standard output; tools/common has the rest.
 namespace kotor_out {
     #write
-    fn put_cstring { mut io: Io, s: c::String } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
+    fn put_cstring { mut io: Io, s: cstr } { io::write{ &io, to = io::Stream::out, bytes = c::bytes{ s } } }
 }

@@ -26,11 +26,11 @@ namespace ui_fonts {
     // it is given is not used: what it counts is the capability's static.
     type DestroyFn = extern fn{ mut fonts: Fonts, data: ?*mut u8 }
 
-    extern fn hb_version_string { mut fonts: Fonts } -> c::String
+    extern fn hb_version_string { mut fonts: Fonts } -> cstr
     extern fn hb_blob_create { mut fonts: Fonts, data: *u8, length: u32, mode: i32, user_data: ?*mut u8, destroy: ?DestroyFn } -> *mut HbBlob
     // A blob over the file at `file_name`, mapped (read whole where it cannot be); null when it
     // cannot be opened. HarfBuzz 2.8.2 and later.
-    extern fn hb_blob_create_from_file_or_fail { mut fonts: Fonts, file_name: c::String } -> ?*mut HbBlob
+    extern fn hb_blob_create_from_file_or_fail { mut fonts: Fonts, file_name: cstr } -> ?*mut HbBlob
     extern fn hb_blob_get_length { mut fonts: Fonts, blob: *mut HbBlob } -> u32
     extern fn hb_blob_get_data { mut fonts: Fonts, blob: *mut HbBlob, mut length: u32 } -> ?*u8
     extern fn hb_blob_set_user_data { mut fonts: Fonts, blob: *mut HbBlob, key: *mut UserDataKey, data: ?*mut u8, destroy: ?DestroyFn, replace: i32 } -> i32

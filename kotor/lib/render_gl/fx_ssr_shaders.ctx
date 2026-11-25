@@ -5,7 +5,7 @@ namespace glsl {
     // that lands behind the depth buffer by less than u_params.z metres is a hit, refined by halving four times. The
     // output, added to the light, swaps the environment map's share (u_refl.rgb) for what the ray met times the same
     // weight, faded at the screen's edges, with distance, and where the ray turns back toward the camera.
-    const SSR_FS: c::String =
+    const SSR_FS: cstr =
         \\#version 410 core
         \\uniform sampler2D u_depth;
         \\uniform sampler2D u_normal;

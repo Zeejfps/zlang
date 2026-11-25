@@ -1,4 +1,4 @@
-extern fn puts { s: c::String } -> i32
+extern fn puts { s: cstr } -> i32
 fn main {} { _ = puts{ s = "a\0b" } }
 
 //# errors:

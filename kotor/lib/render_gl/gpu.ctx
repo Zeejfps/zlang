@@ -10,10 +10,10 @@
 // `present` blits it to the window, and `read_screen` reads it back for screenshots. A hidden
 // window works the same, which is how every check renders headless.
 namespace gpu {
-    error full{ what: c::String }                   // a resource table is full
-    error bad_handle{ what: c::String }             // freed, never made, or another device's
+    error full{ what: cstr }                   // a resource table is full
+    error bad_handle{ what: cstr }             // freed, never made, or another device's
     error bad_data{ need: usize, got: usize }       // too few bytes for what the description says
-    error unsupported{ what: c::String }
+    error unsupported{ what: cstr }
     error shader_failed{ log: []u8 }                // a program didn't compile or link: the driver's log
 
     const NO_SLOT: u32 = 0xFFFFFFFF
@@ -680,7 +680,7 @@ namespace gpu {
 
     // gl::link's program, or 0 with the length of the driver's log in `log`. (Its error would be
     // taken to hold the sources' address, which are the caller's locals.)
-    fn try_link { mut gl: gl::Gl, vertex: []c::String, fragment: []c::String, log: []mut u8, mut log_len: usize } -> u32 {
+    fn try_link { mut gl: gl::Gl, vertex: []cstr, fragment: []cstr, log: []mut u8, mut log_len: usize } -> u32 {
         return gl::link{ &gl, vertex, fragment, log } iferr err{ error } {
             let n = match error {
                 gl::compile_failed{ log_len = k } | gl::link_failed{ log_len = k } => { k }
@@ -695,7 +695,7 @@ namespace gpu {
         if block != gl::INVALID_INDEX { dev.gl.uniform_block_binding{ program, block_index = block, binding = 0 } }
     }
 
-    fn set_unit { mut dev: Device, program: u32, name: c::String, unit: i32 } {
+    fn set_unit { mut dev: Device, program: u32, name: cstr, unit: i32 } {
         dev.gl.uniform1i{ location = dev.gl.get_uniform_location{ program, name }, v0 = unit }
     }
 

@@ -7,7 +7,7 @@ namespace glsl {
     // A f / (s - f): a finite blur, so stars stay points that only soften.
     // u_focus: x distance s, y range, z the largest blur radius in half-resolution pixels, w the view's blur (0..1).
     // u_lens: x focal length (m), y aperture diameter (m), z half-resolution pixels of radius per metre on the sensor.
-    const DOF_COC: c::String =
+    const DOF_COC: cstr =
         \\float view_z(sampler2D depth, ivec2 px, vec4 proj) {
         \\    float d = texelFetch(depth, px, 0).r;
         \\    return -proj.w / ((d * 2.0 - 1.0) + proj.z);
@@ -25,7 +25,7 @@ namespace glsl {
 
     // Half resolution: the light of 2x2 pixels, the bright ones weighing more (a star of one pixel keeps its light
     // instead of being averaged away), and in alpha the largest blur of the four.
-    const DOF_DOWN_FS: c::String =
+    const DOF_DOWN_FS: cstr =
         \\uniform sampler2D u_color;
         \\uniform sampler2D u_depth;
         \\uniform vec4 u_proj;
@@ -55,7 +55,7 @@ namespace glsl {
     // Half resolution: each pixel gathers a disc as wide as its own blur, on a spiral of u_params.y taps; a tap counts
     // only if its own blur reaches this pixel (a sharp thing in front doesn't smear into what is behind it), and
     // bright taps count more (u_params.z), so points of light open into discs, the camera's bokeh, rather than fade.
-    const DOF_BLUR_FS: c::String =
+    const DOF_BLUR_FS: cstr =
         \\uniform sampler2D u_src;
         \\uniform vec4 u_params;
         \\in vec2 v_uv;
@@ -95,7 +95,7 @@ namespace glsl {
     // Full resolution, blended over the light (SRC_ALPHA, ONE_MINUS_SRC_ALPHA): the blurred light where the pixel's
     // own blur is wider than a pixel (from half a pixel's radius to two), the sharp picture below that.
     // u_size: 1 / the full resolution.
-    const DOF_APPLY_FS: c::String =
+    const DOF_APPLY_FS: cstr =
         \\uniform sampler2D u_blur;
         \\uniform sampler2D u_depth;
         \\uniform vec4 u_proj;

@@ -1,7 +1,7 @@
 // `\\` lines (spec §11, Literals): raw text, joined with \n; a \r that ends a line isn't
 // part of it.
 
-const VS: c::String =
+const VS: cstr =
     \\#version 410 core
     \\void main() {
     \\    gl_Position = vec4(pos, "1.0" \n);

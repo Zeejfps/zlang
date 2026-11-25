@@ -74,7 +74,7 @@ program asks for one (spec §19).
 | struct | C struct, same field order | Checked with `_Static_assert` on `sizeof` and `offsetof`. |
 | union, `?T` | `struct { uint32_t tag; union { … } p; }` | Tag at 0, payload at `align_up(4, payload align)`. `null` is tag 0. |
 | `?*T`, `?*mut T` | `T*` | `null` is 0. IR type `nptr`. |
-| `c::String`, `?c::String` | `struct { uint8_t *m_ptr; }`, and the same under a typedef | Passed to C by value, which 64-bit C ABIs pass and return as the pointer; a literal's is `((uint8_t *)"...")`, whose NUL is the hidden zero. `?c::String` is null when `m_ptr` is 0. |
+| `cstr`, `?cstr` | `uint8_t *` | A pointer: types::Type's `ptr` with `c_string`, so IR and C see a `*u8`, and `?cstr` is null as 0. A literal's is `((uint8_t *)"...")`, whose NUL is the hidden zero. |
 | `extern union` | C `union` | Every field at offset 0. IR `(cunion ...)`. A literal zeroes the other bytes with `memset`. |
 | `extern fn{C} -> R`, and its `?` | `R (*)(P...)`, capabilities dropped | IR type `cfn`, params in order; `null` is 0. A named extern fn as a value is `xN`; a `#c_callback` fn is `kK`, a C function calling `fN`. A `#c_export` fn's `kK` is never static and has the exported symbol as its assembler name. |
 | enum | its base integer type | `match` becomes an if-else chain on the value (IR `switch`), as a `match` on an integer does: a case lists values and ranges, `lo <= v && v <= hi`. |
