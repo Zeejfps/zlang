@@ -48,32 +48,34 @@ namespace bink {
         v: bink_video::Plane,        // Cr
         audio: []i16,                // track 0's samples from this frame's packet, interleaved
     }
+    // What opening a movie fails with: the file, the decoders' memory, and a header or index
+    // this decoder doesn't take.
+    type OpenError = error(fs::Error, alloc::out_of_memory, not_bink, unsupported, bad_frame_count,
+        bad_frame_rate, too_many_tracks, bad_frame, truncated, bad_audio_size, bink_audio::unsupported,
+        bink_video::bad_size)
+    // What reading a frame's bytes from the file fails with.
+    type ReadError = error(fs::Error, bad_frame, truncated)
+    // What decoding a frame's bytes fails with: its packets, then the audio and video in them.
+    type DecodeError = error(bad_frame, bink_audio::Error, bink_video::Error)
     // When frame `frame` starts, in microseconds from the start of the movie.
     fn frame_time_us { header: Header, frame: u32 } -> u64
     fn duration_us { header: Header } -> u64
     // Opens a movie and reads its header and frame index. The decoder's memory (about 2.5 times a
     // picture's pixels, plus one frame of the file) comes from `realloc`; `close` gives it back.
-    fn open(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8, tables: *bink_tables::Tables } -> error(
-        fs::Error, alloc::out_of_memory, not_bink, unsupported, bad_frame_count, bad_frame_rate,
-        too_many_tracks, bad_frame, truncated, bad_audio_size, bink_audio::unsupported,
-        bink_video::bad_size)!Movie
+    fn open(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8, tables: *bink_tables::Tables } -> OpenError!Movie
     // Decodes the next frame, or returns null after the last.
-    fn next { mut fs: Fs, mut m: Movie } -> error(fs::Error, bad_frame, truncated,
-        bink_audio::bad_packet, bink_audio::short_output, bink_video::overrun, bink_video::starved,
-        bink_video::bad_values, bink_video::bad_block, bink_video::bad_run, bink_video::bad_motion)!?Frame
+    fn next { mut fs: Fs, mut m: Movie } -> error(ReadError, DecodeError)!?Frame
     fn close(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, mut m: Movie }
     // A frame's packets: track 0's audio (empty if none) and the video.
     struct Packets { audio: []u8, video: []u8 }
     // Reads the next frame's bytes from the file into the movie's buffer, or returns null after
     // the last; `decode_frame` decodes them. (`next` does both.)
-    fn read_frame { mut fs: Fs, mut m: Movie } -> error(fs::Error, bad_frame, truncated)!?[]u8
+    fn read_frame { mut fs: Fs, mut m: Movie } -> ReadError!?[]u8
     // Splits a frame's bytes: one packet per audio track, each a u32 size and that many bytes,
     // then the video packet.
     fn split { header: Header, bytes: []u8, frame: u32 } -> error(bad_frame)!Packets
     // Decodes the frame `read_frame` read: its audio packet, then its video.
-    fn decode_frame { mut m: Movie, bytes: []u8 } -> error(bad_frame, bink_audio::bad_packet,
-        bink_audio::short_output, bink_video::overrun, bink_video::starved, bink_video::bad_values,
-        bink_video::bad_block, bink_video::bad_run, bink_video::bad_motion)!Frame
+    fn decode_frame { mut m: Movie, bytes: []u8 } -> DecodeError!Frame
 }
 namespace bink_audio {
     // The track isn't the DCT variant, or its rate is 0.
@@ -82,13 +84,14 @@ namespace bink_audio {
     error bad_packet
     // `out` can't hold what the packet's decoded field says it decodes to.
     error short_output{ need: usize, have: usize }
+    // What decoding a packet fails with.
+    type Error = error(bad_packet, short_output)
     // A track's decoder: its buffers, and the block it cross-fades with.
     type Decoder
     fn new(S) { realloc: alloc::Fn(S), mut heap: S, rate: u32, flags: u32 } -> error(
         alloc::out_of_memory, unsupported)!Decoder
     fn free(S) { realloc: alloc::Fn(S), mut heap: S, mut d: Decoder }
-    fn decode_packet { mut d: Decoder, packet: []u8, out: []mut i16 } -> error(bad_packet,
-        short_output)!usize
+    fn decode_packet { mut d: Decoder, packet: []u8, out: []mut i16 } -> Error!usize
 }
 namespace bink_tables {
     // A table the DLL doesn't hold (no region with its shape has its CRC).
@@ -100,13 +103,14 @@ namespace bink_tables {
     error no_inter_quantizers
     // The prefix codes don't form 16 complete codes of at most 7 bits.
     error bad_codes{ tree: u32 }
+    // What loading the tables fails with: the DLL's file, memory, and a table it lacks.
+    type Error = error(fs::Error, alloc::out_of_memory, no_code_lengths, no_codes, no_scan, no_patterns,
+        no_intra_quantizers, no_inter_quantizers, bad_codes)
     // The codec's tables, which the DLL holds: its prefix codes, scan order, patterns and
     // quantizers.
     type Tables
     // Reads the DLL at `path` and takes the tables from it. The DLL's bytes are freed again.
-    fn load(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8 } -> error(fs::Error,
-        alloc::out_of_memory, no_code_lengths, no_codes, no_scan, no_patterns, no_intra_quantizers,
-        no_inter_quantizers, bad_codes)!Tables
+    fn load(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8 } -> Error!Tables
 }
 namespace bink_video {
     error bad_size{ width: u32, height: u32 }               // 0, or larger than we allow
@@ -116,6 +120,8 @@ namespace bink_video {
     error bad_block{ plane: u32, row: u32, col: u32, kind: i32 }
     error bad_run{ plane: u32, row: u32, col: u32 }         // a run block's runs cover more than 64 pixels
     error bad_motion{ plane: u32, row: u32, col: u32, x: i32, y: i32 }
+    // What decoding a packet fails with: where in the picture its bits went wrong.
+    type Error = error(overrun, starved, bad_values, bad_block, bad_run, bad_motion)
     // What a caller sees of a plane of the last picture decoded: `width` x `height` pixels,
     // row r starting at pixels[r * stride].
     struct Plane { pixels: []u8, stride: usize, width: u32, height: u32 }
@@ -125,8 +131,7 @@ namespace bink_video {
         alloc::out_of_memory, bad_size)!Decoder
     fn free(S) { realloc: alloc::Fn(S), mut heap: S, mut d: Decoder }
     // Decodes a video packet into the picture after the last one.
-    fn decode { mut d: Decoder, packet: []u8 } -> error(overrun, starved, bad_values, bad_block,
-        bad_run, bad_motion)!
+    fn decode { mut d: Decoder, packet: []u8 } -> Error!
     // The last picture decoded, plane p: 0 Y, 1 U (Cb), 2 V (Cr).
     fn plane { d: Decoder, p: u32 } -> Plane
 }
