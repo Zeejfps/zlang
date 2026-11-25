@@ -19,9 +19,9 @@ ctxc.
   with what is reserved after the address: 10% of KOTOR's check, 8% of ctxc's. Commit to the
   end of the MiB at once (`VirtualAlloc` with `MEM_COMMIT` succeeds on committed pages), and ask
   only if that fails. KOTOR 1.88 s to 1.69 s, ctxc 1.16 s to 1.07 s.
-- [ ] **3. Side tables keyed by `key{ file, id }` as arrays.** Node ids are 0 to `ids - 1` in
+- [x] **3. Side tables keyed by `key{ file, id }` as arrays.** Node ids are 0 to `ids - 1` in
   each file (`syntax::File.ids`), so a table is a slot per node, at the file's base plus the id,
-  with a map for any other key. Done for `expr_ty`, `refs`, `type_of`, `access`, `convs`,
+  with a map for any other key (ctxc/nodes.ctx). Done for `expr_ty`, `refs`, `type_of`, `access`, `convs`,
   `decl_of` and `local_of`: KOTOR 1.70 s to 1.42 s, ctxc 1.10 s to 0.99 s.
 
 ## From the profile
@@ -38,7 +38,7 @@ themselves.
 - [ ] **5. Lexing and parsing, one file at a time.** About 15% of the check, and the files are
   independent: in parallel, on tasks (threads.md), with an arena each. The lexer's keywords are
   found with `slice::eq_bytes` (about 2%).
-- [ ] **6. The other side tables.** `uses` (iterated with `map::next` for `ctxc api` and
+- [ ] **6. The other side tables, as `nodes::Table`s.** `uses` (iterated with `map::next` for `ctxc api` and
   `where`, so it needs a way to walk it), `literal`, `spreads`, `narrowed`, `braces`,
   `forwards`, `is_vars`, `filled`, `holds`; and the maps keyed by a declaration's index
   (`borrows`, `borrow_low`, `borrow_index`, `foldable`, `values`, ...) as arrays by index.

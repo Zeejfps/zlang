@@ -1,0 +1,48 @@
+// Side tables over a program's syntax nodes, in place of maps keyed by check::key{ file, id }.
+// A file's node ids are 0 to its tree's `ids` - 1 (syntax::File), so a table has a slot for
+// each node of every file, at its file's first slot plus the id, and finding one is an index
+// rather than a hash and a probe. A key that is no file's node, as a name the checker makes
+// itself has (NO_FILE), goes in a map, so a table answers for any key as the map did.
+//
+// As maps, the checker's tables of expressions, types and declarations took about a quarter
+// of checking KOTOR (docs/todo/compile-speed.md, item 3).
+
+namespace nodes {
+    type Heap = arena::Arena
+
+    // starts[f] is file f's first slot, and starts[files] the count of slots: one array that
+    // all of a program's tables share (check::place_nodes).
+    struct Table(V) { starts: []u64, slots: []mut ?V, others: map::Map(u64, V, Heap) }
+
+    fn new(V) { mut heap: Heap, starts: []u64 } -> Table(V) {
+        let slots = try! alloc::make(?V, Heap){ realloc = arena::alloc, &heap, count = @as(usize, starts[starts.len - 1]) }
+        return Table{ starts, slots, others = map::new(u64, V){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 } }
+    }
+
+    // The slot of key's node, or null if it is no file's node.
+    fn find(V) { m: Table(V), key: u64 } -> ?usize {
+        let f = @as(usize, key >> 32)
+        if f + 1 >= m.starts.len { return null }
+        let i = m.starts[f] + (key & 4294967295)
+        if i >= m.starts[f + 1] { return null }
+        return @as(usize, i)
+    }
+
+    fn get(V) { m: Table(V), key: u64 } -> ?V {
+        if let i = find{ m, key } { return m.slots[i] }
+        return map::get{ m = m.others, key }
+    }
+
+    fn has(V) { m: Table(V), key: u64 } -> bool {
+        return get{ m, key } != null
+    }
+
+    // Fails with alloc::out_of_memory only for a key that is no file's node, as map::put.
+    fn put(V) { mut m: Table(V), key: u64, value: V } -> ! {
+        if let i = find{ m, key } {
+            m.slots[i] = value
+            return
+        }
+        try map::put{ m = &m.others, key, value }
+    }
+}

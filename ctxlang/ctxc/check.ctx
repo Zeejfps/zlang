@@ -190,11 +190,12 @@ namespace check {
         cap_stack: list::List(u32, Heap),          // those being resolved, for a cycle of inclusions
         alias_stack: list::List(u32, Heap),
         const_stack: list::List(u32, Heap),
-        // Side tables, keyed by key{ file, id }.
-        decl_of:   map::Map(u64, u32, Heap),     // a syntax declaration's Decl
+        // Side tables, keyed by key{ file, id }: a table of nodes (nodes.ctx) where they are
+        // looked up most, maps elsewhere.
+        decl_of:   nodes::Table(u32),            // a syntax declaration's Decl
         space_of:  map::Map(u64, u32, Heap),     // a namespace declaration's Space
         uses:      map::Map(u64, Ref, Heap),     // a Name's referent
-        type_of:   map::Map(u64, Id, Heap),      // a TypeExpr's type
+        type_of:   nodes::Table(Id),             // a TypeExpr's type
         layouts:   map::Map(Id, Layout, Heap),
         busy:      map::Map(Id, bool, Heap),     // layouts being computed
         main:      u32 = NONE,                   // NONE unless `main` is valid
@@ -255,15 +256,15 @@ namespace check {
         call_decl: u32 = NONE,                        // the fn of the call being checked, if it names one
         body_errors: usize = 0,                       // errors before the body
         flow_errors: usize = 0,                       // flow errors in the body
-        // Side tables for expressions and statements, keyed by key{ file, id }.
-        expr_ty:   map::Map(u64, Id, Heap),           // an expression's type; a branch value's too
-        convs:     map::Map(u64, Conv, Heap),         // an implicit conversion of its value
-        refs:      map::Map(u64, PathRef, Heap),      // what a path (or a callee) names
+        // Side tables for expressions and statements, keyed by key{ file, id }, as above.
+        expr_ty:   nodes::Table(Id),                  // an expression's type; a branch value's too
+        convs:     nodes::Table(Conv),                // an implicit conversion of its value
+        refs:      nodes::Table(PathRef),             // what a path (or a callee) names
         literal:   map::Map(u64, bool, Heap),         // braces: a literal (true) or a call
         spreads:   map::Map(u64, bool, Heap),         // braces whose `..e`s are checked
-        access:    map::Map(u64, Access, Heap),       // how a field or index reaches its value
+        access:    nodes::Table(Access),              // how a field or index reaches its value
         narrowed:  map::Map(u64, Id, Heap),           // a narrowed field's own ?T
-        local_of:  map::Map(u64, u32, Heap),          // the local a `let` or a binder's field declares
+        local_of:  nodes::Table(u32),                 // the local a `let` or a binder's field declares
         is_vars:   map::Map(u64, []u32, Heap),        // the locals an `is` binds, by its key
         forwards:  map::Map(u64, []Forward, Heap),    // what `..` supplies to a call
         braces:    map::Map(u64, []types::Field, Heap),  // the fields braces take: a call's, or a literal's type's
@@ -555,8 +556,18 @@ namespace check {
     }
 
     fn new { files: []File, modules: []Module, std_files: usize, mut heap: Heap, mut diags: diag::Diags } -> Checker {
+        // Each table of nodes takes memory from heap, so each is made before the literal.
+        let starts = place_nodes{ &heap, files }
+        let decl_of = nodes::new(u32){ &heap, starts }
+        let type_of = nodes::new(Id){ &heap, starts }
+        let expr_ty = nodes::new(Id){ &heap, starts }
+        let convs = nodes::new(Conv){ &heap, starts }
+        let refs = nodes::new(PathRef){ &heap, starts }
+        let access = nodes::new(Access){ &heap, starts }
+        let local_of = nodes::new(u32){ &heap, starts }
         let mut c = Checker{
             heap = &heap, diags = &diags, files, modules, std_files,
+            decl_of, type_of, expr_ty, convs, refs, access, local_of,
             api_decls = ids{ &heap }, restates = ids{ &heap }, handle_spaces = ids{ &heap },
             clashes = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             ty = types::store{ &heap },
@@ -566,10 +577,8 @@ namespace check {
             consts = ids{ &heap }, fns = ids{ &heap }, externs = ids{ &heap }, caps = ids{ &heap },
             caps_done = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             cap_stack = ids{ &heap }, alias_stack = ids{ &heap }, const_stack = ids{ &heap },
-            decl_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             space_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             uses = map::new(u64, Ref){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
-            type_of = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             layouts = map::new(Id, Layout){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             busy = map::new(Id, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             converts = ids{ &heap },
@@ -591,14 +600,9 @@ namespace check {
             live_marks = list::new(usize){ realloc = arena::alloc, &heap },
             loops = list::new(Loop){ realloc = arena::alloc, &heap },
             defs = slice::empty(u32){}, maybe = slice::empty(u32){}, zeros = slice::empty(u32){}, fulls = slice::empty(u32){},
-            expr_ty = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
-            convs = map::new(u64, Conv){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
-            refs = map::new(u64, PathRef){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             literal = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             spreads = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
-            access = map::new(u64, Access){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             narrowed = map::new(u64, Id){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
-            local_of = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             is_vars = map::new(u64, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             forwards = map::new(u64, []Forward){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             braces = map::new(u64, []types::Field){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
@@ -1071,7 +1075,7 @@ namespace check {
             ..
         }
         try! list::push{ list = &c.decls, item }
-        try! map::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d }
+        try! nodes::put{ m = &c.decl_of, key = key{ file, id = x.id }, value = d }
         return d
     }
 
@@ -2143,7 +2147,7 @@ namespace check {
             error{ &c, at = a.span, msg = "a `convert` fn can't be generic" }
             return
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         let fd = get_decl{ c, d }
         let one = fd.fields.len == 1
         if one and types::prune{ s = c.ty, t = fd.fields[0].ty } == types::ERROR { return }
@@ -2188,7 +2192,7 @@ namespace check {
             errorf{ &c, at = a.span, msg = @fmt("a `{}` fn can't be generic", str{ s = name }) }
             return
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         let fd = get_decl{ c, d }
         let bad = c.diags.errors
         let r = types::prune{ s = c.ty, t = fd.ret }
@@ -2268,7 +2272,7 @@ namespace check {
             error{ &c, at = a.span, msg = "a `test` fn can't be generic" }
             return
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         let fd = get_decl{ c, d }
         let bad = c.diags.errors
         // `#test{ panics = "text" }`, `#test{ skip = "why" }`, or both
@@ -2363,7 +2367,7 @@ namespace check {
             error{ &c, at = a.span, msg = "duplicate `task` attribute" }
             return
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         list::at{ list = c.decls, i = d }.task = true
     }
 
@@ -2378,7 +2382,7 @@ namespace check {
             error{ &c, at = a.span, msg = "duplicate `thread_bound` attribute" }
             return
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         list::at{ list = c.decls, i = d }.thread_bound = true
     }
 
@@ -2397,7 +2401,7 @@ namespace check {
             error{ &c, at = a.span, msg = "duplicate `starts_task` attribute" }
             return
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         list::at{ list = c.decls, i = d }.starts_task = true
     }
 
@@ -2411,7 +2415,7 @@ namespace check {
             error{ &c, at = a.span, msg = "duplicate `task_handle` attribute" }
             return
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         list::at{ list = c.decls, i = d }.task_handle = true
         try! list::push{ list = &c.handle_spaces, item = get_decl{ c, d }.ns }
     }
@@ -2519,7 +2523,7 @@ namespace check {
         let msg: utf8::String = "`run` is a bind of a `task` fn written here, supplying every field: `run = f{ ..., _ }`"
         // A starts_task fn passes its own `run` on, which its caller wrote.
         if c.fn_decl != NONE and get_decl{ c, d = c.fn_decl }.starts_task and e.k is path{ segs } and segs.len == 1 and slice::eq_bytes{ a = segs[0].name.text, b = "run" } {
-            if let r = map::get{ m = c.refs, key = expr_key{ e } } { if r is local{ var } and get_var{ c, v = var }.kind == VarKind::ctx { return } }
+            if let r = nodes::get{ m = c.refs, key = expr_key{ e } } { if r is local{ var } and get_var{ c, v = var }.kind == VarKind::ctx { return } }
         }
         let braced{ callee, bind } = e.k else {
             error{ &c, at = expr_at{ e }, msg }
@@ -2529,7 +2533,7 @@ namespace check {
             error{ &c, at = expr_at{ e }, msg }
             return
         }
-        let r = map::get{ m = c.refs, key = expr_key{ e = callee.* } } ifnull {
+        let r = nodes::get{ m = c.refs, key = expr_key{ e = callee.* } } ifnull {
             error{ &c, at = expr_at{ e }, msg }
             return
         }
@@ -2563,7 +2567,7 @@ namespace check {
         let rt = expr{ &c, e = args[0], exp = types::NO_TYPE }
         let mut own = false
         if args[0].k is path{ segs } and segs.len == 1 and slice::eq_bytes{ a = segs[0].name.text, b = "run" } {
-            if let r = map::get{ m = c.refs, key = expr_key{ e = args[0] } } { own = r is local{ var } and get_var{ c, v = var }.kind == VarKind::ctx }
+            if let r = nodes::get{ m = c.refs, key = expr_key{ e = args[0] } } { own = r is local{ var } and get_var{ c, v = var }.kind == VarKind::ctx }
         }
         if not mine or not own {
             errorf{ &c, at = expr_at{ e }, msg = @fmt("@{} is only of a `starts_task` fn's own `run`", str{ s = n }) }
@@ -2582,7 +2586,7 @@ namespace check {
 
     // The fn a call's callee path names, or NONE.
     fn call_fn { c: Checker, e: syntax::Expr } -> u32 {
-        let r = map::get{ m = c.refs, key = expr_key{ e } } ifnull { return NONE }
+        let r = nodes::get{ m = c.refs, key = expr_key{ e } } ifnull { return NONE }
         let func{ decl } = r else { return NONE }
         return decl
     }
@@ -2594,7 +2598,7 @@ namespace check {
     fn handle_flow { mut c: Checker, x: syntax::Expr, field: []u8, callee: u32, at: source::Span } {
         let path{ segs } = x.k else { return }
         if segs.len != 1 { return }
-        let r = map::get{ m = c.refs, key = expr_key{ e = x } } ifnull { return }
+        let r = nodes::get{ m = c.refs, key = expr_key{ e = x } } ifnull { return }
         let local{ var } = r else { return }
         let v = get_var{ c, v = var }
         if holds_handle{ c, t = v.ty } { mark_tasky{ &c } }
@@ -2716,7 +2720,7 @@ namespace check {
             error{ &c, at = a.span, msg = "duplicate `pure` attribute" }
             return
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         let cap = first_cap{ c, fields = get_decl{ c, d }.fields }
         if cap != null {
             errorf{ &c, at = a.span, msg = @fmt("a `pure` extern fn takes no capability, and this one takes `{}`: drop one", str{ s = cap }) }
@@ -2727,7 +2731,7 @@ namespace check {
     // C does is said in its signature, either way. Those that don't are reported last
     // (unmarked_externs), after what else is wrong with the program.
     fn pure_or_cap { mut c: Checker, x: syntax::Decl, file: u32, name: syntax::Name } {
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         let fields = get_decl{ c, d }.fields
         if first_cap{ c, fields } != null { return }
         let mut i: usize = 0
@@ -3052,7 +3056,7 @@ namespace check {
     // The attributes of capability x's fields: `c::symbol` on a C variable gives its symbol (§15,
     // rule 12), and the rest but `c::callback` are checked and ignored.
     fn field_attributes { mut c: Checker, x: syntax::Decl, file: u32, fields: []syntax::Field, ns: u32, symbol_decl: u32, callback_decl: u32 } {
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         let mut i: usize = 0
         while i < fields.len {
             let f = fields[i]
@@ -3227,7 +3231,7 @@ namespace check {
             return
         }
         let name = symbol_name{ &c, a, fields } ifnull { return }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } }
         if d != null { list::at{ list = c.decls, i = d }.symbol = name }
     }
 
@@ -3263,7 +3267,7 @@ namespace check {
             error{ &c, at = a.span, msg = "a `c::callback` fn can't be generic" }
             return
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } }
         if d == null { return }
         let at = list::at{ list = c.decls, i = d }
         at.callback = true
@@ -3350,7 +3354,7 @@ namespace check {
 
     fn rtype { mut c: Checker, te: syntax::TypeExpr, sc: Scope, allow_bound: bool } -> Id {
         let t = resolve{ &c, te, sc, allow_bound }
-        try! map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t }
+        try! nodes::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t }
         return t
     }
 
@@ -3367,7 +3371,7 @@ namespace check {
         } else if et != types::ERROR {
             t = types::array{ s = &c.ty, n = len, elem = et }
         }
-        try! map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t }
+        try! nodes::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t }
         return t
     }
 
@@ -3458,7 +3462,7 @@ namespace check {
             if errs == types::ERROR { errs = types::errs{ s = &c.ty, owner, one = NONE } }
         }
         let t = types::res{ s = &c.ty, ok, errs }
-        try! map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t }
+        try! nodes::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = t }
         return t
     }
 
@@ -4470,7 +4474,7 @@ namespace check {
     // Whether syntax declaration x of file is an api.ctx's half (Decl.half).
     fn is_half { c: Checker, file: u32, x: syntax::Decl } -> bool {
         if not c.files[file].api { return false }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return false }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return false }
         return get_decl{ c, d }.half
     }
 
@@ -4781,6 +4785,18 @@ namespace check {
 
     fn key { file: u32, id: u32 } -> u64 {
         return (@as(u64, file) << 32) | id
+    }
+
+    // Where each file's slots start in a table of nodes (nodes.ctx), and after the last file's,
+    // how many there are: the files' node ids, one after another.
+    fn place_nodes { mut heap: Heap, files: []File } -> []u64 {
+        let starts = try! alloc::make(u64, Heap){ realloc = arena::alloc, &heap, count = files.len + 1 }
+        let mut f: usize = 0
+        while f < files.len {
+            starts[f + 1] = starts[f] + @as(u64, files[f].tree.ids)
+            f = f + 1
+        }
+        return starts
     }
 
     fn get_space { c: Checker, ns: u32 } -> Space {
@@ -5172,7 +5188,7 @@ namespace check {
     // evaluated (comptime.ctx), or, in an attribute (strict), an error.
     fn const_ok { mut c: Checker, e: syntax::Expr, strict: bool } -> bool {
         let at = expr_at{ e }
-        if map::get{ m = c.convs, key = expr_key{ e } } is slice {
+        if nodes::get{ m = c.convs, key = expr_key{ e } } is slice {
             return unfoldable{ &c, at, strict, msg = "must be computable at compile time" }
         }
         match e.k {
@@ -5200,7 +5216,7 @@ namespace check {
             array{ elems } => { return const_list{ &c, xs = elems, strict } }
             repeat{ elem } => { return const_ok{ &c, e = elem.*, strict } }
             path => {
-                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                let r = nodes::get{ m = c.refs, key = expr_key{ e } }
                 if not (r is constant | variant | enumval) { return unfoldable{ &c, at, strict, msg = "may only refer to consts" } }
                 return true
             }
@@ -5348,7 +5364,7 @@ namespace check {
 
     // e's value, inside the conversion the checker recorded for it.
     fn fold { mut c: Checker, e: syntax::Expr } -> ?Val {
-        let conv = map::get{ m = c.convs, key = expr_key{ e } }
+        let conv = nodes::get{ m = c.convs, key = expr_key{ e } }
         if conv != null {
             match conv {
                 some{ to } => {
@@ -5400,7 +5416,7 @@ namespace check {
                 }
             }
             path => {
-                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                let r = nodes::get{ m = c.refs, key = expr_key{ e } }
                 if r == null { return null }
                 match r {
                     constant{ decl } => {
@@ -5454,7 +5470,7 @@ namespace check {
             builtin{ name, targ, args } => {
                 if targ == null { return null }
                 let te = targ.*
-                let tt = map::get{ m = c.type_of, key = key{ file = te.span.file, id = te.id } }
+                let tt = nodes::get{ m = c.type_of, key = key{ file = te.span.file, id = te.id } }
                 if tt == null { return null }
                 if slice::eq_bytes{ a = name.text, b = "offset_of" } {
                     if args.len != 1 { return null }
@@ -5499,7 +5515,7 @@ namespace check {
     fn fold_literal { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, t: Id } -> ?Val {
         let mut fields = struct_fields{ &c, t }
         let mut index = NONE
-        if map::get{ m = c.refs, key = expr_key{ e = callee } } is variant{ index = vi } {
+        if nodes::get{ m = c.refs, key = expr_key{ e = callee } } is variant{ index = vi } {
             index = vi
             let fs = variants_of{ &c, t }[vi].fields
             fields = if fs == null { slice::empty(types::Field){} } else { fs }
@@ -5943,7 +5959,7 @@ namespace check {
     }
 
     fn put_local { mut c: Checker, key: u64, v: u32 } {
-        try! map::put{ m = &c.local_of, key, value = v }
+        try! nodes::put{ m = &c.local_of, key, value = v }
     }
 
     // No node's key: a file's index is never this high.
@@ -6840,7 +6856,7 @@ namespace check {
     }
 
     fn put_type { mut c: Checker, k: u64, t: Id } {
-        try! map::put{ m = &c.expr_ty, key = k, value = t }
+        try! nodes::put{ m = &c.expr_ty, key = k, value = t }
     }
 
     // The type of an `if` or `match` expression, from its branches: with an expected type that
@@ -7759,7 +7775,7 @@ namespace check {
     // of fields, that a test showed isn't null.
     fn is_narrowed { c: Checker, e: syntax::Expr } -> bool {
         if map::has{ m = c.narrowed, key = expr_key{ e } } { return true }
-        if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return get_var{ c, v = var }.kind == VarKind::narrow }
+        if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return get_var{ c, v = var }.kind == VarKind::narrow }
         return false
     }
 
@@ -7807,7 +7823,7 @@ namespace check {
         match types::get{ s = c.ty, id = t } { opt{ elem = x } => { elem = x } else => { return null } }
         match e.k {
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
                     if get_var{ c, v = var }.mutable { return null }
                     return Fact{ var, root = NONE, steps = slice::empty([]u8){}, ty = elem, at = expr_at{ e }, bind = false, clash = false }
                 }
@@ -7837,7 +7853,7 @@ namespace check {
         if fact{ c, e } != null { return null }
         match e.k {
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
                     if get_var{ c, v = var }.mutable { return "is mutable" }
                 }
             }
@@ -7990,7 +8006,7 @@ namespace check {
     fn place_path { c: Checker, e: syntax::Expr } -> ?Place {
         match e.k {
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return Place{ root = root_var{ c, v = var }, steps = slice::empty([]u8){} } }
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return Place{ root = root_var{ c, v = var }, steps = slice::empty([]u8){} } }
             }
             field{ base, name } => {
                 if access_of{ c, e } is field {
@@ -8049,11 +8065,11 @@ namespace check {
     }
 
     fn access_of { c: Checker, e: syntax::Expr } -> ?Access {
-        return map::get{ m = c.access, key = expr_key{ e } }
+        return nodes::get{ m = c.access, key = expr_key{ e } }
     }
 
     fn put_access { mut c: Checker, e: syntax::Expr, a: Access } {
-        try! map::put{ m = &c.access, key = expr_key{ e }, value = a }
+        try! nodes::put{ m = &c.access, key = expr_key{ e }, value = a }
     }
 
     // ---- places (§11, Places)
@@ -8064,7 +8080,7 @@ namespace check {
         match e.k {
             error | deref => { return true }
             path{ segs } => {
-                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                let r = nodes::get{ m = c.refs, key = expr_key{ e } }
                 if r == null { return true }       // it didn't resolve, which is reported
                 let what: utf8::String = match r { local | path => { "" } constant => { "a const, not a place" } else => { "not a place" } }
                 if what.bytes.len == 0 { return true }
@@ -8095,7 +8111,7 @@ namespace check {
         match e.k {
             error => { return }
             path => {
-                let r = map::get{ m = c.refs, key = expr_key{ e } }
+                let r = nodes::get{ m = c.refs, key = expr_key{ e } }
                 if r == null { return }
                 if r is local{ var } {
                     let v = get_var{ c, v = var }
@@ -8143,7 +8159,7 @@ namespace check {
     fn place_mutable { c: Checker, e: syntax::Expr } -> bool {
         match e.k {
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return get_var{ c, v = var }.mutable }
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return get_var{ c, v = var }.mutable }
                 return true
             }
             field{ base } => {
@@ -8505,7 +8521,7 @@ namespace check {
     fn borrow_target { mut c: Checker, mut b: BorrowBody, e: syntax::Expr } -> []u32 {
         match e.k {
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
                     let v = root_var{ c, v = var }
                     if b.first != NONE and v >= b.first and v < b.first + b.n { return one_id{ c, n = v - b.first } }
                     // A `&x` binding points where the value it was made from does.
@@ -8575,7 +8591,7 @@ namespace check {
     fn borrow_binders { mut c: Checker, mut b: BorrowBody, binders: []syntax::Binder, xs: []u32 } {
         let mut i: usize = 0
         while i < binders.len {
-            let v = map::get{ m = c.local_of, key = name_key{ n = binders[i].field } }
+            let v = nodes::get{ m = c.local_of, key = name_key{ n = binders[i].field } }
             if v != null { borrow_put{ &c, &b, v, xs } }
             i = i + 1
         }
@@ -8610,7 +8626,7 @@ namespace check {
                 local{ init } => {
                     if init != null {
                         let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = init } }
-                        let v = map::get{ m = c.local_of, key = stmt_key{ s } }
+                        let v = nodes::get{ m = c.local_of, key = stmt_key{ s } }
                         if v != null { borrow_put{ &c, &b, v, xs } }
                     }
                 }
@@ -8651,7 +8667,7 @@ namespace check {
                     if let e = hi {
                         _ = borrow_expr{ &c, &b, e }
                     } else {
-                        let v = map::get{ m = c.local_of, key = name_key{ n = item } }
+                        let v = nodes::get{ m = c.local_of, key = name_key{ n = item } }
                         if v != null { borrow_put{ &c, &b, v, xs } }
                     }
                     borrow_block{ &c, &b, block = body }
@@ -8793,7 +8809,7 @@ namespace check {
         let mut summary = borrow_unknown{ c, fields }
         let mut d = NONE
         let mut targs: []Id = slice::empty(Id){}
-        if map::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl, targs = ts } {
+        if nodes::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl, targs = ts } {
             d = decl
             targs = ts
             summary = borrow_fn{ &c, d }
@@ -8873,7 +8889,7 @@ namespace check {
     fn borrow_address { mut c: Checker, mut b: BorrowBody, e: syntax::Expr } -> []u32 {
         match e.k {
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
                     return map::get{ m = b.env, key = root_var{ c, v = var } } ifnull { no_vars{} }
                 }
             }
@@ -8898,7 +8914,7 @@ namespace check {
         let mut out = borrow_empty{}
         match e.k {
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
                     out.ok = map::get{ m = b.env, key = root_var{ c, v = var } } ifnull { no_vars{} }
                     out.err = out.ok
                 }
@@ -8996,7 +9012,7 @@ namespace check {
     // What the call of callee in call e keeps (§14, Escape check): a fn's summary, or a function
     // value's type's contract. Null if it isn't known.
     fn direct_borrow { mut c: Checker, callee: syntax::Expr } -> ?Borrow {
-        if map::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl } {
+        if nodes::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl } {
             if get_decl{ c, d = decl }.kind == Kind::external { return borrow_fn{ &c, d = decl } }
             return map::get{ m = c.borrows, key = decl }
         }
@@ -9202,7 +9218,7 @@ namespace check {
         let s = direct_borrow{ &c, callee } ifnull { return }
         let mut d = NONE
         let mut targs: []Id = slice::empty(Id){}
-        if map::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl, targs = ts } {
+        if nodes::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl, targs = ts } {
             d = decl
             targs = ts
         }
@@ -9537,9 +9553,9 @@ namespace check {
 
     // The type e's value has after any conversion.
     fn value_ty { c: Checker, k: u64 } -> Id {
-        let conv = map::get{ m = c.convs, key = k }
+        let conv = nodes::get{ m = c.convs, key = k }
         if conv != null { return conv_target{ conv } }
-        let t = map::get{ m = c.expr_ty, key = k }
+        let t = nodes::get{ m = c.expr_ty, key = k }
         return if t == null { types::NO_TYPE } else { t }
     }
 
@@ -9566,11 +9582,11 @@ namespace check {
     }
 
     fn derives_raw { mut c: Checker, e: syntax::Expr } -> []u32 {
-        if map::get{ m = c.convs, key = expr_key{ e } } is addr_slice { return derive_addr{ &c, x = e } }
+        if nodes::get{ m = c.convs, key = expr_key{ e } } is addr_slice { return derive_addr{ &c, x = e } }
         match e.k {
             addr{ e = x } => { return derive_addr{ &c, x = x.* } }
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return derived_of{ c, v = var } }
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return derived_of{ c, v = var } }
             }
             range{ base } => { return derives_raw{ &c, e = base.* } }
             field{ base } => {
@@ -9601,7 +9617,7 @@ namespace check {
                 let fields = callee_fields{ c, e }
                 let summary = if c.borrow_ready and not is_lit and not bind { direct_borrow{ &c, callee = callee.* } } else { null }
                 let mut select = false
-                if map::get{ m = c.refs, key = expr_key{ e = callee.* } } is func{ decl } { select = borrow_result{ c, d = decl } }
+                if nodes::get{ m = c.refs, key = expr_key{ e = callee.* } } is func{ decl } { select = borrow_result{ c, d = decl } }
                 let err = select and c.borrow_error
                 let success = select and c.borrow_success
                 let mut out = if is_lit { no_vars{} } else { derives_input{ &c, e = callee.* } }
@@ -9767,10 +9783,10 @@ namespace check {
     // `if` or `match` expression.
     fn held_of { c: Checker, e: syntax::Expr } -> []Place {
         let none: []Place = slice::empty(Place){}
-        if map::get{ m = c.convs, key = expr_key{ e } } != null { return none }
+        if nodes::get{ m = c.convs, key = expr_key{ e } } != null { return none }
         match e.k {
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return held_by{ c, v = var } }
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return held_by{ c, v = var } }
             }
             braced{ bind } => {
                 if bind {
@@ -9814,7 +9830,7 @@ namespace check {
         match v {
             expr{ e } => { return held_of{ c, e } }
             nested{ s } => {
-                if map::get{ m = c.convs, key = stmt_key{ s } } != null { return none }
+                if nodes::get{ m = c.convs, key = stmt_key{ s } } != null { return none }
                 match s.k {
                     cond{ x } => {
                         let mut out = held_block{ c, b = x.then }
@@ -10011,7 +10027,7 @@ namespace check {
         let mut refs = list::new(HeldRef){ realloc = arena::alloc, heap = c.heap }
         // What a bound function that is called holds, it is given too (no field).
         if e.k is braced{ callee = ce } {
-            if map::get{ m = c.refs, key = expr_key{ e = ce.* } } is local{ var } {
+            if nodes::get{ m = c.refs, key = expr_key{ e = ce.* } } is local{ var } {
                 held_refs{ xs = &refs, c, places = held_by{ c, v = var }, holder = get_var{ c, v = var }.name, field = "", at = ce.span }
             }
         }
@@ -10027,7 +10043,7 @@ namespace check {
                     }
                 } else {
                     let holder = match it.value.k {
-                        path{ segs } => { if map::get{ m = c.convs, key = expr_key{ e = it.value } } == null { segs[0].name.text } else { it.name.text } }
+                        path{ segs } => { if nodes::get{ m = c.convs, key = expr_key{ e = it.value } } == null { segs[0].name.text } else { it.name.text } }
                         else => { it.name.text }
                     }
                     held_refs{ xs = &refs, c, places = held_of{ c, e = it.value }, holder, field = it.name.text, at = it.value.span }
@@ -10350,7 +10366,7 @@ namespace check {
 
     fn order_error { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, x: Clash } {
         let fw = map::get{ m = c.forwards, key = expr_key{ e } } ifnull { slice::empty(Forward){} }
-        let local_callee = map::get{ m = c.refs, key = expr_key{ e = callee } } is local
+        let local_callee = nodes::get{ m = c.refs, key = expr_key{ e = callee } } is local
         let what: utf8::String = if not (callee.k is path) or local_callee or call_fn{ c, e = callee } != NONE { "call" } else { "literal" }
         let wn = part_name{ c, callee, items, fw, part = x.w.part }
         let rn = part_name{ c, callee, items, fw, part = x.r.part }
@@ -10381,7 +10397,7 @@ namespace check {
     fn order_clash { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item } -> ?Clash {
         let fw = map::get{ m = c.forwards, key = expr_key{ e } } ifnull { slice::empty(Forward){} }
         let mut us = list::new(Use){ realloc = arena::alloc, heap = c.heap }
-        let local_callee = map::get{ m = c.refs, key = expr_key{ e = callee } } is local
+        let local_callee = nodes::get{ m = c.refs, key = expr_key{ e = callee } } is local
         if not (callee.k is path) or local_callee { ord_expr{ &c, e = callee, part = 0, &us } }
         // The callee reads only what its summary says of what it is given read-only, and what it
         // gets as `&p` it gets as the place, once it runs.
@@ -10653,7 +10669,7 @@ namespace check {
     // given hold; a bind only reads its arguments.
     fn ord_braced { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, bind: bool, part: u32, mut us: list::List(Use, Heap) } {
         let fields = map::get{ m = c.braces, key = expr_key{ e } } ifnull { slice::empty(types::Field){} }
-        let r = map::get{ m = c.refs, key = expr_key{ e = callee } }
+        let r = nodes::get{ m = c.refs, key = expr_key{ e = callee } }
         if r is local{ var } {
             ord_place{ &c, e = callee, part, write = false, addr = false, &us }
             if not bind { ord_held{ &c, places = held_by{ c, v = var }, part, at = callee.span, &us } }
@@ -11522,7 +11538,7 @@ namespace check {
     fn tw_path { c: Checker, e: syntax::Expr } -> ?TPath {
         match e.k {
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
                     let v = root_var{ c, v = var }
                     return TPath{ place = Place{ root = v, steps = slice::empty([]u8){} }, through = get_var{ c, v }.indirect and get_var{ c, v }.kind != VarKind::ctx }
                 }
@@ -11893,7 +11909,7 @@ namespace check {
             }
             braced{ callee, items } => {
                 let mut scan_callee = true
-                if callee.k is path { scan_callee = map::get{ m = c.refs, key = expr_key{ e = callee.* } } is local }
+                if callee.k is path { scan_callee = nodes::get{ m = c.refs, key = expr_key{ e = callee.* } } is local }
                 if scan_callee { scan{ &c, sc, e = callee.* } }
                 let mut i: usize = 0
                 while i < items.len {
@@ -11953,7 +11969,7 @@ namespace check {
     fn access_path { c: Checker, e: syntax::Expr } -> ?Place {
         match e.k {
             path => {
-                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return Place{ root = root_var{ c, v = var }, steps = slice::empty([]u8){} } }
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return Place{ root = root_var{ c, v = var }, steps = slice::empty([]u8){} } }
             }
             field{ base, name } => {
                 let ap = access_path{ c, e = base.* }
@@ -11982,19 +11998,19 @@ namespace check {
     }
 
     fn type_of_expr { c: Checker, e: syntax::Expr } -> Id {
-        let t = map::get{ m = c.expr_ty, key = expr_key{ e } }
+        let t = nodes::get{ m = c.expr_ty, key = expr_key{ e } }
         return if t == null { types::ERROR } else { t }
     }
 
     // The type recorded under key k: an expression's, or a nested `if` or `match`'s as a branch
     // value.
     fn type_of_key { c: Checker, k: u64 } -> Id {
-        let t = map::get{ m = c.expr_ty, key = k }
+        let t = nodes::get{ m = c.expr_ty, key = k }
         return if t == null { types::ERROR } else { t }
     }
 
     fn set_type { mut c: Checker, e: syntax::Expr, t: Id } {
-        try! map::put{ m = &c.expr_ty, key = expr_key{ e }, value = t }
+        try! nodes::put{ m = &c.expr_ty, key = expr_key{ e }, value = t }
     }
 
     // Checks e, of type exp if it has an expected type (types::NO_TYPE otherwise), and records
@@ -12079,7 +12095,7 @@ namespace check {
     // another integer type that it doesn't widen to is expected.
     fn const_probe { mut c: Checker, e: syntax::Expr, at: Id, t: Id } -> ?ConstAs {
         if not (e.k is path) { return null }
-        let constant{ decl } = map::get{ m = c.refs, key = expr_key{ e } } else { return null }
+        let constant{ decl } = nodes::get{ m = c.refs, key = expr_key{ e } } else { return null }
         let from = types::prune{ s = c.ty, t = at }
         let mut to = types::prune{ s = c.ty, t }
         match types::get{ s = c.ty, id = to } {
@@ -12291,7 +12307,7 @@ namespace check {
     }
 
     fn put_conv_key { mut c: Checker, k: u64, conv: Conv } {
-        try! map::put{ m = &c.convs, key = k, value = conv }
+        try! nodes::put{ m = &c.convs, key = k, value = conv }
     }
 
     // A conversion as recorded, for a value that has no node.
@@ -12772,7 +12788,7 @@ namespace check {
     // permits a read-only slice without making consts places for assignment or explicit `&`.
     fn const_storage { c: Checker, e: syntax::Expr } -> bool {
         match e.k {
-            path => { return map::get{ m = c.refs, key = expr_key{ e } } is constant }
+            path => { return nodes::get{ m = c.refs, key = expr_key{ e } } is constant }
             field{ base } => { return access_of{ c, e } is field and const_storage{ c, e = base.* } }
             index{ base } => { return access_of{ c, e } is arr and const_storage{ c, e = base.* } }
             else => { return false }
@@ -13326,7 +13342,7 @@ namespace check {
     }
 
     fn put_ref { mut c: Checker, e: syntax::Expr, r: PathRef } {
-        try! map::put{ m = &c.refs, key = expr_key{ e }, value = r }
+        try! nodes::put{ m = &c.refs, key = expr_key{ e }, value = r }
     }
 
     fn resolve_segs { mut c: Checker, segs: []syntax::Seg, call: bool } -> ?PathRef {
@@ -14924,7 +14940,7 @@ namespace check {
             let infer = match te.k { path{ segs } => { is_infer{ segs } } else => { false } }
             if infer and typed_arg {
                 tt = expected_targ{ &c, name = n, exp, at = te.span }
-                try! map::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = tt }
+                try! nodes::put{ m = &c.type_of, key = key{ file = te.span.file, id = te.id }, value = tt }
             } else {
                 tt = rtype{ &c, te, sc = c.sc, allow_bound = false }
             }
@@ -15650,7 +15666,7 @@ namespace check {
         while i < holes.len {
             let h = holes[i]
             let holder = match h.k {
-                path{ segs } => { if map::get{ m = c.convs, key = expr_key{ e = h } } == null { segs[0].name.text } else { source_text{ c, span = h.span } } }
+                path{ segs } => { if nodes::get{ m = c.convs, key = expr_key{ e = h } } == null { segs[0].name.text } else { source_text{ c, span = h.span } } }
                 else => { source_text{ c, span = h.span } }
             }
             held_refs{ xs = &refs, c, places = held_of{ c, e = h }, holder, field = "", at = h.span }
@@ -15676,7 +15692,7 @@ namespace check {
             error{ &c, at = a.span, msg = "duplicate `write` attribute" }
             return
         }
-        let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         let fd = get_decl{ c, d }
         let fs = fd.fields
         let mut i: usize = 0

@@ -1,6 +1,7 @@
 // ctxc: the ctxlang compiler, written in ctxlang. A directory is one program: this file holds
-// the driver; source.ctx, diag.ctx, lexer.ctx, syntax.ctx, parser.ctx, types.ctx and check.ctx
-// the front end, and report.ctx its diagnostics as they are shown; lower.ctx the checked
+// the driver; source.ctx, diag.ctx, lexer.ctx, syntax.ctx, parser.ctx, types.ctx, check.ctx and
+// nodes.ctx (its tables over syntax nodes) the front end, and report.ctx its diagnostics as they
+// are shown; lower.ctx the checked
 // program as IR; ir.ctx the typed IR, ir_read.ctx and ir_print.ctx its text form; emit_c.ctx
 // the C backend; eval.ctx an interpreter over the IR, which comptime.ctx runs consts in;
 // dump.ctx text dumps for tests; drive.ctx the driver, which runs the C compiler.

@@ -1130,7 +1130,7 @@ namespace lower {
     }
 
     fn local_of { l: Lower, k: u64 } -> u32 {
-        let v = map::get{ m = l.c.local_of, key = k }
+        let v = nodes::get{ m = l.c.local_of, key = k }
         if v == null { @panic("lower: a binding without a local") }
         return v
     }
@@ -1906,7 +1906,7 @@ namespace lower {
         }
         match v {
             nested{ s } => {
-                if map::get{ m = l.c.expr_ty, key = check::stmt_key{ s } } == null {
+                if nodes::get{ m = l.c.expr_ty, key = check::stmt_key{ s } } == null {
                     let st = leaving{ &l, s }
                     try! list::push{ list = &out, item = st }
                     return ir::Block{ stmts = list::items{ list = out }, result = null }
@@ -1942,7 +1942,7 @@ namespace lower {
     // A nested `if` or `match` giving a branch its value, with its conversion.
     fn nested_full { mut l: Lower, s: syntax::Stmt } -> ir::Expr {
         let k = check::stmt_key{ s }
-        let conv = map::get{ m = l.c.convs, key = k }
+        let conv = nodes::get{ m = l.c.convs, key = k }
         if conv != null and conv is some{ to } {
             let inner = coerce{ &l, x = nested{ &l, s }, frm = T{ &l, t = check::type_of_key{ c = l.c.*, k } }, to = opt_elem{ l, t = T{ &l, t = to } }, at = s.span }
             return mk{ ty = tid{ &l, t = T{ &l, t = to } }, k = ir::ExprKind::some{ e = box{ l, e = inner } } }
@@ -2159,7 +2159,7 @@ namespace lower {
         if l.kept.len > 0 {
             if let k = map::get{ m = l.kept, key = check::expr_key{ e } } { return slot_ex{ ty = k.ty, slot = k.slot } }
         }
-        let conv = map::get{ m = l.c.convs, key = check::expr_key{ e } }
+        let conv = nodes::get{ m = l.c.convs, key = check::expr_key{ e } }
         if conv == null { return node{ &l, e } }
         match conv {
             some{ to } => {
@@ -2535,7 +2535,7 @@ namespace lower {
     }
 
     fn path_ex { mut l: Lower, e: syntax::Expr, t: Id } -> ir::Expr {
-        let r = map::get{ m = l.c.refs, key = check::expr_key{ e } }
+        let r = nodes::get{ m = l.c.refs, key = check::expr_key{ e } }
         if r == null { @panic("lower: a path that didn't resolve") }
         match r {
             local{ var } => { return var_ex{ &l, v = var, at = check::expr_at{ e } } }
@@ -2953,7 +2953,7 @@ namespace lower {
     fn braced { mut l: Lower, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, bind: bool, t: Id } -> ir::Expr {
         let k = check::expr_key{ e }
         let lit = map::get{ m = l.c.literal, key = k }
-        let r = map::get{ m = l.c.refs, key = check::expr_key{ e = callee } }
+        let r = nodes::get{ m = l.c.refs, key = check::expr_key{ e = callee } }
         if lit != null and lit {
             if r != null {
                 match r {
@@ -3732,7 +3732,7 @@ namespace lower {
     fn targ_type { l: Lower, targ: ?*syntax::TypeExpr } -> Id {
         if targ == null { @panic("lower: a builtin without its type") }
         let te = targ.*
-        let t = map::get{ m = l.c.type_of, key = check::key{ file = te.span.file, id = te.id } }
+        let t = nodes::get{ m = l.c.type_of, key = check::key{ file = te.span.file, id = te.id } }
         if t == null { @panic("lower: a type expression that wasn't resolved") }
         return t
     }

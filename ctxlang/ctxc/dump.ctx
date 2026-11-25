@@ -973,7 +973,7 @@ namespace decls {
                 }
                 else => {
                     // An api.ctx's half is what it declares, listed where that is.
-                    let d = map::get{ m = c.decl_of, key }
+                    let d = nodes::get{ m = c.decl_of, key }
                     if d != null and not check::get_decl{ c, d }.half { decl{ &out, &c, i = d } }
                 }
             }
@@ -1230,7 +1230,7 @@ namespace decls {
 
     // The type of the local a `let` or a binder declares.
     fn local_ty { c: check::Checker, k: u64 } -> utf8::String {
-        let v = map::get{ m = c.local_of, key = k }
+        let v = nodes::get{ m = c.local_of, key = k }
         if v == null { return "none" }
         return check::tstr{ c, t = check::get_var{ c, v }.ty }
     }
@@ -1239,7 +1239,7 @@ namespace decls {
     fn binds { mut out: Out, c: check::Checker, xs: []syntax::Binder, depth: u32 } {
         let mut i: usize = 0
         while i < xs.len {
-            let v = map::get{ m = c.local_of, key = check::name_key{ n = xs[i].field } }
+            let v = nodes::get{ m = c.local_of, key = check::name_key{ n = xs[i].field } }
             if v != null {
                 let x = check::get_var{ c, v }
                 indent{ &out, depth }
@@ -1321,7 +1321,7 @@ namespace decls {
 
     // The type recorded for the expression (or branch value) with key k, or `none`.
     fn ty_at { c: check::Checker, k: u64 } -> utf8::String {
-        let t = map::get{ m = c.expr_ty, key = k }
+        let t = nodes::get{ m = c.expr_ty, key = k }
         if t == null or t == types::NO_TYPE { return "none" }
         return check::tstr{ c, t }
     }
@@ -1329,7 +1329,7 @@ namespace decls {
     // The conversion of the value with key k, if it has one, as the lines around it. Returns the
     // depth of the value itself.
     fn wrap { mut out: Out, c: check::Checker, k: u64, depth: u32 } -> u32 {
-        let conv = map::get{ m = c.convs, key = k }
+        let conv = nodes::get{ m = c.convs, key = k }
         if conv == null { return depth }
         indent{ &out, depth }
         match conv {
