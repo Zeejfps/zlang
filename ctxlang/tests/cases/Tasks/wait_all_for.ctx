@@ -1,0 +1,76 @@
+// wait_all_for: a group whose tasks end before the deadline gives true, and wait_all then its
+// first error at once; one whose task sleeps past it gives false with the group untouched, and
+// cancel_all ends it; 0 on a busy group looks without waiting; 0 on an empty group is true; a
+// waiter cancelled while it waits stops the group and returns true.
+
+const TEN_SECONDS: u64 = 10000000000
+const ONE_SECOND: u64 = 1000000000
+
+fn nap { mut threads: Threads, ns: u64 } -> ! {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+}
+
+fn fails_after { mut threads: Threads, ns: u64 } -> ! {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+    return task::out_of_resources
+}
+
+// Starts a long nap in a group and waits for the group with a long deadline: whether
+// wait_all_for, once the waiter is cancelled, gave true soon, and the nap ended cancelled.
+fn waiter { mut threads: Threads } -> !bool {
+    let mut g: task::Group
+    try task::start_concurrent_in{ &threads, group = &g, run = nap{ &threads, ns = 30000000000, _ } }
+    let began = os::now{ &threads }
+    let ended = task::wait_all_for{ &threads, group = &g, nanoseconds = 20000000000 }
+    let quick = os::now{ &threads } - began < TEN_SECONDS
+    let mut nap_cancelled = false
+    task::wait_all{ &threads, group = &g } iferr err{ error } {
+        match error {
+            task::cancelled => { nap_cancelled = true }
+            else => {}
+        }
+    }
+    return ended and quick and nap_cancelled
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let mut done: task::Group
+    io::println_bool{ &io, n = task::wait_all_for{ &threads, group = &done, nanoseconds = 0 } }
+    task::start_concurrent_in{ &threads, group = &done, run = nap{ &threads, ns = 10000000, _ } } iferr { return 1 }
+    task::start_concurrent_in{ &threads, group = &done, run = fails_after{ &threads, ns = 20000000, _ } } iferr { return 1 }
+    io::println_bool{ &io, n = task::wait_all_for{ &threads, group = &done, nanoseconds = 20000000000 } }
+    let began = os::now{ &threads }
+    task::wait_all{ &threads, group = &done } iferr { io::println{ &io, s = "done: failed" } }
+    io::println_bool{ &io, n = os::now{ &threads } - began < ONE_SECOND }
+
+    let mut busy: task::Group
+    task::start_concurrent_in{ &threads, group = &busy, run = nap{ &threads, ns = 30000000000, _ } } iferr { return 2 }
+    io::println_bool{ &io, n = task::wait_all_for{ &threads, group = &busy, nanoseconds = 0 } }
+    io::println_bool{ &io, n = task::wait_all_for{ &threads, group = &busy, nanoseconds = 20000000 } }
+    io::println_bool{ &io, n = task::wait_all_for{ &threads, group = &busy, nanoseconds = 0 } }
+    task::cancel_all{ &threads, group = &busy }
+    io::println_bool{ &io, n = task::wait_all_for{ &threads, group = &busy, nanoseconds = 0 } }
+
+    let mut w: task::Task(!bool)
+    task::start_concurrent{ &threads, task = &w, run = waiter{ &threads, _ } } iferr { return 3 }
+    thread::sleep{ &threads, nanoseconds = 50000000 }
+    match task::cancel{ &threads, task = &w } {
+        ok{ value } => { io::println_bool{ &io, n = value } }
+        err => { io::println{ &io, s = "waiter: failed" } }
+    }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| true
+//| true
+//| done: failed
+//| true
+//| false
+//| false
+//| false
+//| true
+//| true

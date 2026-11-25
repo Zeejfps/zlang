@@ -238,12 +238,23 @@ namespace task {
         let t = table{ state = &threads }
         mutex::lock{ mutex = &t.lock }
         defer mutex::unlock{ mutex = &t.lock }
-        await_group{ &threads, t, g = &group }
+        _ = await_group{ &threads, t, g = &group, nanoseconds = FOREVER }
         let failed = group.failed
         let r = group.error
         group.failed = false
         group.cancelling = false
         if failed { return r }
+    }
+
+    // As `wait_all` without its result: true once the group has no task (`wait_all` then returns
+    // at once), false when `nanoseconds` passed first, the group untouched. 0 looks without
+    // waiting. A waiter asked to stop stops the group and waits until it has none, then returns
+    // true, as `wait_all` does.
+    fn wait_all_for { mut threads: Threads, mut group: Group, nanoseconds: u64 } -> bool {
+        let t = table{ state = &threads }
+        mutex::lock{ mutex = &t.lock }
+        defer mutex::unlock{ mutex = &t.lock }
+        return await_group{ &threads, t, g = &group, nanoseconds }
     }
 
     // Asks every task of the group to stop, then waits until it has none. The group is empty
@@ -254,7 +265,7 @@ namespace task {
         mutex::lock{ mutex = &t.lock }
         defer mutex::unlock{ mutex = &t.lock }
         stop_group{ &threads, t, g = &group }
-        await_group{ &threads, t, g = &group }
+        _ = await_group{ &threads, t, g = &group, nanoseconds = FOREVER }
         group.failed = false
         group.cancelling = false
     }
@@ -778,17 +789,38 @@ namespace task {
         return true
     }
 
-    // Waits under the table's mutex until group g has no task. A task of the group panics: it
-    // would wait for itself. A waiting task asked to stop stops the group, then waits.
-    fn await_group { mut threads: Threads, t: *mut Table, g: *mut Group } {
+    // Waits under the table's mutex until group g has no task, at most `nanoseconds`: whether it
+    // has none. A task of the group panics: it would wait for itself. A waiting task asked to stop
+    // stops the group, then waits until it has none.
+    fn await_group { mut threads: Threads, t: *mut Table, g: *mut Group, nanoseconds: u64 } -> bool {
         let mine = me{ &threads }
         if let m = mine { if m.group == g { rt::fail{ msg = "task: a task of a group waits for its own group" } } }
+        if g.tasks == 0 { return true }
+        if nanoseconds == 0 and not stopping{ &threads } { return false }
+        let mut left = nanoseconds
+        let mut began = os::now{ &threads }
         while g.tasks > 0 {
-            if stopping{ &threads } { stop_group{ &threads, t, g } }
+            if stopping{ &threads } {
+                stop_group{ &threads, t, g }
+                left = FOREVER
+            }
             if let m = mine { m.waiting = &t.groups }
-            condition::wait{ condition = &t.groups, mutex = &t.lock }
+            if left == FOREVER {
+                condition::wait{ condition = &t.groups, mutex = &t.lock }
+            } else {
+                _ = condition::wait_for{ &threads, condition = &t.groups, mutex = &t.lock, nanoseconds = left }
+                let now = os::now{ &threads }
+                let spent = now - began
+                began = now
+                left = if spent >= left { 0 } else { left - spent }
+                if left == 0 and g.tasks > 0 and not stopping{ &threads } {
+                    if let m = mine { m.waiting = null }
+                    return false
+                }
+            }
         }
         if let m = mine { m.waiting = null }
+        return true
     }
 
     // Whether the calling task has been asked to stop.
