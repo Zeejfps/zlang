@@ -90,7 +90,6 @@ namespace audio {
     // it, which ends its sleep at once. It holds the mixer's lock only while `mix::render` mixes
     // a block, never across SDL's calls or a sleep, and prints nothing (the game reads
     // `underruns`). `dev` is shared with the game, which reads `pumping` and `underruns`.
-    #task
     fn pumping { mut sdl: sdl::Sdl, mut threads: Threads, dev: *mut Device } -> ! {
         let m = dev.mixer ifnull { return }
         while true {

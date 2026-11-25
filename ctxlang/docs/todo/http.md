@@ -404,7 +404,6 @@ runs concurrently and what each connection costs.
 ### A small server
 
 ```
-#task
 fn connection { mut net: Net, mut threads: Threads, socket: net::Socket, site: *Site } -> ! {
     defer net::close{ &net, socket }
     let mut buffer: [16384]u8
@@ -461,7 +460,6 @@ accept loop, so it can stop accepting first and then give the connections a grac
 `task::wait_all_for`, a group's `wait_for` (net.md, Order of work, 1: a change to std/task.ctx):
 
 ```
-#task
 fn accept_into { mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site, mut connections: task::Group } -> ! {
     while true {
         let socket = try net::accept{ &net, listener }

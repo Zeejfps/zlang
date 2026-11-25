@@ -39,7 +39,7 @@ while running {
 }
 ```
 
-**The task** (`audio::pumping`, a `#task` fn started with `task::start_concurrent`) looks at the
+**The task** (`audio::pumping`, started with `task::start_concurrent`) looks at the
 queue every 4 ms and mixes what it lacks to stay
 `latency_ms` (60 ms) ahead of the speakers, a `mix::BLOCK` (1,024 frames, 23 ms) at a time, then
 sleeps. The device takes its buffer 1,024 frames at a time, so the queue swings between about

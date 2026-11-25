@@ -1,7 +1,6 @@
 // A task takes Io from its bind: its standard output is written out when it ends,
 // before its end is published.
 
-#task
 fn hello { mut io: Io, n: u32 } -> ! {
     io::println_u64{ &io, n = @as(u64, n) }
 }

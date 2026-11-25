@@ -1,7 +1,6 @@
 // A `for` may run no turn: it ends no path, and assigns nothing for sure. Narrowing, a
 // handle's scope and shadowing work in its body as in a `while`'s.
 
-#task
 fn work { n: i32 } -> i32 { return n * 2 }
 fn known { xs: []?i32 } -> i32 {
     let mut t = 0

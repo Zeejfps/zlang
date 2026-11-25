@@ -643,7 +643,6 @@ fn parse_files { mut mem: Mem, mut proc: Proc, mut threads: Threads, mut heap: a
 }
 
 // A chunk's files, one after another, in an arena of the chunk's own.
-#task
 fn parse_chunk { mut mem: Mem, chunk: *mut Chunk } -> ! {
     let pages = mem::reserve{ &mem, size = 16777216 + chunk.size * 256 } ifnull { return alloc::out_of_memory }
     chunk.heap = arena::new{ buf = pages }

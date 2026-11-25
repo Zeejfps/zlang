@@ -2,19 +2,16 @@
 // slot, sleeps its time without a stale cancel; a group's first error cancels the rest; a
 // task added to a cancelling group starts cancelled.
 
-#task
 fn nap { mut threads: Threads, ns: u64 } -> !u64 {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }
     return 7
 }
 
-#task
 fn same_thread { mut threads: Threads, id: u64 } -> !bool {
     return thread::current_id{ &threads } == id
 }
 
-#task
 fn fails_after { mut threads: Threads, ns: u64 } -> ! {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }
@@ -47,7 +44,6 @@ fn main { mut io: Io, mut threads: Threads } -> i32 {
     return 0
 }
 
-#task
 fn nap_group { mut threads: Threads } -> ! {
     thread::sleep{ &threads, nanoseconds = 30000000000 }
     try task::check_cancelled{ &threads }

@@ -1,4 +1,4 @@
-fn give { mut threads: Threads, mut t: task::Task(u64), run: &fn{} -> u64 into t } { task::start{ &threads, task = &t, run } }
+fn give { mut threads: Threads, mut t: task::Task(u64), run: &thread fn{} -> u64 into t } { task::start{ &threads, task = &t, run } }
 
 fn main {} {
     let f = give  //~ error at 13: `give` lends into a loan holder, and is only called: its calls are checked for what the loan holds

@@ -4,7 +4,6 @@
 // handle is a local of the starter's, and the task never outlives the handle's scope: leaving it
 // without waiting cancels the task and waits for it there.
 //
-//   #task
 //   fn load { mut fs: Fs, path: []u8, into: *mut Buffer } -> !usize { ... }
 //
 //   fn load_two { mut fs: Fs, mut threads: Threads, a: *mut Buffer, b: *mut Buffer } -> !usize {
@@ -68,8 +67,7 @@ namespace task {
     // Runs `run`, maybe concurrently with the caller, maybe at once. Returns no error: when the
     // backend can't run it concurrently (no worker, the limit, or the table can't grow), it runs
     // it here, and `task` holds its result when start returns. `task` must be zero.
-    #starts_task
-    fn start(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R into task } {
+    fn start(R) { mut threads: Threads, mut task: Task(R), run: &thread fn{} -> R into task } {
         if task.state != NONE { rt::fail{ msg = "task::start into a handle that holds a task" } }
         if os::CONCURRENT {
             let t = table{ state = &threads }
@@ -98,8 +96,7 @@ namespace task {
     }
 
     // Runs `run` concurrently with the caller, or fails, and `task` stays zero.
-    #starts_task
-    fn start_concurrent(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R into task } -> ! {
+    fn start_concurrent(R) { mut threads: Threads, mut task: Task(R), run: &thread fn{} -> R into task } -> ! {
         if task.state != NONE { rt::fail{ msg = "task::start_concurrent into a handle that holds a task" } }
         if not os::CONCURRENT { os::concurrency_unsupported{ what = "task::start_concurrent and task::start_blocking" } }
         let t = table{ state = &threads }
@@ -124,8 +121,7 @@ namespace task {
     // Runs `run` on an operating-system thread of its own, in every backend: for work that
     // blocks outside std (a C call that waits, a lock held across IO) or computes for long. In
     // Threaded it is start_concurrent.
-    #starts_task
-    fn start_blocking(R) { mut threads: Threads, mut task: Task(R), run: &fn{} -> R into task } -> ! {
+    fn start_blocking(R) { mut threads: Threads, mut task: Task(R), run: &thread fn{} -> R into task } -> ! {
         return start_concurrent(R){ &threads, &task, run }
     }
 
@@ -184,8 +180,7 @@ namespace task {
     // As start, start_concurrent and start_blocking, the task belonging to `group`. A group's
     // task returns `!`: the first of its tasks to fail cancels the others, and `wait_all`
     // returns that error. A group being cancelled starts its new tasks cancelled.
-    #starts_task
-    fn start_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! into group } {
+    fn start_in { mut threads: Threads, mut group: Group, run: &thread fn{} -> ! into group } {
         if os::CONCURRENT {
             let t = table{ state = &threads }
             mutex::lock{ mutex = &t.lock }
@@ -215,8 +210,7 @@ namespace task {
         }
     }
 
-    #starts_task
-    fn start_concurrent_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! into group } -> ! {
+    fn start_concurrent_in { mut threads: Threads, mut group: Group, run: &thread fn{} -> ! into group } -> ! {
         if not os::CONCURRENT { os::concurrency_unsupported{ what = "task::start_concurrent_in and task::start_blocking_in" } }
         let t = table{ state = &threads }
         mutex::lock{ mutex = &t.lock }
@@ -234,8 +228,7 @@ namespace task {
         }
     }
 
-    #starts_task
-    fn start_blocking_in { mut threads: Threads, mut group: Group, run: &fn{} -> ! into group } -> ! {
+    fn start_blocking_in { mut threads: Threads, mut group: Group, run: &thread fn{} -> ! into group } -> ! {
         return start_concurrent_in{ &threads, &group, run }
     }
 

@@ -1,6 +1,5 @@
 
 // The clock: a task that ends after `ns`.
-#task
 fn nap { mut threads: Threads, ns: u64 } -> !u64 {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }

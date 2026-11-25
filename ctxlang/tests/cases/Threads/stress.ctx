@@ -3,7 +3,6 @@
 
 struct Shared { atomic: u64, lock: mutex::Mutex, locked: u64 }
 
-#task
 fn add { data: *mut Shared } -> ! {
     let mut i: u32 = 0
     while i < 1000000 {

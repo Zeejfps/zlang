@@ -1,7 +1,6 @@
 
 struct Job { input: u64, output: u64 }
 
-#task
 fn square { data: *mut Job } -> ! {
     data.output = data.input * data.input
 }

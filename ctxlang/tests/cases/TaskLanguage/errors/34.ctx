@@ -1,0 +1,15 @@
+#loan_holder
+struct Later { n: u32 }
+
+#scope_end
+fn drop { mut later: Later ends } {}
+
+fn keep { mut later: Later, run: &fn{} -> u64 into later } {}
+
+fn one { n: u64 } -> u64 { return n }
+
+fn main {} {
+    let f: &fn{} -> u64 = one{ n = 1, _ }
+    let mut later: Later
+    keep{ &later, run = f }  //~ error at 25: a lent function value is a bind written here, supplying every field, so that what it borrows is seen: `run = f{ ..., _ }`
+}

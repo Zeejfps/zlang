@@ -12,7 +12,6 @@ namespace gff {
     fn result { g: Gff } -> u32
     fn missing {} -> u8
     fn header { g: Gff } -> Header
-    #task
     fn spin {}
     #test
     fn checks {}

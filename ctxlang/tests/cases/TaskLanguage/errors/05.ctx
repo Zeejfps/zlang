@@ -1,11 +1,8 @@
 
-#task
 fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
 
-#task
 fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
 
-#task
 fn sq { n: u64 } -> !u64 { return n * n }
 
-fn main { mut threads: Threads } { let g = task::start(!u64) }  //~ error at 44: `task::start` starts a task, and is only called: its calls are checked for what the task borrows
+fn main { mut threads: Threads } { let g = task::start(!u64) }  //~ error at 44: `task::start` lends into a loan holder, and is only called: its calls are checked for what the loan holds

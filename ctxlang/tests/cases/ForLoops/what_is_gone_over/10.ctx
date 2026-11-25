@@ -1,4 +1,3 @@
-#task
 fn work {} -> i32 { return 1 }
 fn main { mut threads: Threads } {
     let mut ts: [2]task::Task(i32)

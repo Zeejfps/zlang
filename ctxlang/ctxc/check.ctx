@@ -83,8 +83,6 @@ namespace check {
         callback: bool = false,         // a fn with `#c_callback` or `#c_export`: C may call it (§18)
         export:   []u8 = "",            // and with `#c_export{ name }`: its public C symbol
         any_thread: bool = false,       // and `any_thread = true`: from any thread, holding no capability
-        task:     bool = false,         // a fn with `#task`: a task's entry (§15, Tasks)
-        starts_task: bool = false,      // a fn with a valid `#starts_task`: std's task::start and its kin
         thread_bound: bool = false,     // a capability with `#thread_bound`, not those that include one
         task_handle: bool = false,      // a struct with `#loan_holder`: std's task::Task(R) and Group
         tasky:    bool = false,         // a fn whose body starts tasks or passes handles (task_borrows)
@@ -134,9 +132,9 @@ namespace check {
 
     // The attributes the compiler declares, in the universe: `#convert` (§18, Literal
     // conversions), `#write` (§13, Formatting), `#start` and `#panic` (§15, Entry point),
-    // `#stack_limit` and `#thread_local` on a static (§15, rule 13), `#pure` on an extern fn (§18, Extern functions, rule 8), and tasks' (§15, Tasks): `#task`
-    // on a fn, `#thread_bound` on a capability, and std's `#starts_task`, `#loan_holder` and `#scope_end`.
-    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, pure, task, thread_bound, starts_task, loan_holder, scope_end, test, test_main, c_symbol, c_callback, c_export }
+    // `#stack_limit` and `#thread_local` on a static (§15, rule 13), `#pure` on an extern fn (§18, Extern functions, rule 8), and tasks' (§15, Tasks):
+    // `#thread_bound` on a capability, and std's `#loan_holder` and `#scope_end`.
+    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, pure, thread_bound, loan_holder, scope_end, test, test_main, c_symbol, c_callback, c_export }
 
     struct Space {
         name:   []u8,
@@ -368,7 +366,7 @@ namespace check {
         ptr_faults: bool = false,                     // whether some error's payload holds a pointer
         thread_locals: list::List(CVar, Heap),        // the `#thread_local` statics, by owner and name
         unmarked: list::List(syntax::Name, Heap),     // extern fns with neither a capability nor `#pure`
-        starting:  bool = false,                      // whether the call being checked is to a `#starts_task` fn (§15, Tasks)
+        starting:  bool = false,                      // whether the call being checked lends into a loan holder (§15, Tasks)
         cap_shared: bool = false,                     // a start's exclusivity check: capabilities are shared
         in_attr:   bool = false,                      // checking an attribute's literal (§18, Attributes)
         // Tasks over time (§15, Tasks; task_borrows): the fns to walk, the loans the walk finds,
@@ -742,9 +740,7 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "stack_limit", e = Entry::attr{ a = Attribute::stack_limit } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "thread_local", e = Entry::attr{ a = Attribute::thread_local } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "pure", e = Entry::attr{ a = Attribute::pure } }
-        put_name{ &c, ns = UNIVERSE, values = false, name = "task", e = Entry::attr{ a = Attribute::task } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "thread_bound", e = Entry::attr{ a = Attribute::thread_bound } }
-        put_name{ &c, ns = UNIVERSE, values = false, name = "starts_task", e = Entry::attr{ a = Attribute::starts_task } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "loan_holder", e = Entry::attr{ a = Attribute::loan_holder } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "scope_end", e = Entry::attr{ a = Attribute::scope_end } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "test", e = Entry::attr{ a = Attribute::test } }
@@ -2057,9 +2053,7 @@ namespace check {
             let mut seen_start = false
             let mut seen_panic = false
             let mut seen_pure = false
-            let mut seen_task = false
             let mut seen_bound = false
-            let mut seen_starts = false
             let mut seen_handle = false
             let mut seen_scope = false
             let mut seen_test = false
@@ -2097,17 +2091,9 @@ namespace check {
                             pure_attr{ &c, x, file, a, seen = seen_pure }
                             seen_pure = true
                         }
-                        task => {
-                            task_attr{ &c, x, file, a, seen = seen_task }
-                            seen_task = true
-                        }
                         thread_bound => {
                             bound_attr{ &c, x, file, a, seen = seen_bound }
                             seen_bound = true
-                        }
-                        starts_task => {
-                            starts_attr{ &c, x, file, a, seen = seen_starts }
-                            seen_starts = true
                         }
                         loan_holder => {
                             handle_attr{ &c, x, file, a, seen = seen_handle }
@@ -2142,7 +2128,7 @@ namespace check {
 
     // A compiler attribute's name, for messages.
     fn attr_name { a: Attribute } -> []u8 {
-        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } pure => { "pure" } task => { "task" } thread_bound => { "thread_bound" } starts_task => { "starts_task" } test => { "test" } test_main => { "test_main" } c_symbol => { "c_symbol" } c_callback => { "c_callback" } c_export => { "c_export" } loan_holder => { "loan_holder" } scope_end => { "scope_end" } }
+        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } pure => { "pure" } thread_bound => { "thread_bound" } test => { "test" } test_main => { "test_main" } c_symbol => { "c_symbol" } c_callback => { "c_callback" } c_export => { "c_export" } loan_holder => { "loan_holder" } scope_end => { "scope_end" } }
     }
 
     // The attribute the compiler declares that a names, if it is one: `#convert` or `#write`
@@ -2153,7 +2139,7 @@ namespace check {
         if segs.len != 1 or segs[0].targs != null { return null }
         let from = module_at{ c, at = a.span }
         let mut found = lookup_path{ c, ns, name = segs[0].name.text, from }
-        // A namespace is never an attribute: `#task` beside std's namespace `task`.
+        // A namespace is never an attribute: `#test` beside std's namespace `test`.
         if found is space { found = lookup_path{ c, ns = UNIVERSE, name = segs[0].name.text, from } }
         let attr{ a = which } = found else { return null }
         return which
@@ -2400,25 +2386,6 @@ namespace check {
 
     // ---- tasks (§15, Tasks)
 
-    // `#task` on x: a fn with a body, which task::start and its kin can run (task_decls checks
-    // its context once every capability's `#thread_bound` is known).
-    fn task_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
-        let func{ external } = x.k else {
-            error{ &c, at = a.span, msg = "`task` applies only to a fn" }
-            return
-        }
-        if external {
-            error{ &c, at = a.span, msg = "`task` applies only to a fn with a body, not an extern fn" }
-            return
-        }
-        if seen {
-            error{ &c, at = a.span, msg = "duplicate `task` attribute" }
-            return
-        }
-        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
-        list::at{ list = c.decls, i = d }.task = true
-    }
-
     // `#thread_bound` on x: a capability whose library may be used only on the thread that made
     // it, or only on the main thread. One that includes it is thread-bound too (thread_bound).
     fn bound_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
@@ -2432,25 +2399,6 @@ namespace check {
         }
         let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         list::at{ list = c.decls, i = d }.thread_bound = true
-    }
-
-    // `#starts_task` on x: a fn with a body that starts a task (std's task::start and its kin),
-    // whose context task_decls checks once every `#loan_holder` is known.
-    fn starts_attr { mut c: Checker, x: syntax::Decl, file: u32, a: syntax::Attr, seen: bool } {
-        let func{ external } = x.k else {
-            error{ &c, at = a.span, msg = "`starts_task` applies only to a fn" }
-            return
-        }
-        if external {
-            error{ &c, at = a.span, msg = "`starts_task` applies only to a fn with a body, not an extern fn" }
-            return
-        }
-        if seen {
-            error{ &c, at = a.span, msg = "duplicate `starts_task` attribute" }
-            return
-        }
-        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
-        list::at{ list = c.decls, i = d }.starts_task = true
     }
 
     // `#scope_end` on x: a fn that ends a loan holder, which the end of the holder's scope calls
@@ -2587,8 +2535,8 @@ namespace check {
 
     // A start's `run` (§15, Tasks): a bind written in the call, of a task fn, supplying every
     // field, as its type `&fn{} -> R` makes it. So the compiler sees what the task receives.
-    fn task_run { mut c: Checker, e: syntax::Expr, task: bool } {
-        let msg: utf8::String = "`run` is a bind of a `task` fn written here, supplying every field: `run = f{ ..., _ }`"
+    fn task_run { mut c: Checker, e: syntax::Expr } {
+        let msg: utf8::String = "a lent function value is a bind written here, supplying every field, so that what it borrows is seen: `run = f{ ..., _ }`"
         // A fn passes on the task it lends itself, which its caller wrote: a start's own `run`, or
         // what a fn writes `into` a loan holder.
         if c.fn_decl != NONE and e.k is path{ segs } and segs.len == 1 and lent_field{ c, d = c.fn_decl, name = segs[0].name.text } {
@@ -2611,20 +2559,6 @@ namespace check {
             return
         }
         // A lent function value's thread-bound capabilities are its type's to refuse (thread_bind).
-        if not task { return }
-        let x = get_decl{ c, d = decl }
-        if not x.task {
-            errorf{ &c, at = expr_at{ e = callee.* }, msg = @fmt("`{}` is not a `task` fn: only a `#task` fn is a task's entry", str{ s = x.qual }) }
-            return
-        }
-        let mut i: usize = 0
-        while i < targs.len {
-            let b = bound_cap{ c, t = targs[i] }
-            if b != NONE {
-                errorf{ &c, at = expr_at{ e = callee.* }, msg = @fmt("this `{}` takes `{}`, a thread-bound capability: a task may run on another thread", str{ s = x.qual }, str{ s = get_decl{ c, d = b }.qual }) }
-            }
-            i = i + 1
-        }
     }
 
     // Whether exp is a `&thread fn`, or a `?` of one.
@@ -2642,7 +2576,12 @@ namespace check {
         for f in fields {
             let b = bound_cap{ c, t = f.ty }
             if b != NONE {
-                errorf{ &c, at = expr_at{ e }, msg = @fmt("this bind may run on another thread, a `&thread fn`, and its `{}` is `{}`, a thread-bound capability", str{ s = f.name }, str{ s = get_decl{ c, d = b }.qual }) }
+                let cap = get_decl{ c, d = b }.qual
+                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = f.ty } } is cap {
+                    errorf{ &c, at = expr_at{ e }, msg = @fmt("this bind may run on another thread, a `&thread fn`, and its `{}` is `{}`, a thread-bound capability", str{ s = f.name }, str{ s = cap }) }
+                } else {
+                    errorf{ &c, at = expr_at{ e }, msg = @fmt("this bind may run on another thread, a `&thread fn`, and its `{}`, {}, reaches `{}`, a thread-bound capability", str{ s = f.name }, a_type{ c, t = f.ty }, str{ s = cap }) }
+                }
                 return
             }
         }
@@ -2699,9 +2638,8 @@ namespace check {
         }
     }
 
-    // Once every attribute is known: a task fn's context takes no thread-bound capability, a
-    // starts_task fn's has `run: &fn{} -> R` and a handle, `mut task` or `mut group`, and no
-    // declaration holds a handle but where a local or a `mut` field may.
+    // Once every attribute is known: the loan contracts and scope ends, and no declaration holds
+    // a handle but where a local or a `mut` field may.
     fn task_decls { mut c: Checker } {
         holder_contracts{ &c }
         let mut d: usize = 0
@@ -2730,17 +2668,6 @@ namespace check {
                 }
                 else => {}
             } }
-            if x.task {
-                let mut i: usize = 0
-                while i < x.fields.len {
-                    let b = bound_cap{ c, t = x.fields[i].ty }
-                    if b != NONE {
-                        errorf{ &c, at = x.name.span, msg = @fmt("task fn `{}` takes `{}`, a thread-bound capability (`{}`): a task may run on another thread", str{ s = x.qual }, str{ s = x.fields[i].name }, str{ s = get_decl{ c, d = b }.qual }) }
-                    }
-                    i = i + 1
-                }
-            }
-            if x.starts_task { starts_fields{ &c, d = @as(u32, d), x } }
             d = d + 1
         }
         scope_ends{ &c }
@@ -2835,11 +2762,9 @@ namespace check {
         return list::items{ list = out }
     }
 
-    // Whether fn d's field `name` is one it lends: a start's `run`, or one it writes `into` a loan
-    // holder.
+    // Whether fn d's field `name` is one it writes `into` a loan holder: it lends it.
     fn lent_field { c: Checker, d: u32, name: []u8 } -> bool {
         let x = get_decl{ c, d }
-        if x.starts_task and slice::eq_bytes{ a = name, b = "run" } { return true }
         let ls = map::get{ m = c.lends, key = d } ifnull { return false }
         for l in ls { if slice::eq_bytes{ a = x.fields[l.arg].name, b = name } { return true } }
         return false
@@ -2901,32 +2826,6 @@ namespace check {
                 errorf{ &c, at = x.name.span, msg = @fmt("loan holder `{}` has no `scope_end` fn, which ends what it still holds where its scope ends: mark one with `#scope_end`", str{ s = x.qual }) }
             }
             d = d + 1
-        }
-    }
-
-    fn starts_fields { mut c: Checker, d: u32, x: Decl } {
-        let mut ok = false
-        if let run = types::find_field{ fields = x.fields, name = "run" } {
-            let t = types::prune{ s = c.ty, t = run.ty }
-            if t == types::ERROR { return }
-            ok = not run.mutable and types::get{ s = c.ty, id = t } is func{ fields, bound, external } and bound and not external and fields.len == 0
-        }
-        let task = types::find_field{ fields = x.fields, name = "task" }
-        let group = types::find_field{ fields = x.fields, name = "group" }
-        if (task == null) == (group == null) { ok = false }
-        if let h = if task != null { task } else { group } {
-            if not h.mutable or not handle_type{ c, t = h.ty } { ok = false }
-            // `run: &fn{} -> R into task`: the start lends its task into the handle.
-            let ri = types::field_index{ fields = x.fields, name = "run" }
-            let hi = types::field_index{ fields = x.fields, name = h.name }
-            let mut lent = false
-            if let ls = map::get{ m = c.lends, key = d } {
-                for l in ls { if ri != null and hi != null and @as(usize, l.arg) == ri and @as(usize, l.holder) == hi { lent = true } }
-            }
-            if not lent { ok = false }
-        }
-        if not ok {
-            errorf{ &c, at = x.name.span, msg = @fmt("`starts_task` fn `{}` takes `run: &fn{{}} -> R`, the task, and a handle it lends it into: `run: &fn{{}} -> R into task` and `mut task`, or `into group` and `mut group`, of a `loan_holder` type", str{ s = x.qual }) }
         }
     }
 
@@ -4378,12 +4277,11 @@ namespace check {
         return false
     }
 
-    // The attributes of api.ctx declaration a. A half's are `#task`, `#write` and `#convert`
+    // The attributes of api.ctx declaration a. A half's are `#write` and `#convert`
     // alone, which change how callers use a fn, and its definition has the same (D5); the
     // definition has the rest. No `#test` fn is in an api.ctx (rule 6).
     fn api_attributes { mut c: Checker, a: u32 } {
         let x = get_decl{ c, d = a }
-        let mut task = false
         let mut write = false
         let mut convert = false
         for attr in x.syn.attrs {
@@ -4399,19 +4297,16 @@ namespace check {
                 continue
             }
             if not x.half { continue }
-            if known and w == Attribute::task {
-                task = true
-            } else if known and w == Attribute::write {
+            if known and w == Attribute::write {
                 write = true
             } else if known and w == Attribute::convert {
                 convert = true
             } else {
-                errorf{ &c, at = attr.span, msg = @fmt("only `#task`, `#write` and `#convert` go on `{}` in api.ctx, where they tell callers how it is used: its definition has the rest", str{ s = x.name.text }) }
+                errorf{ &c, at = attr.span, msg = @fmt("only `#write` and `#convert` go on `{}` in api.ctx, where they tell callers how it is used: its definition has the rest", str{ s = x.name.text }) }
             }
         }
         if not x.half or not (x.syn.k is func) { return }
         let y = get_decl{ c, d = x.api }
-        attribute_differs{ &c, a, there = task, here = y.task, name = "task" }
         attribute_differs{ &c, a, there = write, here = map_has{ xs = list::items{ list = c.writers }, n = x.api }, name = "write" }
         attribute_differs{ &c, a, there = convert, here = map_has{ xs = list::items{ list = c.converts }, n = x.api }, name = "convert" }
     }
@@ -12031,13 +11926,13 @@ namespace check {
             let mut k: usize = 0
             while k < l.holds.len {
                 if overlap{ p = l.holds[k], q = p.place } {
-                    errorf{ &c, at, msg = @fmt("`{}` is held by the task started at {} until it is waited for or cancelled", place_str{ c, p = p.place }, tw_at{ c, at = l.at }) }
+                    errorf{ &c, at, msg = @fmt("`{}` is lent into `{}` at {}, and held until `{}` is ended", place_str{ c, p = p.place }, place_str{ c, p = l.handle }, tw_at{ c, at = l.at }, place_str{ c, p = l.handle }) }
                     return
                 }
                 k = k + 1
             }
             if w and has_id{ xs = l.reads, n = p.place.root } {
-                errorf{ &c, at, msg = @fmt("`{}` is read by the task started at {}: it can't be written until the task is waited for or cancelled", str{ s = get_var{ c, v = p.place.root }.name }, tw_at{ c, at = l.at }) }
+                errorf{ &c, at, msg = @fmt("`{}` is read by what was lent into `{}` at {}: it can't be written until `{}` is ended", str{ s = get_var{ c, v = p.place.root }.name }, place_str{ c, p = l.handle }, tw_at{ c, at = l.at }, place_str{ c, p = l.handle }) }
                 return
             }
             i = i + 1
@@ -12218,11 +12113,11 @@ namespace check {
             let v = get_var{ c, v = r }
             if hv.kind == VarKind::ctx {
                 if not (v.kind == VarKind::ctx and v.indirect) {
-                    errorf{ &c, at = l.at, msg = @fmt("`{}` is the caller's handle, and its task borrows `{}`, which ends when this fn returns", str{ s = hv.name }, str{ s = v.name }) }
+                    errorf{ &c, at = l.at, msg = @fmt("`{}` is the caller's loan holder, and what is lent into it borrows `{}`, which ends when this fn returns", str{ s = hv.name }, str{ s = v.name }) }
                     return
                 }
             } else if v.kind != VarKind::ctx and v.depth > hv.depth {
-                errorf{ &c, at = l.at, msg = @fmt("`{}` is declared outside the scope of `{}`, which its task borrows: declare the handle where `{}` is, or inside", str{ s = hv.name }, str{ s = v.name }, str{ s = v.name }) }
+                errorf{ &c, at = l.at, msg = @fmt("`{}` is declared outside the scope of `{}`, which what is lent into it borrows: declare `{}` where `{}` is, or inside", str{ s = hv.name }, str{ s = v.name }, str{ s = hv.name }, str{ s = v.name }) }
                 return
             }
             i = i + 1
@@ -12921,8 +12816,15 @@ namespace check {
     fn mismatch { mut c: Checker, a: Id, e: Id, mut b: utf8::Builder(Heap) } -> ! {
         let x = types::prune{ s = c.ty, t = a }
         let y = types::prune{ s = c.ty, t = e }
-        if types::get{ s = c.ty, id = x } is func{ fields = af, bound = ab, external = ae } {
-            if types::get{ s = c.ty, id = y } is func{ fields = ef, bound = eb, external = ee } {
+        if types::get{ s = c.ty, id = x } is func{ fields = af, bound = ab, external = ae, thread = at } {
+            if types::get{ s = c.ty, id = y } is func{ fields = ef, bound = eb, external = ee, thread = et } {
+                if et and ab and not at {
+                    try @fmt(&b, "expected ")
+                    try write_type{ c, t = y, &b }
+                    try @fmt(&b, ", got ")
+                    try write_type{ c, t = x, &b }
+                    return @fmt(&b, ": only a bind written where a `&thread fn` is expected becomes one, since what a `&fn` value holds can't be seen here")
+                }
                 if ee and not ae {
                     try @fmt(&b, "a ctxlang function can't be passed as a C function pointer (")
                     try write_type{ c, t = y, &b }
@@ -13668,9 +13570,7 @@ namespace check {
                 return get_var{ c, v = var }.ty
             }
             func{ decl, targs } => {
-                if get_decl{ c, d = decl }.starts_task {
-                    errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` starts a task, and is only called: its calls are checked for what the task borrows", path_text{ c, segs }) }
-                } else if map::has{ m = c.lends, key = decl } {
+                if map::has{ m = c.lends, key = decl } {
                     errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` lends into a loan holder, and is only called: its calls are checked for what the loan holds", path_text{ c, segs }) }
                 }
                 let ct = c_fn_value{ &c, d = decl, exp, at = expr_at{ e } }
@@ -13778,8 +13678,8 @@ namespace check {
             if types::get{ s = c.ty, id = want } is opt{ elem } { want = types::prune{ s = c.ty, t = elem } }
             if types::get{ s = c.ty, id = want } is func{ keeps = ks } { keeps = ks }
         }
-        // One that starts a task is only called, which is reported (path_expr).
-        if c.recording and not x.starts_task { try! list::push{ list = &c.fn_values, item = FnValue{ key, d, at, bound = slice::empty([]u8){}, callee = types::NO_TYPE, typed = typed or x.contract } } }
+        // One that lends into a loan holder is only called, which is reported (path_expr).
+        if c.recording and not map::has{ m = c.lends, key = d } { try! list::push{ list = &c.fn_values, item = FnValue{ key, d, at, bound = slice::empty([]u8){}, callee = types::NO_TYPE, typed = typed or x.contract } } }
         return fn_type_keeping{ &c, d, targs, keeps }
     }
 
@@ -14029,10 +13929,8 @@ namespace check {
                     }
                     func{ decl, targs } => {
                         ct = fn_type{ &c, d = decl, targs }
-                        starting = get_decl{ c, d = decl }.starts_task
-                        if starting and bind {
-                            errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` starts a task, and is only called, not bound", name) }
-                        } else if bind and map::has{ m = c.lends, key = decl } {
+                        starting = map::has{ m = c.lends, key = decl }
+                        if bind and starting {
                             errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` lends into a loan holder, and is only called, not bound", name) }
                         }
                         if not starting and not (c.fn_decl != NONE and handles_own{ c, ns = get_decl{ c, d = c.fn_decl }.ns }) { no_handle_targs{ &c, targs, at = expr_at{ e = callee } } }
@@ -14292,8 +14190,9 @@ namespace check {
                     }
                 } else if call_decl != NONE and lent_fn{ c, d = call_decl, name = f.name } {
                     mark_tasky{ &c }
+                    let had = c.diags.errors
                     expect{ &c, e = it.value, t = f.ty }
-                    task_run{ &c, e = it.value, task = starting }
+                    if c.diags.errors == had { task_run{ &c, e = it.value } }
                 } else {
                     expect{ &c, e = it.value, t = f.ty }
                 }
@@ -14348,7 +14247,7 @@ namespace check {
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
         }
         // A call that lends a function value shares capabilities with it, as a start does.
-        c.cap_shared = starting or (call_decl != NONE and lent_fns{ c, d = call_decl }.len > 0)
+        c.cap_shared = starting
         let refs = check_exclusive{ &c, e, items, fields, callee = call_decl, name }
         c.cap_shared = false
         if not bind and not starting { if e.k is braced{ callee } { late{ &c, x = Late::keeps{ e, callee = callee.*, items, fields, name } } } }

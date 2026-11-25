@@ -9,7 +9,6 @@ fn writes_and_reads { mut t: Test, mut fs: Fs, mut mem: Mem } -> ! {
     let got: []u8 = back
     @expect(&t, got == "hello")
 }
-#task
 fn work { mut t: Test, n: i32 } -> i32 {
     @expect(&t, n < 3)
     return n * 2

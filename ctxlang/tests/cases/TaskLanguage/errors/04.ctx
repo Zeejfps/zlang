@@ -1,15 +1,7 @@
-
-#task
-fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
-
-#task
-fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
-
-#task
-fn sq { n: u64 } -> !u64 { return n * n }
-
-fn plain { n: u64 } -> !u64 { return n }
-fn main { mut threads: Threads } {
-    let mut t: task::Task(!u64)
-    task::start{ &threads, task = &t, run = plain{ n = 1, _ } }  //~ error at 45: `plain` is not a `task` fn: only a `#task` fn is a task's entry
+#thread_bound
+capability Video
+capability Win { ..Video }
+fn draw { mut w: Win } -> ! {}
+fn main {} {
+    let f: &thread fn{ mut w: Win } -> ! = draw{ _ }  //~ error at 48: this bind may run on another thread, a `&thread fn`, and its `w` is `Win`, a thread-bound capability
 }

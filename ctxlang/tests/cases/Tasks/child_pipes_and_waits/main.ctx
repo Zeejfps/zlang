@@ -1,17 +1,14 @@
 
-#task
 fn nap { mut threads: Threads, ns: u64 } -> !u64 {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }
     return 7
 }
 
-#task
 fn same_thread { mut threads: Threads, id: u64 } -> !bool {
     return thread::current_id{ &threads } == id
 }
 
-#task
 fn fails_after { mut threads: Threads, ns: u64 } -> ! {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }
@@ -30,7 +27,6 @@ fn show(T) { mut io: Io, r: !T, what: []u8 } {
     }
 }
 
-#task
 fn drain { mut proc: Proc, pipe: proc::Pipe } -> !usize {
     let mut buf: [4096]u8
     let mut total: usize = 0
@@ -42,7 +38,6 @@ fn drain { mut proc: Proc, pipe: proc::Pipe } -> !usize {
     return total
 }
 
-#task
 fn wait_child { mut proc: Proc, mut child: proc::Child } -> !i32 {
     return proc::wait{ &proc, &child }
 }

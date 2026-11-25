@@ -31,8 +31,8 @@ What it needs, and how each is solved:
   `ctx_thread` is audited for which kind it is, per fiber or per thread, before Evented is built.
 - **Standard output.** Each fiber writes to a buffer of its own, which `io`'s `out` points to while it
   runs, so a flush that suspends isn't overwritten by another fiber.
-- **Stacks, from `#task`.** Every task's entry is a task fn the compiler knows, so it computes each
-  one's **stack bound**: the deepest its frames can go, over the call graph below it. A task fn whose
+- **Stacks, from each start's bind.** Every task's entry is the fn its start's bind names, which
+  the compiler knows, so it computes each one's **stack bound**: the deepest its frames can go, over the call graph below it. A task fn whose
   calls are all direct and not recursive has one; one that recurses or calls through a function
   value doesn't. A fiber for a task fn with a bound gets that bound and the headroom the stack check
   lands in; one without gets the default (256 KiB, `set_stack`). C frames aren't counted: a C call

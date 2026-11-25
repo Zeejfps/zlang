@@ -2,6 +2,6 @@
 //# $ ctxc test .
 //# exit: 1
 //# stdout:
-//| ./t.ctx:14: fail: tasks_check: n < 3: 5 < 3
-//|   started from tasks_check (./t.ctx:22:16)
+//| ./t.ctx:13: fail: tasks_check: n < 3: 5 < 3
+//|   started from tasks_check (./t.ctx:21:16)
 //| tests: 2 run, 1 passed, 1 failed, 0 skipped, 0 not selected, 5 checks

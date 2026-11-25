@@ -6,7 +6,7 @@
 //# program: main.ctx lib/gff/api.ctx lib/gff/read.ctx
 //# errors:
 //| lib/gff/api.ctx:13:8: error: fn `gff::missing` is declared in api.ctx, but no file of module `lib/gff` defines it
-//| lib/gff/api.ctx:21:8: error: `count` is already declared in this api.ctx
+//| lib/gff/api.ctx:20:8: error: `count` is already declared in this api.ctx
 //|   lib/gff/api.ctx:9:8: note: the earlier `count` is declared here
 //| lib/gff/read.ctx:4:12: error: `gff::Pair` doesn't match its declaration in api.ctx: it has 1 generic parameter there and 0 here
 //|   lib/gff/api.ctx:3:10: note: `gff::Pair` is declared in api.ctx here
@@ -21,7 +21,5 @@
 //| lib/gff/read.ctx:14:8: error: `gff::result` doesn't match its declaration in api.ctx: its result is u32 there and usize here
 //|   lib/gff/api.ctx:12:8: note: `gff::result` is declared in api.ctx here
 //| lib/gff/api.ctx:14:29: error: `gff::header` names `gff::Header`, which module `lib/gff` hides: an api.ctx declares what its declarations name, in full or as an opaque `type`
-//| lib/gff/read.ctx:16:8: error: `gff::spin` doesn't match its declaration in api.ctx: it is `#task` there and not here
-//|   lib/gff/api.ctx:16:8: note: `gff::spin` is declared in api.ctx here
-//| lib/gff/api.ctx:17:5: error: a `#test` fn isn't declared in an api.ctx: it is a fn of the module's files, or of a file outside it, which tests what the api.ctx declares
-//| lib/gff/api.ctx:19:5: error: only `#task`, `#write` and `#convert` go on `quiet` in api.ctx, where they tell callers how it is used: its definition has the rest
+//| lib/gff/api.ctx:16:5: error: a `#test` fn isn't declared in an api.ctx: it is a fn of the module's files, or of a file outside it, which tests what the api.ctx declares
+//| lib/gff/api.ctx:18:5: error: only `#write` and `#convert` go on `quiet` in api.ctx, where they tell callers how it is used: its definition has the rest

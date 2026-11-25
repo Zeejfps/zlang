@@ -1,17 +1,14 @@
 
-#task
 fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
 
-#task
 fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
 
-#task
 fn sq { n: u64 } -> !u64 { return n * n }
 
 fn main { mut threads: Threads } {
     let mut t: task::Task(!)
     if true {
         let mut buf: [8]u8
-        task::start{ &threads, task = &t, run = fill{ &buf, n = 1, _ } }  //~ error at 20: `t` is declared outside the scope of `buf`, which its task borrows: declare the handle where `buf` is, or inside
+        task::start{ &threads, task = &t, run = fill{ &buf, n = 1, _ } }  //~ error at 20: `t` is declared outside the scope of `buf`, which what is lent into it borrows: declare `t` where `buf` is, or inside
     }
 }

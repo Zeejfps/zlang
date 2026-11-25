@@ -1,11 +1,8 @@
 
-#task
 fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
 
-#task
 fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
 
-#task
 fn sq { n: u64 } -> !u64 { return n * n }
 
 fn main { mut threads: Threads, c: bool } {
@@ -17,5 +14,5 @@ fn main { mut threads: Threads, c: bool } {
 }
 
 //# errors:
-//| 16.ctx:16:8: error: `buf[_]` is held by the task started at 14:16 until it is waited for or cancelled
-//| 16.ctx:11:1: error: `main` context field `c` must have a capability type or be `args: [][]u8`, got bool
+//| 16.ctx:13:8: error: `buf[_]` is lent into `t` at 11:16, and held until `t` is ended
+//| 16.ctx:8:1: error: `main` context field `c` must have a capability type or be `args: [][]u8`, got bool

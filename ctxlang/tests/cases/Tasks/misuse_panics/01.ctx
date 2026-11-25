@@ -1,17 +1,14 @@
 
-#task
 fn nap { mut threads: Threads, ns: u64 } -> !u64 {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }
     return 7
 }
 
-#task
 fn same_thread { mut threads: Threads, id: u64 } -> !bool {
     return thread::current_id{ &threads } == id
 }
 
-#task
 fn fails_after { mut threads: Threads, ns: u64 } -> ! {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }
@@ -41,6 +38,6 @@ fn main { mut threads: Threads } {
 
 //# panic: program: panic: task::start into a handle that holds a task
 //# path:
-//|   at task::start(!u64) (std/task.ctx:73:41)
-//|   at into (01.ctx:34:16)
-//|   at main (01.ctx:39:9)
+//|   at task::start(!u64) (std/task.ctx:71:41)
+//|   at into (01.ctx:31:16)
+//|   at main (01.ctx:36:9)

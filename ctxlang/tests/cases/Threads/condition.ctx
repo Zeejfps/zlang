@@ -3,7 +3,6 @@
 
 struct Queue { lock: mutex::Mutex, ready: condition::Condition, items: [16]u32, count: u32, done: bool }
 
-#task
 fn produce { mut threads: Threads, data: *mut Queue } -> ! {
     let mut i: u32 = 1
     while i <= 10 {

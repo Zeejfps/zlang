@@ -1,17 +1,14 @@
 
-#task
 fn nap { mut threads: Threads, ns: u64 } -> !u64 {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }
     return 7
 }
 
-#task
 fn same_thread { mut threads: Threads, id: u64 } -> !bool {
     return thread::current_id{ &threads } == id
 }
 
-#task
 fn fails_after { mut threads: Threads, ns: u64 } -> ! {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }

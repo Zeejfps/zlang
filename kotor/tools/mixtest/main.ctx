@@ -273,7 +273,6 @@ struct Spin { m: *mut mix::Mixer, blocks: u32, done: u32 }
 
 // It yields between blocks, as the game's pump sleeps between top-ups: a lock that isn't fair would
 // otherwise go back to it every time.
-#task
 fn spin_render { mut threads: Threads, data: *mut Spin } -> ! {
     let mut buf: [2048]i16 = [0; 2048]
     let mut i: u32 = 0

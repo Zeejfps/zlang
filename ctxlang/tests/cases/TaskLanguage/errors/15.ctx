@@ -1,16 +1,13 @@
 
-#task
 fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
 
-#task
 fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
 
-#task
 fn sq { n: u64 } -> !u64 { return n * n }
 
 fn main { mut threads: Threads } {
     let mut buf: [8]u8
     let mut t: task::Task(!)
     task::start{ &threads, task = &t, run = fill{ &buf, n = 1, _ } }
-    let x = buf[1]  //~ error at 16: `buf[_]` is held by the task started at 14:16 until it is waited for or cancelled
+    let x = buf[1]  //~ error at 16: `buf[_]` is lent into `t` at 11:16, and held until `t` is ended
 }

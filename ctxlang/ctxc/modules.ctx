@@ -505,10 +505,10 @@ namespace modules {
         return true
     }
 
-    // Whether attribute a is `#task`, `#write` or `#convert`, which an api.ctx's fn carries.
+    // Whether attribute a is `#write` or `#convert`, which an api.ctx's fn carries.
     fn is_hook { c: check::Checker, a: syntax::Attr, ns: u32 } -> bool {
         let w = check::compiler_attr{ c, a, ns } ifnull { return false }
-        return w == check::Attribute::task or w == check::Attribute::write or w == check::Attribute::convert
+        return w == check::Attribute::write or w == check::Attribute::convert
     }
 
     fn writer { c: check::Checker, d: u32 } -> bool {

@@ -12,7 +12,6 @@ namespace counts {
     }
 }
 
-#task
 fn worker { mut counts: counts::Counts, mut seen: u64 } -> ! {
     _ = counts::bump{ c = &counts }
     seen = counts::bump{ c = &counts }

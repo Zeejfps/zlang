@@ -1,11 +1,8 @@
 
-#task
 fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
 
-#task
 fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
 
-#task
 fn sq { n: u64 } -> !u64 { return n * n }
 
 fn f { run: &fn{} -> u8 } -> usize { return @record_size(run) }  //~ error at 45: @record_size is only of a function value its fn lends: a start's own `run`, or a field written `into` a loan holder

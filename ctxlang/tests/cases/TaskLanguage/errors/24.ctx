@@ -1,13 +1,8 @@
-
-#task
-fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
-
-#task
-fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
-
-#task
-fn sq { n: u64 } -> !u64 { return n * n }
-
-#starts_task
-fn go { run: &fn{} -> u8 } {}  //~ error at 4: `starts_task` fn `go` takes `run: &fn{} -> R`, the task, and a handle it lends it into: `run: &fn{} -> R into task` and `mut task`, or `into group` and `mut group`, of a `loan_holder` type
-fn main {} {}
+#thread_bound
+capability Video
+capability Win { ..Video }
+fn keep(T) { x: T } -> ! {}
+fn main { mut threads: Threads, mut w: Win } {
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = keep{ x = &w, _ } }  //~ error at 49: this bind may run on another thread, a `&thread fn`, and its `x`, a *mut Win, reaches `Win`, a thread-bound capability
+}

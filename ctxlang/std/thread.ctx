@@ -4,7 +4,6 @@
 //
 //   struct Counter { lock: mutex::Mutex, n: u64 }
 //
-//   #task
 //   fn count { c: *mut Counter } -> ! {
 //       mutex::lock{ mutex = &c.lock }
 //       c.n = c.n + 1

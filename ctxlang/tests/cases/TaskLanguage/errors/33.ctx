@@ -2,5 +2,5 @@ fn one { n: u64 } -> u64 { return n }
 
 fn main {} {
     let f: &fn{} -> u64 = one{ n = 1, _ }
-    let g: &thread fn{} -> u64 = f  //~ error at 34: expected &thread fn{} -> u64, got &fn{} -> u64
+    let g: &thread fn{} -> u64 = f  //~ error at 34: expected &thread fn{} -> u64, got &fn{} -> u64: only a bind written where a `&thread fn` is expected becomes one, since what a `&fn` value holds can't be seen here
 }

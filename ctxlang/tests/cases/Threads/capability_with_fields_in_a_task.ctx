@@ -10,7 +10,6 @@ namespace lib {
     fn load { mut io: Io } -> Lib { return Lib{ abs = c_llabs } }
 }
 
-#task
 fn work { mut lib: lib::Lib, n: i64 } -> !i64 {
     return lib.abs{ n }
 }

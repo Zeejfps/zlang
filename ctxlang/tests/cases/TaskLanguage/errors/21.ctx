@@ -1,11 +1,8 @@
 
-#task
 fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
 
-#task
 fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
 
-#task
 fn sq { n: u64 } -> !u64 { return n * n }
 
 fn into { mut threads: Threads, mut buf: [8]u8, mut h: task::Task(!) } {
@@ -15,5 +12,5 @@ fn main { mut threads: Threads } {
     let mut buf: [8]u8
     let mut h: task::Task(!)
     into{ &threads, &buf, &h }
-    buf[0] = 3  //~ error at 8: `buf[_]` is held by the task started at 17:9 until it is waited for or cancelled
+    buf[0] = 3  //~ error at 8: `buf[_]` is lent into `h` at 14:9, and held until `h` is ended
 }

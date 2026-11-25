@@ -1,19 +1,16 @@
 // A task that waits for another and is cancelled cancels it; a task run at once is
 // cancelled with its starter; cancel_all reaches a task that waits.
 
-#task
 fn nap { mut threads: Threads, ns: u64 } -> !u64 {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }
     return 7
 }
 
-#task
 fn same_thread { mut threads: Threads, id: u64 } -> !bool {
     return thread::current_id{ &threads } == id
 }
 
-#task
 fn fails_after { mut threads: Threads, ns: u64 } -> ! {
     thread::sleep{ &threads, nanoseconds = ns }
     try task::check_cancelled{ &threads }
@@ -32,14 +29,12 @@ fn show(T) { mut io: Io, r: !T, what: []u8 } {
     }
 }
 
-#task
 fn outer { mut threads: Threads } -> !u64 {
     let mut inner: task::Task(!u64)
     try task::start_concurrent{ &threads, task = &inner, run = nap{ &threads, ns = 30000000000, _ } }
     return task::wait{ &threads, task = &inner }
 }
 
-#task
 fn at_once { mut threads: Threads } -> !u64 {
     task::set_limit{ &threads, workers = 0 }
     let mut inner: task::Task(!u64)
@@ -47,7 +42,6 @@ fn at_once { mut threads: Threads } -> !u64 {
     return task::wait{ &threads, task = &inner }
 }
 
-#task
 fn waits_in_group { mut threads: Threads } -> ! {
     _ = try outer{ &threads }
 }

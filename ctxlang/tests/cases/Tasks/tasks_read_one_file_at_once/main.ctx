@@ -1,5 +1,4 @@
 
-#task
 fn check { mut fs: Fs, file: fs::File, first: u64 } -> !u64 {
     let mut buf: [4096]u8
     let mut bad: u64 = 0

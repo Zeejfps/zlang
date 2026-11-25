@@ -1,15 +1,11 @@
 // An array of handles, a group's first error, and a scope left with tasks in it.
 
-#task
 fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
 
-#task
 fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
 
-#task
 fn sq { n: u64 } -> !u64 { return n * n }
 
-#task
 fn fails { n: u64 } -> ! { if n == 2 { return task::cancelled } }
 
 fn sum { mut threads: Threads, stop: bool } -> !u64 {

@@ -1,14 +1,7 @@
-
-#task
-fn fill { mut buf: [8]u8, n: u8 } -> ! { buf[0] = n }
-
-#task
-fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
-
-#task
-fn sq { n: u64 } -> !u64 { return n * n }
-
-#task  //~ error at 1: `task` applies only to a fn with a body, not an extern fn
-#pure
-extern fn e {}
+#loan_holder
+struct Slot { n: u32 }
+#scope_end
+fn close { mut s: Slot ends } {}
+#scope_end  //~ error at 1: a second `scope_end` fn for `Slot`: `close` is its scope's end already
+fn shut { mut s: Slot ends } {}
 fn main {} {}

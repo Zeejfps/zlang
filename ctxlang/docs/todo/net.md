@@ -46,7 +46,6 @@ code that blocks.
 ## Shape
 
 ```
-#task
 fn echo { mut net: Net, socket: net::Socket } -> ! {
     defer net::close{ &net, socket }
     let mut buf: [4096]u8
@@ -321,7 +320,6 @@ tasks (internals.md, Tasks, Decisions, 2). A program composes it from `lookup` a
 struct Race { lock: mutex::Mutex, socket: ?net::Socket, last: ! }
 error connected                 // the winner's: a group's first error cancels the rest
 
-#task
 fn attempt { mut net: Net, mut threads: Threads, address: net::Address, delay_ns: u64, race: *mut Race } -> ! {
     thread::sleep{ &threads, nanoseconds = delay_ns }       // returns early when cancelled
     let socket = net::connect{ &net, address } iferr err{ error } {
@@ -400,7 +398,6 @@ fn take_connection { mut mem: Mem, server: *mut Server } -> ?*mut Connection {
     return @cast(*mut Connection, &page[0])
 }
 
-#task
 fn handle { mut net: Net, c: *mut Connection } -> ! {
     serve_requests{ &net, socket = c.socket } iferr {}  // requests and responses until the peer closes
     net::close{ &net, socket = c.socket }
@@ -558,7 +555,6 @@ a task started with `start_concurrent`, and `task::wait_for` then `task::cancel`
 Tasks, Cancellation):
 
 ```
-#task
 fn dial { mut net: Net, host: []u8, port: u16 } -> !net::Socket {
     return net::connect_host{ &net, host, port }
 }

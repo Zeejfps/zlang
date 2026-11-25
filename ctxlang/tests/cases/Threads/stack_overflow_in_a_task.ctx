@@ -6,7 +6,6 @@ fn down { n: u64 } -> u64 {
     return down{ n = n + 1 } + pad[3]
 }
 
-#task
 fn deep {} -> !u64 {
     return down{ n = 0 }
 }
@@ -45,5 +44,5 @@ fn main { mut io: Io, mut threads: Threads } -> i32 {
 //|   at down (stack_overflow_in_a_task.ctx:6:16)
 //|   at down (stack_overflow_in_a_task.ctx:6:16)
 //|   at down (stack_overflow_in_a_task.ctx:6:16)
-//|   at deep (stack_overflow_in_a_task.ctx:11:16)
-//|   started at main (stack_overflow_in_a_task.ctx:17:27)
+//|   at deep (stack_overflow_in_a_task.ctx:10:16)
+//|   started at main (stack_overflow_in_a_task.ctx:16:27)

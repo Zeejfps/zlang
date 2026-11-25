@@ -95,7 +95,7 @@ program asks for one (spec §19).
 | fn | `f_NAME`, after its qualified name | Global across units, `static` in a program of one; a name that isn't an identifier, or a long one, is cut and gets a hash. Types, consts and the rest are numbered within each unit (emit_c.ctx, "Units"). |
 | capability static (`static name: T`) | `s_` and its qualified name, a zeroed C global | emit_c.ctx: `static` in a program of one unit; with several, main's unit defines every one and the others declare those they use `extern`. A use is `(*(&s_NAME))`: IR `(deref (saddr N))`, so it is a place through a pointer, as the checker treats it (`Access::stat`). A `#thread_local` one is `_Thread_local` too, in a threaded program only (spec §15, Entry point, rule 8; IR `(threaded)`, whose C defines `CTX_THREADS`). |
 | `@atomic_load` and the rest, `@fence` | GCC's `__atomic_*_n`, `__atomic_fetch_add` and `_sub`, `__atomic_thread_fence` | IR `(atomic T OP ORDER [ARGS])`; operands in temporaries, in order. A compare and exchange gives the value found, and lowering makes it `null` or `some` (lower.ctx, `atomic`). |
-| a start's `run` (spec §15, Tasks) | a bind's record with its size and its task fn's name after the code, `ctx_task_rec` | IR `(tbind ...)` (lower.ctx, `task_record`); `@record_size` reads the size, `@record_copy` copies the record (`ctx_rec_copy`) and gives an entry thunk per result type (lower.ctx, `entering`), and `rt::task_name` names the task for a panic's report. |
+| a start's `run` (spec §15, Tasks) | a bind's record with its size and the name of the fn it calls after the code, `ctx_task_rec` | IR `(tbind ...)` (lower.ctx, `task_record`); `@record_size` reads the size, `@record_copy` copies the record (`ctx_rec_copy`) and gives an entry thunk per result type (lower.ctx, `entering`), and `rt::task_name` names the task for a panic's report. |
 | stack overflow | check in each function prologue | `CTX_STACK_CHECK()`, before the function's frame of the call path, so that the panic's path is its caller's, without a `#stack_limit` static none: compares the frame address to the `#stack_limit` static, whose storage is the runtime's (`CTX_STACK_LIMIT`: a global, or in a threaded program the calling thread's TLS slot), which std's start sets (16 MB below its frame, or `CTX_STACK`) and `ctx_on_panic` sets to 0 before the panic fn runs; 0 checks nothing. Linked with a 256 MB stack on Windows and macOS; on Linux, std raises `RLIMIT_STACK` to 256 MB and runs itself again (std/os/linux). No sibling calls, so every call takes a frame. |
 
 ## Testing
@@ -308,9 +308,12 @@ still hold a task.
 6. **Capabilities are shared, data is exclusive.** Tasks may share capabilities, which are permission;
    std makes what they reach safe from many threads. Places follow exclusivity over the task's life.
    What a library can't do from another thread is the capability's to declare (`#thread_bound`).
-7. **`#task` marks entries.** Only task fns start tasks, so the set is closed: stack bounds per task,
-   thread-boundness checked at the declaration, and a place that says "this is a unit of concurrent
-   work". A library function is started through a small task fn of the program's.
+7. **The type marks what may run elsewhere, not the fn.** A task is a bind written into a
+   `&thread fn` (spec §5), checked there for thread-bound capabilities, so any fn can be a task's
+   entry and a library fn needs no task fn of the program's around it. The entries are still a closed
+   set, each start's bind names its fn, so stack bounds per task stay possible. This was `#task` on
+   the fn, and `#starts_task` on std's starts, until loans and lent function values were general
+   (todo/loan-holders.md).
 8. **`start` returns no error**, and runs the task at once when it can't run it concurrently; only
    `start_concurrent` and `start_blocking` promise concurrency, and may fail. So most code runs on any
    backend and in the interpreter, and code that needs concurrency says so.
@@ -345,7 +348,7 @@ What the Threaded backend's build settled, where this document left room:
    what it knows of a handle declared before it.
 6. **A defer's body is checked against the loans live where it is written**: it may run at an early
    exit while they still are.
-7. **A bind written as a start's `run` has its size and its task fn's name in its record**, after
+7. **A bind written as a start's `run` has its size and the name of the fn it calls in its record**, after
    its code: `@record_size` reads the size, and a worker names the task in a panic's report
    (`panic in task NAME:`) from the copy (`rt::task_name`).
 8. **The interpreter refuses `start_concurrent`** through the platform layer: `os::CONCURRENT` is
@@ -437,7 +440,7 @@ and why they are as they are.
    them: a zero value is a property of its bytes (§11, Initialization), which every allocation,
    static and struct holding one already has, and comparing names nothing inside it. `@as` on an
    opaque enum does name its values, and is an error.
-6. **Attributes**: a fn's half has `#task`, `#write` and `#convert`, which change how callers
+6. **Attributes**: a fn's half has `#write` and `#convert`, which change how callers
    use it, and its definition the same; the rest are the definition's. A `#write` fn is exempt
    from stating its errors: its result is a bare `!` (§13), whose errors are its sink's.
 7. **An `extern fn` may be declared in `api.ctx`**: it is complete without a body. A

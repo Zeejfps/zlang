@@ -3,14 +3,13 @@
 #loan_holder
 struct Job { t: task::Task(u64) }
 
-#task
 fn count { mut n: u64 } -> u64 {
     n = n + 1
     return n
 }
 
 // Lends its task into the job: the job holds what the task borrows.
-fn submit { mut threads: Threads, mut job: Job, run: &fn{} -> u64 into job } {
+fn submit { mut threads: Threads, mut job: Job, run: &thread fn{} -> u64 into job } {
     task::start{ &threads, task = &job.t, run }
 }
 

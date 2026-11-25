@@ -213,7 +213,6 @@ fn check { mut io: Io, mut fs: Fs, mut mem: Mem, mut threads: Threads, mut work:
 // 1 for a .tpc, 2 for a .tga, 0 for anything else.
 // Part `part`'s share of the textures: every WORKERS-th from `first`. It reaches its part
 // through a pointer, which `check` reads once every task is done.
-#task
 fn check_part { mut fs: Fs, part: *mut Part, first: usize, opts: Options, names: [][]u8, textures: []usize, sheet: []mut u8, sheet_w: usize } -> ! {
     let mut k = first
     while k < textures.len {
