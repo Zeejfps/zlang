@@ -18,10 +18,8 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../../.
 ## Items
 
 - **1. Choosing files.**
-  One half-written file breaks every build that adds its directory, since a build can't add one
-  file. (The other half of this item, a boundary between a library's contract and its helpers, is
-  built: a folder that holds an `api.ctx` is a module, which code outside reaches only through
-  that file; [spec §10, Modules](../spec.md#modules), internals.md, Modules.)
+  A build adds directories, not files, so one half-written file breaks every build that adds its
+  directory, and a tool can't take one file of a library.
   - Details: F#5; [spec §19](../spec.md#19-build-programs).
   - *Done when:* a build can add one file.
 
@@ -37,7 +35,25 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../../.
   reliable.
   - *Done when:* `ctxc fmt` is idempotent over std, ctxc and kotor.
 
-- **4. Remaining friction.** Enum ordering and counts (F#10), `&fn` as a struct field
+- **4. Error sets a contract can name.**
+  A fn in an api.ctx states its errors ([spec §10, Modules](../spec.md#modules), rule 5), but
+  std's sets are open (`fs::Error` is `error(not_found, ..., other, ..)`), and naming one would
+  make the contract open too. So kotor/lib/video/api.ctx lists every `fs` error by name, in
+  lines of over 300 characters, at each fn that reads a file: the contract is there, but it
+  doesn't read as one.
+  - Details: kotor/lib/video/api.ctx (74c5dff9); [spec §8, Errors](../spec.md#errors), rule 15.
+  - *Done when:* decided and built: closed sets in std that a contract names, or an open set in
+    a contract that still says what its fn fails with, or a reason neither is needed.
+
+- **5. `ctxc api` for a library several programs share.**
+  `ctxc api PATH FOLDER` writes a folder's first api.ctx from what one program's first executable
+  uses of it. lib/video is added by eight programs, and what binkcheck calls (`bink::split`, the
+  decoders' `new` and `decode`) was added by hand, found by checking each program.
+  - Details: [spec §19](../spec.md#19-build-programs), rule 10; kotor/lib/video (74c5dff9).
+  - *Done when:* `ctxc api` writes what every program it is given uses of the folder, and
+    `ctxc check` of each then has no error from the boundary.
+
+- **6. Remaining friction.** Enum ordering and counts (F#10), `&fn` as a struct field
   (F#13), slices staying `[]mut` until freed (F#22, F#25), a `mut` argument that is a temporary
   (F#27), locking through a read-only pointer (F#28), tuples (F#29), scoped lock (F#23), array
   lengths from any folded const (F#37). Take them as they come up; each has its entry in
