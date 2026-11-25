@@ -1,0 +1,37 @@
+// A `&thread fn` (spec §5): a bind written where one is expected may run on another thread; a
+// fn lends one `into` a loan holder of its own and passes it on to std's start, and it widens
+// to a `&fn`.
+
+#loan_holder
+struct Job { t: task::Task(u64) }
+
+#task
+fn count { mut n: u64 } -> u64 {
+    n = n + 1
+    return n
+}
+
+
+// A lend of a `&thread fn`, passed on to std's start.
+fn submit { mut threads: Threads, mut job: Job, run: &thread fn{} -> u64 into job } {
+    task::start{ &threads, task = &job.t, run }
+}
+
+#scope_end
+fn finish { mut threads: Threads, mut job: Job ends } { task::end{ &threads, task = &job.t } }
+
+fn collect { mut threads: Threads, mut job: Job ends } -> u64 { return task::wait{ &threads, task = &job.t } }
+
+fn main { mut io: Io, mut threads: Threads } {
+    let mut n: u64 = 41
+    let mut job: Job
+    submit{ &threads, &job, run = count{ &n, _ } }
+    io::println_u64{ &io, n = collect{ &threads, &job } }
+    io::println_u64{ &io, n }
+    let wide: &fn{} -> u64 = count{ &n, _ }
+    let t: &thread fn{} -> u64 = count{ &n, _ }
+    let back: &fn{} -> u64 = t
+}
+//# stdout:
+//| 42
+//| 42

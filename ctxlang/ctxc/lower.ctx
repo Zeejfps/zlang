@@ -87,7 +87,7 @@ namespace lower {
         for d in list::items{ list = c.fns } {
             let x = check::get_decl{ c, d }
             if x.export.len > 0 {
-                let ty = tid{ &l, t = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true, keeps = slice::empty(types::Keep){} } }
+                let ty = tid{ &l, t = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true, keeps = slice::empty(types::Keep){}, thread = false } }
                 try! list::push{ list = &exports, item = ir::Export{ callee = fn_id{ &l, decl = d, targs = no_ids{} }, ty, name = x.export } }
             }
         }
@@ -576,7 +576,8 @@ namespace lower {
                     add_field{ xs = &fs, f = types::Field{ name = f.name, mutable = f.mutable, ty = norm{ &l, t = f.ty } } }
                     i = i + 1
                 }
-                return types::func{ s = &l.c.ty, fields = list::items{ list = fs }, ret = norm{ &l, t = ret }, bound, external, keeps = slice::empty(types::Keep){} }
+                // IR has no `&thread fn`: it is a `&fn` there.
+                return types::func{ s = &l.c.ty, fields = list::items{ list = fs }, ret = norm{ &l, t = ret }, bound, external, keeps = slice::empty(types::Keep){}, thread = false }
             }
             else => { return x }
         }
@@ -1680,15 +1681,14 @@ namespace lower {
 
     // ---- tasks (spec §15, Tasks)
 
-    // A start's `run`, in args: a bind written in the call, whose record holds its size (tbind),
-    // or the starts_task fn's own `run`, passed on.
-    fn task_record { mut l: Lower, fields: []types::Field, args: []ir::Arg, at: ir::Pos } -> []ir::Arg {
-        let k = types::field_index{ fields, name = "run" } ifnull { @panic("lower: a start without `run`") }
+    // A lent function value, in args, at one of the fields lent: a bind written in the call, whose
+    // record holds its size (tbind), or the calling fn's own, passed on.
+    fn task_record { mut l: Lower, lent: []u32, args: []ir::Arg, at: ir::Pos } -> []ir::Arg {
         let mut out = list::new(ir::Arg){ realloc = arena::alloc, heap = l.heap }
         let mut i: usize = 0
         while i < args.len {
             let mut a = args[i]
-            if a.index == @as(u32, k) {
+            if check::has_id{ xs = lent, n = a.index } {
                 let v = a.value
                 match v.k {
                     bind{ callee, args = bound } => {
@@ -1697,7 +1697,7 @@ namespace lower {
                         a.value = mk{ ty = v.ty, k = ir::ExprKind::tbind{ callee, args = bound, name, pos = at } }
                     }
                     local => {}
-                    else => { @panic("lower: a start's `run` that isn't a bind") }
+                    else => { @panic("lower: a lent function value that isn't a bind") }
                 }
             }
             try! list::push{ list = &out, item = a }
@@ -1739,7 +1739,7 @@ namespace lower {
         try! list::push{ list = &params, item = ir::Param{ name = "result", mutable = false, ty = pt } }
         try! list::push{ list = &l.locals, item = ir::Local{ name = "record", ty = pt } }
         try! list::push{ list = &l.locals, item = ir::Local{ name = "result", ty = pt } }
-        let ft = tid{ &l, t = types::func{ s = &l.c.ty, fields = slice::empty(types::Field){}, ret = r, bound = true, external = false, keeps = slice::empty(types::Keep){} } }
+        let ft = tid{ &l, t = types::func{ s = &l.c.ty, fields = slice::empty(types::Field){}, ret = r, bound = true, external = false, keeps = slice::empty(types::Keep){}, thread = false } }
         let rt = tid{ &l, t = r }
         let run = mk{ ty = ft, k = ir::ExprKind::cast{ e = box{ l, e = mk{ ty = pt, k = ir::ExprKind::local{ slot = 0 } } } } }
         let call = mk{ ty = rt, k = ir::ExprKind::dcall{ callee = box{ l, e = run }, args = slice::empty(ir::Arg){}, pos = nowhere{} } }
@@ -2969,7 +2969,8 @@ namespace lower {
             let args = item_args{ &l, e, items, fields, ptrs = true }
             if bind { return mk{ ty, k = ir::ExprKind::bind{ callee = fid, args } } }
             let at = epos{ &l, e }
-            if x.starts_task { return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = task_record{ &l, fields, args, at }, pos = at } } }
+            let lent = check::lent_fns{ c = l.c.*, d = decl }
+            if lent.len > 0 { return mk{ ty, k = ir::ExprKind::call{ callee = fid, args = task_record{ &l, lent, args, at }, pos = at } } }
             return mk{ ty, k = ir::ExprKind::call{ callee = fid, args, pos = at } }
         }
         let ft = T{ &l, t = check::type_of_expr{ c = l.c.*, e = callee } }

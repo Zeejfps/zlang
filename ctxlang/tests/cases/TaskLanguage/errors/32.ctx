@@ -1,0 +1,8 @@
+#thread_bound
+capability Gl
+
+fn draw { mut gl: Gl } -> u64 { return 1 }
+
+fn main { mut gl: Gl } {
+    let f: &thread fn{} -> u64 = draw{ &gl, _ }  //~ error at 38: this bind may run on another thread, a `&thread fn`, and its `gl` is `Gl`, a thread-bound capability
+}

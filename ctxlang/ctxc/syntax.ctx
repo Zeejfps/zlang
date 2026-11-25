@@ -91,7 +91,8 @@ namespace syntax {
         slice{ mutable: bool, elem: *TypeExpr },
         array{ n: *Expr, elem: *TypeExpr },
         // external: `extern fn{...}`; from: as a function declaration's.
-        func{ bound: bool, params: []Param, ret: ?*TypeExpr, from: []Name, external: bool },
+        // thread: `&thread fn{...}`, a function value that may run on another thread (§5).
+        func{ bound: bool, params: []Param, ret: ?*TypeExpr, from: []Name, external: bool, thread: bool },
         // `!T`, or `!` alone (no elem): a result or an error; `E!T` or `E!` with set E, the errors
         // it may fail with (§8, Errors, rule 14).
         fail{ elem: ?*TypeExpr, set: ?*TypeExpr },

@@ -21,9 +21,9 @@
 //   }
 
 // Permission to run tasks (std/task.ctx), and threads, and to wait for them. Only `main`
-// receives it, and a program whose `main` (or start fn) takes it is threaded (spec §15, Entry
-// point, rule 8). It includes the platform layer's permission to start threads, Mem, since the
-// task backend keeps its table in pages, and the backend's state.
+// receives it; a program that starts a thread is threaded, by the platform layer's thread
+// entry (spec §15, Entry point, rule 8). It includes the platform layer's permission to start
+// threads, Mem, since the task backend keeps its table in pages, and the backend's state.
 capability Threads { ..os::Threads, ..Mem, ..task::State, ..task::Cancel }
 
 namespace thread {

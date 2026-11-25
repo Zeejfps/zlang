@@ -657,14 +657,17 @@ namespace parser {
                 t = syntax::TypeKind::array{ n, elem = box{ &p, value = type_expr{ &p } } }
             }
         } else if k == tok::Kind::kw_fn or (k == tok::Kind::amp and kind{ p, ahead = 1 } == tok::Kind::kw_fn)
-                  or (k == tok::Kind::kw_extern and kind{ p, ahead = 1 } == tok::Kind::kw_fn) {
+                  or (k == tok::Kind::kw_extern and kind{ p, ahead = 1 } == tok::Kind::kw_fn) or thread_fn_at{ p, ahead = 0 } {
             let bound = accept{ &p, k = tok::Kind::amp }
+            // `&thread fn`: `thread` is a name anywhere else, as `into` is.
+            let thread = bound and next_is{ p, k = tok::Kind::ident } and kind{ p, ahead = 1 } == tok::Kind::kw_fn
+            if thread { skip{ &p } }
             let external = accept{ &p, k = tok::Kind::kw_extern }
             skip{ &p }
             let params = ctx_fields{ &p, decl = false }
             let ret: ?*syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { box{ &p, value = type_expr{ &p } } } else { null }
             let from = contract{ &p, word = "from", after = ret != null }
-            t = syntax::TypeKind::func{ bound, params, ret, from, external }
+            t = syntax::TypeKind::func{ bound, params, ret, from, external, thread }
         } else if k == tok::Kind::ident {
             let mut segs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
             try! list::push{ list = &segs, item = type_seg{ &p } }
@@ -687,6 +690,12 @@ namespace parser {
         return syntax::TypeExpr{ id, span = span_from{ p, start }, k = t }
     }
 
+    // Whether `&thread fn` begins at the token `ahead` of the current one.
+    fn thread_fn_at { p: Parser, ahead: usize } -> bool {
+        if kind{ p, ahead } != tok::Kind::amp or kind{ p, ahead = ahead + 1 } != tok::Kind::ident or kind{ p, ahead = ahead + 2 } != tok::Kind::kw_fn { return false }
+        return slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i + ahead + 1] }, b = "thread" }
+    }
+
     // Whether a type begins at the current token.
     fn starts_type { p: Parser } -> bool {
         return starts_type_at{ p, ahead = 0 }
@@ -698,7 +707,7 @@ namespace parser {
         let k1 = kind{ p, ahead = ahead + 1 }
         return k == tok::Kind::star or k == tok::Kind::question or k == tok::Kind::lbracket or k == tok::Kind::ident
                or k == tok::Kind::kw_fn or (k == tok::Kind::amp and k1 == tok::Kind::kw_fn)
-               or (k == tok::Kind::kw_extern and k1 == tok::Kind::kw_fn)
+               or (k == tok::Kind::kw_extern and k1 == tok::Kind::kw_fn) or thread_fn_at{ p, ahead }
     }
 
     fn type_seg { mut p: Parser } -> syntax::Seg {

@@ -2587,7 +2587,7 @@ namespace check {
 
     // A start's `run` (§15, Tasks): a bind written in the call, of a task fn, supplying every
     // field, as its type `&fn{} -> R` makes it. So the compiler sees what the task receives.
-    fn task_run { mut c: Checker, e: syntax::Expr } {
+    fn task_run { mut c: Checker, e: syntax::Expr, task: bool } {
         let msg: utf8::String = "`run` is a bind of a `task` fn written here, supplying every field: `run = f{ ..., _ }`"
         // A fn passes on the task it lends itself, which its caller wrote: a start's own `run`, or
         // what a fn writes `into` a loan holder.
@@ -2610,6 +2610,8 @@ namespace check {
             error{ &c, at = expr_at{ e }, msg }
             return
         }
+        // A lent function value's thread-bound capabilities are its type's to refuse (thread_bind).
+        if not task { return }
         let x = get_decl{ c, d = decl }
         if not x.task {
             errorf{ &c, at = expr_at{ e = callee.* }, msg = @fmt("`{}` is not a `task` fn: only a `#task` fn is a task's entry", str{ s = x.qual }) }
@@ -2625,21 +2627,41 @@ namespace check {
         }
     }
 
-    // @record_size(run) or @record_copy(run, into) (§15, Tasks): only in a starts_task fn, of its
-    // own `run`. The size of run's record, a usize; or a copy of it into `into`, a []mut u8 at
+    // Whether exp is a `&thread fn`, or a `?` of one.
+    fn wants_thread { c: Checker, exp: Id } -> bool {
+        if exp == types::NO_TYPE { return false }
+        let mut want = types::prune{ s = c.ty, t = exp }
+        if types::get{ s = c.ty, id = want } is opt{ elem } { want = types::prune{ s = c.ty, t = elem } }
+        return types::get{ s = c.ty, id = want } is func{ thread } and thread
+    }
+
+    // A bind that becomes a `&thread fn` (§5): it may run on another thread, so neither what it
+    // binds nor what its caller gives it is a thread-bound capability, as fn type ft says.
+    fn thread_bind { mut c: Checker, e: syntax::Expr, ft: Id } {
+        let func{ fields } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = ft } } else { return }
+        for f in fields {
+            let b = bound_cap{ c, t = f.ty }
+            if b != NONE {
+                errorf{ &c, at = expr_at{ e }, msg = @fmt("this bind may run on another thread, a `&thread fn`, and its `{}` is `{}`, a thread-bound capability", str{ s = f.name }, str{ s = get_decl{ c, d = b }.qual }) }
+                return
+            }
+        }
+    }
+
+    // @record_size(run) or @record_copy(run, into) (§15, Tasks): only of a function value the fn
+    // lends (lent_fn), whose borrows the loan keeps while the copy runs. The size of run's record, a usize; or a copy of it into `into`, a []mut u8 at
     // least that long, aligned for any record, and the fn that runs the copy and writes what it
     // returns to `result`.
     fn task_record { mut c: Checker, e: syntax::Expr, n: []u8, args: []syntax::Expr } -> Id {
         let copy = slice::eq_bytes{ a = n, b = "record_copy" }
         if args.len < (if copy { 2 } else { 1 }) { return types::ERROR }
-        let mine = c.fn_decl != NONE and get_decl{ c, d = c.fn_decl }.starts_task
         let rt = expr{ &c, e = args[0], exp = types::NO_TYPE }
         let mut own = false
-        if args[0].k is path{ segs } and segs.len == 1 and slice::eq_bytes{ a = segs[0].name.text, b = "run" } {
+        if c.fn_decl != NONE and args[0].k is path{ segs } and segs.len == 1 and lent_fn{ c, d = c.fn_decl, name = segs[0].name.text } {
             if let r = nodes::get{ m = c.refs, key = expr_key{ e = args[0] } } { own = r is local{ var } and get_var{ c, v = var }.kind == VarKind::ctx }
         }
-        if not mine or not own {
-            errorf{ &c, at = expr_at{ e }, msg = @fmt("@{} is only of a `starts_task` fn's own `run`", str{ s = n }) }
+        if not own {
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("@{} is only of a function value its fn lends: a start's own `run`, or a field written `into` a loan holder", str{ s = n }) }
         }
         if not copy { return types::USIZE }
         unchecked{ &c, at = expr_at{ e }, what = "`@record_copy`", checked = "start tasks with std's `task::start`" }
@@ -2650,7 +2672,7 @@ namespace check {
         add_field{ xs = &fs, f = fields[0] }
         add_field{ xs = &fs, f = fields[1] }
         _ = rt
-        return types::func{ s = &c.ty, fields = list::items{ list = fs }, ret = types::VOID, bound = false, external = false, keeps = slice::empty(types::Keep){} }
+        return types::func{ s = &c.ty, fields = list::items{ list = fs }, ret = types::VOID, bound = false, external = false, keeps = slice::empty(types::Keep){}, thread = false }
     }
 
     // The fn a call's callee path names, or NONE.
@@ -2790,6 +2812,27 @@ namespace check {
             return p.span
         }
         return params[0].span
+    }
+
+    // Whether fn d lends its field `name`, a function value, so a call passes it as a bind written
+    // there, whose borrows the loan holds (§15, Tasks, rule 7): a start's `run`, or a bound
+    // function written `into` a loan holder.
+    fn lent_fn { c: Checker, d: u32, name: []u8 } -> bool {
+        if not lent_field{ c, d, name } { return false }
+        let f = types::find_field{ fields = get_decl{ c, d }.fields, name } ifnull { return false }
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t = f.ty } } is func{ bound } and bound
+    }
+
+    // The fields of fn d that lent_fn says are lent function values, for lowering's records.
+    fn lent_fns { c: Checker, d: u32 } -> []u32 {
+        let x = get_decl{ c, d }
+        let mut out = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < x.fields.len {
+            if lent_fn{ c, d, name = x.fields[i].name } { push{ xs = &out, n = @as(u32, i) } }
+            i = i + 1
+        }
+        return list::items{ list = out }
     }
 
     // Whether fn d's field `name` is one it lends: a start's `run`, or one it writes `into` a loan
@@ -3720,7 +3763,7 @@ namespace check {
                 if len == null or not ok { return types::ERROR }
                 return types::array{ s = &c.ty, n = @as(u64, len), elem = t }
             }
-            func{ bound, params, ret, from, external } => {
+            func{ bound, params, ret, from, external, thread } => {
                 let fields = context{ &c, params, sc }
                 let mut r = types::VOID
                 if ret != null { r = ret_type{ &c, te = ret.*, sc, owner = NONE } }
@@ -3733,7 +3776,7 @@ namespace check {
                     let ret_at: ?source::Span = if ret == null { null } else { ret.span }
                     c_signature{ &c, what = "an extern fn type", params, ret_at, fields, r }
                 }
-                return types::func{ s = &c.ty, fields, ret = r, bound, external, keeps }
+                return types::func{ s = &c.ty, fields, ret = r, bound, external, keeps, thread }
             }
             // `!T` anywhere but a function's own result, where there is no body to infer a set
             // from, fails with any error; `E!T`, with set E's.
@@ -5178,8 +5221,8 @@ namespace check {
             record{ decl, args } => { return generic{ c, decl, args, &b } }
             sum{ decl, args } => { return generic{ c, decl, args, &b } }
             distinct{ decl, args } => { return generic{ c, decl, args, &b } }
-            func{ fields, ret, bound, external, keeps } => {
-                try utf8::push{ &b, s = if bound { "&fn{" } else if external { "extern fn{" } else { "fn{" } }
+            func{ fields, ret, bound, external, keeps, thread } => {
+                try utf8::push{ &b, s = if thread { "&thread fn{" } else if bound { "&fn{" } else if external { "extern fn{" } else { "fn{" } }
                 let mut i: usize = 0
                 while i < fields.len {
                     let f = fields[i]
@@ -9583,11 +9626,11 @@ namespace check {
             if not v.typed {
                 // Its type is its own, which says what a contract written on it says: give it
                 // one that says the rest.
-                let func{ fields, ret, bound, external } = types::get{ s = c.ty, id = t } else { continue }
+                let func{ fields, ret, bound, external, thread } = types::get{ s = c.ty, id = t } else { continue }
                 let mut all = list::new(types::Keep){ realloc = arena::alloc, heap = c.heap }
                 for k in want { try! list::push{ list = &all, item = k } }
                 for k in more { try! list::push{ list = &all, item = k } }
-                let full = types::func{ s = &c.ty, fields, ret, bound, external, keeps = list::items{ list = all } }
+                let full = types::func{ s = &c.ty, fields, ret, bound, external, keeps = list::items{ list = all }, thread }
                 errorf{ &c, at = v.at, msg = @fmt("`{}`: {}, and a function value's type says what it keeps: give it one that says so, {}", str{ s = name }, keeps_effects{ c, keeps = more }, tstr{ c, t = full }) }
                 continue
             }
@@ -12805,13 +12848,16 @@ namespace check {
             cap => {
                 if includes_cap{ c, a = x, b = y } { return Coercion::same }
             }
-            func{ bound = eb, external = ee } => {
-                if tx is func{ bound = ab, external = ae } {
+            func{ bound = eb, external = ee, thread = et } => {
+                if tx is func{ bound = ab, external = ae, thread = at } {
                     // A C function pointer and a ctxlang function value don't convert either
                     // way; two C function types must be the same.
                     if ae != ee { return Coercion::fail }
                     if ee { return if types::unify{ s = &c.ty, a = x, b = y } { Coercion::same } else { Coercion::fail } }
                     if ab and not eb { return Coercion::fail }
+                    // A bound value becomes a `&thread fn` only where it is bound (thread_bind),
+                    // which sees what it holds; a `&thread fn` is a `&fn` anywhere.
+                    if et and ab and not at { return Coercion::fail }
                     return if fn_accepts{ &c, g = x, s = y, thunk = true } { Coercion::same } else { Coercion::fail }
                 }
             }
@@ -13690,10 +13736,10 @@ namespace check {
                     errorf{ &c, at, msg = @fmt("callback `{}` can't have type {}: its field `{}` is capability {}, which {}", str{ s = x.name.text }, tstr{ c, t = want }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK }) }
                     return types::ERROR
                 }
-                let own = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = false, keeps = x.keeps }
+                let own = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = false, keeps = x.keeps, thread = false }
                 if fn_accepts{ &c, g = own, s = want, thunk = false } { return want }
             }
-            if external { return types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true, keeps = x.keeps } }
+            if external { return types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true, keeps = x.keeps, thread = false } }
         }
         return types::NO_TYPE
     }
@@ -13716,7 +13762,7 @@ namespace check {
         let x = get_decl{ c, d }
         let fields = subst_fields{ &c, fields = x.fields, decl = d, args = targs }
         let ret = if targs.len == 0 { x.ret } else { types::subst{ s = &c.ty, t = x.ret, decl = d, args = targs } }
-        return types::func{ s = &c.ty, fields, ret, bound = false, external = false, keeps }
+        return types::func{ s = &c.ty, fields, ret, bound = false, external = false, keeps, thread = false }
     }
 
     // The type of fn d as a value (§14, Escape check): with its contract if it is held to one,
@@ -14244,10 +14290,10 @@ namespace check {
                         }
                         else => { mut_arg{ &c, e = it.value, at = expr{ &c, e = it.value, exp = want }, t = want } }
                     }
-                } else if starting and slice::eq_bytes{ a = f.name, b = "run" } {
+                } else if call_decl != NONE and lent_fn{ c, d = call_decl, name = f.name } {
                     mark_tasky{ &c }
                     expect{ &c, e = it.value, t = f.ty }
-                    task_run{ &c, e = it.value }
+                    task_run{ &c, e = it.value, task = starting }
                 } else {
                     expect{ &c, e = it.value, t = f.ty }
                 }
@@ -14301,7 +14347,8 @@ namespace check {
             if all { forward_fix{ &c, e, items, msg = "pass the locals of the missing fields' names, with `..`" } }
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b = m } }
         }
-        c.cap_shared = starting
+        // A call that lends a function value shares capabilities with it, as a start does.
+        c.cap_shared = starting or (call_decl != NONE and lent_fns{ c, d = call_decl }.len > 0)
         let refs = check_exclusive{ &c, e, items, fields, callee = call_decl, name }
         c.cap_shared = false
         if not bind and not starting { if e.k is braced{ callee } { late{ &c, x = Late::keeps{ e, callee = callee.*, items, fields, name } } } }
@@ -14310,7 +14357,10 @@ namespace check {
             let mut given = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
             for f in fields { if types::find_field{ fields = gone, name = f.name } == null { try! list::push{ list = &given, item = f.name } } }
             if c.recording and not starting { try! list::push{ list = &c.fn_values, item = FnValue{ key = expr_key{ e }, d = call_decl, at = expr_at{ e }, bound = list::items{ list = given }, callee = ft, typed = exp_func{ c, exp } } } }
-            return types::func{ s = &c.ty, fields = gone, ret, bound = true, external = false, keeps = bind_keeps{ c, ft, gone, exp } }
+            // Bound where a `&thread fn` is expected, it may run on another thread (§5).
+            let thread = wants_thread{ c, exp }
+            if thread { thread_bind{ &c, e, ft } }
+            return types::func{ s = &c.ty, fields = gone, ret, bound = true, external = false, keeps = bind_keeps{ c, ft, gone, exp }, thread }
         }
         return ret
     }
@@ -15730,7 +15780,7 @@ namespace check {
             if fd != null {
                 bt = types::ptr{ s = &c.ty, elem = fd.ty, mutable = true }
                 let ret = result_of{ c, t = exp }
-                ty = types::func{ s = &c.ty, fields = one_field{ c, f = fd }, ret, bound = true, external = false, keeps = slice::empty(types::Keep){} }
+                ty = types::func{ s = &c.ty, fields = one_field{ c, f = fd }, ret, bound = true, external = false, keeps = slice::empty(types::Keep){}, thread = false }
             } else if exp == types::NO_TYPE {
                 error{ &c, at = expr_at{ e }, msg = "an @fmt without a sink needs a type to be: a writer, a function of its sink such as `utf8::Fmt(S)`" }
                 ok = false
