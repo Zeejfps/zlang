@@ -3999,7 +3999,23 @@ namespace check {
                 if let te = ret { r = ret_type{ &c, te, sc, owner = d } }
                 if not same_result{ c, a = r, b = y.ret } {
                     let mut b = message{ c }
-                    try! @fmt(&b, "its result is {} there and {} here", result_text{ c, t = r }, result_text{ c, t = y.ret })
+                    let there = result_text{ c, t = r, ns = x.ns, from = x.module }
+                    let here = result_text{ c, t = y.ret, ns = x.ns, from = x.module }
+                    let mut opened = false
+                    if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = r } } is res{ errs = te } {
+                        if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = y.ret } } is res{ errs = be } { opened = open_set{ c, t = be } and not open_set{ c, t = te } }
+                    }
+                    if opened {
+                        // The body's errors are open (§8, Errors, rule 15): an open set joined
+                        // them, through a call. Its contract says so.
+                        if let te_at = ret {
+                            let text = here.bytes[1..here.bytes.len - 1]
+                            suggest_at{ &c, at = te_at.span, text, msg = "declare the open set its body fails with" }
+                        }
+                        try! @fmt(&b, "its errors are an open set here, which a call joined to them (a match on them needs an `else`), and a closed one there: its result is {} here", here)
+                    } else {
+                        try! @fmt(&b, "its result is {} there and {} here", there, here)
+                    }
                     api_mismatch{ &c, a, d, restated, what = utf8::view{ b } }
                 }
             }
@@ -4162,7 +4178,11 @@ namespace check {
         let res{ ok = ao, errs = ae } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = a } } else { return false }
         let res{ ok = bo, errs = be } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = b } } else { return false }
         if ao != bo { return false }
-        if set_open{ c, t = ae } != set_open{ c, t = be } { return false }
+        // Open or not alike (§8, Errors, rule 15): a body whose errors an open set joined has an
+        // open set, and its contract says so, so a caller's match has an `else`.
+        if open_set{ c, t = ae } != open_set{ c, t = be } { return false }
+        // `error`, any error at all, is what an open set may be.
+        if every_error{ c, t = ae } or every_error{ c, t = be } { return true }
         let xs = set_of{ c, t = ae }
         let ys = set_of{ c, t = be }
         if xs.len != ys.len { return false }
@@ -4170,27 +4190,75 @@ namespace check {
         return true
     }
 
-    fn set_open { c: Checker, t: Id } -> bool {
-        match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
-            eset{ open } => { return open }
-            errs{ owner, one } => { return owner == NONE and one == NONE }
-            else => { return false }
-        }
+    // Whether t is `error`: any error, with none named.
+    fn every_error { c: Checker, t: Id } -> bool {
+        return types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } is errs{ owner, one } and owner == NONE and one == NONE
     }
 
-    // A result as messages write it: a `!T` with its errors listed.
-    fn result_text { c: Checker, t: Id } -> utf8::String {
+    // A result as messages write it: a `!T` with its errors as a contract writes them.
+    fn result_text { c: Checker, t: Id, ns: u32, from: u32 } -> utf8::String {
         let res{ ok, errs } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return tstr{ c, t } }
         let mut b = message{ c }
-        try! utf8::push{ &b, s = "`error(" }
-        for e at i in set_of{ c, t = errs } {
-            if i > 0 { try! utf8::push{ &b, s = ", " } }
-            try! utf8::push{ &b, s = str{ s = get_decl{ c, d = e }.qual } }
-        }
-        try! utf8::push{ &b, s = ")!" }
+        try! utf8::push{ &b, s = "`" }
+        if every_error{ c, t = errs } { try! utf8::push{ &b, s = "error" } } else { try! utf8::push_bytes{ &b, s = written_set{ c, errs = set_of{ c, t = errs }, open = open_set{ c, t = errs }, ns, from } } }
+        try! utf8::push{ &b, s = "!" }
         if ok != types::VOID { try! write_type{ c, t = ok, &b } }
         try! utf8::push{ &b, s = "`" }
         return utf8::view{ b }
+    }
+
+    // A set of errors as a contract writes it (rule 5), in the fewest names. Each set alias that
+    // code inside module `from` sees, of two errors or more, all of whose errors are in it
+    // (std's `fs::Error`, an api's own), stands for them, largest first; then its other errors;
+    // then `..` if it is open and no open alias says so. An open alias stands only in an open
+    // set. One alias that is the whole set is written alone, `ReadError`; anything else as
+    // `error(...)`. Each name is as namespace ns names it.
+    fn written_set { c: Checker, errs: []u32, open: bool, ns: u32, from: u32 } -> []u8 {
+        let mut left = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        for e in errs { try! list::push{ list = &left, item = e } }
+        let mut names = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+        let mut opened = false
+        let mut aliases: usize = 0
+        while true {
+            let mut best = NONE
+            let mut size: usize = 1
+            for d in list::items{ list = c.aliases } {
+                let x = get_decl{ c, d }
+                if x.tparams.len > 0 or x.half or not sees{ c, from, scope = x.scope } { continue }
+                let eset{ errs = theirs, open = o } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ty } } else { continue }
+                if theirs.len <= size or (o and not open) { continue }
+                let mut all = true
+                for t in theirs { if all and not map_has{ xs = list::items{ list = left }, n = t } { all = false } }
+                if all {
+                    best = d
+                    size = theirs.len
+                }
+            }
+            if best == NONE { break }
+            let x = get_decl{ c, d = best }
+            let eset{ errs = theirs, open = o } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ty } } else { break }
+            try! list::push{ list = &names, item = if x.ns == ns { x.name.text } else { x.qual } }
+            aliases = aliases + 1
+            if o { opened = true }
+            let mut kept = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+            for e in list::items{ list = left } { if not map_has{ xs = theirs, n = e } { try! list::push{ list = &kept, item = e } } }
+            left = kept
+        }
+        for e in list::items{ list = left } {
+            let f = get_decl{ c, d = e }
+            try! list::push{ list = &names, item = if f.ns == ns { f.name.text } else { f.qual } }
+        }
+        if open and not opened { try! list::push{ list = &names, item = ".." } }
+        // One alias alone is the set: `ReadError!u32`.
+        if aliases == 1 and names.len == 1 { return list::items{ list = names }[0] }
+        let mut b = message{ c }
+        try! utf8::push{ &b, s = "error(" }
+        for n at i in list::items{ list = names } {
+            if i > 0 { try! utf8::push{ &b, s = ", " } }
+            try! utf8::push_bytes{ &b, s = n }
+        }
+        try! utf8::push{ &b, s = ")" }
+        return utf8::view{ b }.bytes
     }
 
     // The bytes of span without spaces, tabs and line breaks: how two texts of a value compare.
@@ -4217,7 +4285,8 @@ namespace check {
     }
 
     // Rule 5: fn half a, of an api.ctx, says which errors its definition fails with: `E!T`,
-    // not `!T`, which would leave them to the body. A `#write` fn's result is a bare `!`
+    // not `!T`, which would leave them to the body. An open set (§8, Errors, rule 15) is
+    // written open: with the open alias that made it so, or `..`. A `#write` fn's result is a bare `!`
     // (§13, Formatting, rule 4): its errors are its sink's, which join each @fmt's set.
     fn result_set { mut c: Checker, a: u32 } {
         let x = get_decl{ c, d = a }
@@ -4229,22 +4298,15 @@ namespace check {
         let y = get_decl{ c, d = x.api }
         let res{ errs } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = y.ret } } else { return }
         let errors = set_of{ c, t = errs }
-        let mut list_b = message{ c }
-        try! utf8::push{ b = &list_b, s = "error(" }
-        for e at i in errors {
-            if i > 0 { try! utf8::push{ b = &list_b, s = ", " } }
-            let f = get_decl{ c, d = e }
-            try! utf8::push{ b = &list_b, s = str{ s = if f.ns == x.ns { f.name.text } else { f.qual } } }
-        }
-        try! utf8::push{ b = &list_b, s = ")" }
-        let set_text = utf8::view{ b = list_b }.bytes
+        let open = open_set{ c, t = errs }
         let written = source_text{ c, span = te.span }
-        if errors.len == 0 or set_open{ c, t = errs } {
+        if every_error{ c, t = errs } or (errors.len == 0 and not open) {
             errorf{ &c, at = te.span, msg = @fmt("`{}` in an api.ctx says which errors it fails with, as `error(a, b)!T`: its callers read them here", str{ s = x.qual }) }
             return
         }
-        fix_at{ &c, at = point{ span = te.span, at = te.span.start }, text = set_text, msg = "write the errors its definition fails with" }
-        errorf{ &c, at = te.span, msg = @fmt("`{}` in an api.ctx says which errors it fails with, so its callers read them here: write `{}{}`", str{ s = x.qual }, str{ s = set_text }, str{ s = written }) }
+        let text = written_set{ c, errs = errors, open, ns = x.ns, from = x.module }
+        fix_at{ &c, at = point{ span = te.span, at = te.span.start }, text, msg = "write the errors its definition fails with" }
+        errorf{ &c, at = te.span, msg = @fmt("`{}` in an api.ctx says which errors it fails with, so its callers read them here: write `{}{}`", str{ s = x.qual }, str{ s = text }, str{ s = written }) }
     }
 
     // Rule 4: what api.ctx declaration a names in its types is visible wherever a makes what

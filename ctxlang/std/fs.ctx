@@ -29,10 +29,11 @@ namespace fs {
     error bad_file              // the file is closed
     error other{ code: i64 }    // the OS's error number
 
-    // What the platform's layer (std/os) may fail with, on every platform: each of its file
-    // functions declares this set (spec §8, Errors, rule 14), whichever of it the OS can give.
-    // It is open (rule 15): an OS can fail in new ways, so a match on it has an `else`.
-    type Error = error(not_found, permission_denied, is_directory, exists, not_directory, not_empty, bad_file, other, ..)
+    // What a file call may fail with, on every platform: the platform's layer (std/os) declares
+    // this set for each of its file functions (spec §8, Errors, rule 14), whichever of it the OS
+    // can give, and every call checks first whether its task is cancelled (task::check). It is
+    // open (rule 15): an OS can fail in new ways, so a match on it has an `else`.
+    type Error = error(not_found, permission_denied, is_directory, exists, not_directory, not_empty, bad_file, other, task::cancelled, ..)
 
     union Mode {
         read,       // an existing file

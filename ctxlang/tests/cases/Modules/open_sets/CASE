@@ -1,0 +1,45 @@
+// A contract whose body's errors are open says so (spec §10, Modules, rule 5; §8, Errors,
+// rule 15). cfg's fns read files, whose errors are fs::Error, an open set, so theirs are open:
+// the error writes the set with the aliases that name it, the api's own ReadError and std's
+// fs::Error, and a caller's match on them needs an `else`.
+//# program: main.ctx lib/cfg/api.ctx lib/cfg/read.ctx
+//# errors:
+//| main.ctx:2:5: error: a match on an open error set needs `else` or `err`: error of `cfg::count` may gain errors
+//| lib/cfg/api.ctx:5:67: error: `cfg::read` in an api.ctx says which errors it fails with, so its callers read them here: write `ReadError!u32`
+//| lib/cfg/api.ctx:6:44: error: `cfg::count` in an api.ctx says which errors it fails with, so its callers read them here: write `fs::Error!usize`
+
+// As the errors say to write it.
+//# write lib/cfg/api.ctx:
+//| namespace cfg {
+//|     error bad_line{ at: usize }
+//|     type ReadError = error(fs::Error, alloc::out_of_memory, bad_line)
+//|     fn read { mut fs: Fs, mut heap: arena::Arena, path: []u8 } -> ReadError!u32
+//|     fn count { mut fs: Fs, path: []u8 } -> fs::Error!usize
+//|     fn parse { text: []u8 } -> error(bad_line)!u32
+//| }
+//# write main.ctx:
+//| fn main { mut io: Io, mut fs: Fs } {
+//|     match cfg::count{ &fs, path = "missing.ctx" } {
+//|         ok => { _ = @fmt(&io, "found\n") }
+//|         fs::not_found => { _ = @fmt(&io, "not found\n") }
+//|         else => { _ = @fmt(&io, "another error\n") }
+//|     }
+//| }
+//# program: main.ctx lib/cfg/api.ctx lib/cfg/read.ctx
+//# interp: off: the interpreter reads no files
+//# stdout:
+//| not found
+
+// A closed set where the body's is open is a mismatch, which says why, with the open set as a
+// suggestion.
+//# write lib/cfg/api.ctx:
+//| namespace cfg {
+//|     error bad_line{ at: usize }
+//|     fn read { mut fs: Fs, mut heap: arena::Arena, path: []u8 } -> error(fs::Error, alloc::out_of_memory, bad_line)!u32
+//|     fn count { mut fs: Fs, path: []u8 } -> error(fs::not_found, fs::other)!usize
+//|     fn parse { text: []u8 } -> error(bad_line)!u32
+//| }
+//# program: main.ctx lib/cfg/api.ctx lib/cfg/read.ctx
+//# errors:
+//| lib/cfg/read.ctx:6:8: error: `cfg::count` doesn't match its declaration in api.ctx: its errors are an open set here, which a call joined to them (a match on them needs an `else`), and a closed one there: its result is `fs::Error!usize` here
+//|   lib/cfg/api.ctx:4:8: note: `cfg::count` is declared in api.ctx here

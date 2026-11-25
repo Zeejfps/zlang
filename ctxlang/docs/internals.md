@@ -440,12 +440,21 @@ and why they are as they are.
 8. **A definition matches its api exactly**: its context fields in the api's order, names and
    `mut`. It may write `!T` for the api's `E!T` when its body is inferred to fail with E's
    errors, so a set is written once, in the contract, and still checked.
-9. **Tests get no exception.** A `#test` fn sees what its file sees: one inside the module tests
+9. **A contract's open set is open, and names what made it so.** std's file and process sets
+   are open, since an OS can fail in new ways, so a body that reads a file has an open set.
+   Its contract is open too, with the same errors, and names the sets: `error(fs::Error,
+   bad_magic)`, written by `--fix` in the fewest names (`written_set`: the largest alias first,
+   std's or the api's own). Considered and rejected: closing std's sets, which would promise
+   what the OS doesn't; letting a contract say `!T`, which would leave its errors to the
+   body; and an open contract as "at least these errors", which would let the module's files
+   add errors of their own without the contract changing. `fs::Error` lists `task::cancelled`,
+   as `proc::Error` does: every file call checks for it before it blocks.
+10. **Tests get no exception.** A `#test` fn sees what its file sees: one inside the module tests
    its internals, kept where the agent changing them works; one outside tests the contract.
    Considered and rejected: a `#test` fn that sees past every boundary (a test is a fn other
    code may call, and could hand a hidden function on), and a list in `api.ctx` of outside
    folders that may see inside (a module's guarantee would depend on files it doesn't own).
-10. **Re-exports never rename and never widen** (spec §10, Re-exports): a name means one thing,
+11. **Re-exports never rename and never widen** (spec §10, Re-exports): a name means one thing,
     with one type, at every level it reaches, so `let f = gff::read` has one type wherever it
     is written. The directive is `expose`, not `export`, which brings TypeScript's forms with it
     and, this close to C, means the linker's symbols.

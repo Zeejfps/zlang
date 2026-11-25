@@ -1,0 +1,8 @@
+namespace cfg {
+    error bad_line{ at: usize }
+    // The module's own set: what reading a config can fail with.
+    type ReadError = error(fs::Error, alloc::out_of_memory, bad_line)
+    fn read { mut fs: Fs, mut heap: arena::Arena, path: []u8 } -> !u32
+    fn count { mut fs: Fs, path: []u8 } -> !usize
+    fn parse { text: []u8 } -> error(bad_line)!u32
+}

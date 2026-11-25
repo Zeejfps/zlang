@@ -1,0 +1,6 @@
+fn main { mut fs: Fs } -> i32 {
+    match cfg::count{ &fs, path = "main.ctx" } {
+        ok{ value } => { return @as(i32, value) }
+        fs::not_found => { return 2 }
+    }
+}

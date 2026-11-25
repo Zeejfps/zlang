@@ -479,23 +479,16 @@ namespace modules {
         return false
     }
 
-    // `error(a, b)`, the errors fn d is inferred to fail with, named as its namespace names
-    // them; null if it may fail with any error, or with none.
+    // The errors fn d is inferred to fail with, as a contract writes them (check::written_set);
+    // null if it may fail with any error, or with none.
     fn error_set { c: check::Checker, d: u32 } -> ?[]u8 {
         let x = check::get_decl{ c, d }
         let res{ errs } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ret } } else { return null }
-        if check::set_open{ c, t = errs } { return null }
+        if check::every_error{ c, t = errs } { return null }
         let set = check::set_of{ c, t = errs }
-        if set.len == 0 { return null }
-        let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
-        try! utf8::push{ &b, s = "error(" }
-        for e at i in set {
-            if i > 0 { try! utf8::push{ &b, s = ", " } }
-            let y = check::get_decl{ c, d = e }
-            try! utf8::push_bytes{ &b, s = if y.ns == x.ns { y.name.text } else { y.qual } }
-        }
-        try! utf8::push{ &b, s = ")" }
-        return utf8::view{ b }.bytes
+        let open = check::open_set{ c, t = errs }
+        if set.len == 0 and not open { return null }
+        return check::written_set{ c, errs = set, open, ns = x.ns, from = x.module }
     }
 
     fn trimmed { s: []u8 } -> []u8 {

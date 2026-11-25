@@ -1,0 +1,11 @@
+namespace cfg {
+    fn read { mut fs: Fs, mut heap: arena::Arena, path: []u8 } -> !u32 {
+        let text = try fs::read_all{ &fs, &heap, realloc = arena::alloc, path }
+        return try parse{ text }
+    }
+    fn count { mut fs: Fs, path: []u8 } -> !usize { return @as(usize, try fs::size{ &fs, path }) }
+    fn parse { text: []u8 } -> !u32 {
+        if text.len == 0 { return bad_line{ at = 0 } }
+        return @as(u32, text.len)
+    }
+}

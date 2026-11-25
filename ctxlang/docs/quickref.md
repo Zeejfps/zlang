@@ -422,6 +422,8 @@ namespace gff {
 ```
 
 - Every type an api's declaration names is in the api too, in full or as `type Name`.
+- A fn that reads files fails with an open set, and its contract says so:
+  `-> error(fs::Error, bad_magic)!Gff`. A caller's match on it has an `else`.
 - Hidden names are the module's own: two modules may each have a hidden `gff::put_row`.
 - A test inside the module's folder tests its internals; one outside sees its api only.
 - A parent folder's `api.ctx` re-exports a nested module's names by restating them, or all of
