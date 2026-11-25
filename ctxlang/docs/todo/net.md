@@ -1,6 +1,6 @@
 # Networking and TLS: design
 
-Status: **design**, threads.md's item 1, **built through TCP** (Order of work, 1 to 5): addresses,
+Status: **design**, threads.md's item 1, **built through TCP** (Order of work, 1 to 5, and 8): addresses,
 `Net`, `net::Error` and TCP are std/net.ctx and the layers', with `task::wait_all_for` and libraries
 linked by use; TCP's tests (Testing, Built for TCP) run on Windows, and Linux's and macOS's layers
 are compiled from it, not yet run on those systems. It is written against the tasks'
@@ -436,7 +436,8 @@ stops every handler, and `serve` returning, by any path, waits for them: the gro
 `mem` gives pages and never takes them back, so a connection's memory is reused: a handler that ends
 puts its `Connection` on the server's free list, under a mutex. A handler borrows nothing of `serve`'s
 frame: `c` points into pages, which tasks share as threads do (spec §3.1, rule 6). It compiles
-against the built API, with a `serve_requests` of the program's; Order of work, 8 tests it.
+against the built API, with a `serve_requests` of the program's; tests/cases/Net/tcp_group_server
+runs it (Testing 4).
 
 ```
 struct Connection { socket: net::Socket, server: *mut Server, next: ?*mut Connection }
@@ -1000,6 +1001,9 @@ Built for TCP, in tests/cases/Net:
 - `tcp_every_layer`: every layer's TCP built from any machine, the C for Linux and macOS compiled
   as far as its syntax and types (`cc -fsyntax-only`), and `ws2_32` linked on Windows only by a
   program that takes `Net`.
+- `tcp_group_server`: Testing 4, TCP's server above with an echoing `serve_requests`: 50
+  clients at once, each keeping its connection open, then the server's task cancelled, which ends
+  every handler, each closing its socket.
 
 UDP's and name lookup's cases (Testing 1's UDP, 3's lookup) are Order of work 6 and 7's.
 

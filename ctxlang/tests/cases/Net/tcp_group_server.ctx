@@ -1,0 +1,147 @@
+// A group's server (docs/todo/net.md, Testing 4; TCP, A server): the design's accept loop,
+// with a handler task per connection in a group and connections reused from a free list, and
+// 50 clients at once, each a task that connects and has one line echoed. The clients keep
+// their connections open, so every handler is blocked in a receive when the server's task is
+// cancelled: `serve` then fails with `cancelled`, and its group's scope ends every handler,
+// each of which closes its socket, so each client's next receive gives 0 (or `reset`).
+//# interp: cannot run
+//# timeout: 120
+//# stdout:
+//| 50 clients echoed
+//| server: cancelled
+//| handlers ended: 50
+//| handlers that served: 50
+//| clients whose connection ended: 50
+
+const CLIENTS: usize = 50
+
+struct Connection { socket: net::Socket, server: *mut Server, next: ?*mut Connection }
+struct Server {
+    lock: mutex::Mutex,
+    free: ?*mut Connection,         // connections to reuse
+    served: u32,                    // handlers that echoed a line, atomically
+    ended: u32,                     // handlers that ended, atomically
+}
+
+fn give_back { server: *mut Server, c: *mut Connection } {
+    mutex::lock{ mutex = &server.lock }
+    c.next = server.free
+    server.free = c
+    mutex::unlock{ mutex = &server.lock }
+}
+
+fn take_connection { mut mem: Mem, server: *mut Server } -> ?*mut Connection {
+    mutex::lock{ mutex = &server.lock }
+    defer mutex::unlock{ mutex = &server.lock }
+    if let c = server.free {
+        server.free = c.next
+        return c
+    }
+    let page = mem::pages{ &mem, size = @size_of(Connection) } ifnull { return null }
+    return @cast(*mut Connection, &page[0])
+}
+
+// The program's requests and responses: echoes what the peer sends until it finishes, noting
+// the first echo.
+fn serve_requests { mut net: Net, socket: net::Socket, server: *mut Server } -> ! {
+    let mut buf: [256]u8
+    let mut first = true
+    while true {
+        let n = try net::receive{ &net, socket, into = buf[..] }
+        if n == 0 { return }
+        _ = try net::send{ &net, socket, bytes = buf[..n] }
+        if first {
+            _ = @atomic_add(&server.served, 1)
+            first = false
+        }
+    }
+}
+
+fn handle { mut net: Net, c: *mut Connection } -> ! {
+    let server = c.server
+    serve_requests{ &net, socket = c.socket, server } iferr {}
+    net::close{ &net, socket = c.socket }
+    give_back{ server, c }
+    _ = @atomic_add(&server.ended, 1)
+}
+
+fn serve { mut net: Net, mut mem: Mem, mut threads: Threads, server: *mut Server, listener: net::Listener } -> ! {
+    let mut handlers: task::Group
+    while true {
+        let socket = try net::accept{ &net, listener }      // fails with cancelled when serve's task is
+        let c = take_connection{ &mem, server } ifnull {
+            net::close{ &net, socket }
+            continue
+        }
+        c.* = Connection{ socket, server, next = null }
+        task::start_concurrent_in{ &threads, group = &handlers, run = handle{ &net, c, _ } } iferr err{ error } {
+            net::close{ &net, socket }
+            give_back{ server, c }
+            return error
+        }
+    }
+}
+
+// A client: connects, has its line echoed, and leaves its socket open in `slot`.
+fn client { mut net: Net, at: net::Address, slot: *mut net::Socket, n: usize } -> ! {
+    let socket = try net::connect{ &net, address = at }
+    slot.* = socket
+    let line: [2]u8 = [@trunc(u8, n), '\n']
+    _ = try net::send{ &net, socket, bytes = line[..] }
+    let mut got: [2]u8
+    let mut have: usize = 0
+    while have < 2 {
+        let k = try net::receive{ &net, socket, into = got[have..] }
+        if k == 0 { return net::closed }
+        have = have + k
+    }
+    if got[0] != line[0] or got[1] != '\n' { return net::closed }
+}
+
+fn main { mut io: Io, mut net: Net, mut mem: Mem, mut threads: Threads } -> i32 {
+    let listener = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 1 }
+    defer net::close_listener{ &net, listener }
+    let at = net::listener_address{ &net, listener } iferr { return 1 }
+    let mut server = Server{ lock = mutex::make{}, free = null, served = 0, ended = 0 }
+    let mut accepting: task::Task(!)
+    task::start_concurrent{ &threads, task = &accepting, run = serve{ &net, &mem, &threads, server = &server, listener, _ } } iferr { return 2 }
+
+    let mut sockets: [CLIENTS]net::Socket = [net::Socket{ id = 0 }; CLIENTS]
+    let mut clients: task::Group
+    let mut i: usize = 0
+    while i < CLIENTS {
+        task::start_concurrent_in{ &threads, group = &clients, run = client{ &net, at, slot = &sockets[i], n = i, _ } } iferr { return 3 }
+        i = i + 1
+    }
+    task::wait_all{ &threads, group = &clients } iferr { return 4 }
+    io::println{ &io, s = "50 clients echoed" }
+
+    // Every handler has echoed; wait until each has noted it, then stop the server.
+    while @atomic_load(&server.served) < @trunc(u32, CLIENTS) { thread::sleep{ &threads, nanoseconds = 1000000 } }
+    match task::cancel{ &threads, task = &accepting } {
+        ok => { io::println{ &io, s = "server: ended" } }
+        err{ error } => {
+            match error {
+                task::cancelled => { io::println{ &io, s = "server: cancelled" } }
+                else => { io::println{ &io, s = "server: failed" } }
+            }
+        }
+    }
+    _ = @fmt(&io, "handlers ended: {}\n", @atomic_load(&server.ended))
+    _ = @fmt(&io, "handlers that served: {}\n", @atomic_load(&server.served))
+
+    let mut closed: usize = 0
+    for socket in sockets[..] {
+        let mut buf: [16]u8
+        let n = net::receive{ &net, socket, into = buf[..] } iferr err{ error } {
+            match error {
+                net::reset => { 0 }
+                else => { 1 }
+            }
+        }
+        if n == 0 { closed = closed + 1 }
+        net::close{ &net, socket }
+    }
+    _ = @fmt(&io, "clients whose connection ended: {}\n", closed)
+    return 0
+}
