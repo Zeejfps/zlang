@@ -356,6 +356,12 @@ namespace check {
         borrow_success: bool = false,
         escapes:   list::List(Escape, Heap),          // escape errors that wait on the sets
         fn_values: list::List(FnValue, Heap),         // fns made values, checked against their types' contracts
+        // What a body's check does that waits for the summaries, recorded in order while the
+        // bodies are checked, and done once the summaries are made (replay_bodies). recording:
+        // a fn's body is being checked, and nothing is being replayed.
+        lates:     list::List(Late, Heap),
+        replays:   list::List(Replay, Heap),
+        recording: bool = false,
         sites:     list::List(Site, Heap),            // every @fmt, whose set is owned by SITE + its index
         fault_writers: map::Map(u64, []Writer, Heap), // an error hole's field writers, by fault_key
         exit_sites: map::Map(u32, u32, Heap),         // by fn: the site that writes the error its `!` result holds (exit_site)
@@ -434,6 +440,29 @@ namespace check {
     // while the bodies are checked, can make real: reported once the sets are inferred if t then
     // holds a pointer, and if flow errors were reported in its body when it was found.
     struct Escape { t: Id, at: source::Span, msg: utf8::String, report: bool, notes: []diag::Note }
+
+    // A part of a body's check whose outcome depends on the borrow summaries, which are made
+    // from every body once each is checked (infer_borrows): an escape check (§14) of what a
+    // value is derived from, which a call's summary narrows; what a local is derived from, which
+    // later checks read; a call's keeps and the order of its parts, which read callees'
+    // summaries; and a flow error, which is reported only if the body has no other error since
+    // its start, and so may be reported once an escape check has. Each is recorded where the
+    // check of the body meets it, without summaries, and done again where it was, in order, once
+    // they are known (replay_bodies). d is an index of Checker.derived.
+    union Late {
+        derive{ d: u32, e: syntax::Expr },
+        each{ d: u32, iter: syntax::Expr, by_ref: bool },
+        give{ value: syntax::Expr, at: source::Span },
+        branch{ v: Value, depth: u32 },
+        store{ root: u32, through: bool, rhs: syntax::Expr, at: source::Span },
+        trying{ e: syntax::Expr, x: syntax::Expr, errs: Id },
+        keeps{ e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, fields: []types::Field, name: utf8::String },
+        order{ e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item },
+        flow{ at: source::Span, msg: utf8::String, notes: []diag::Note, fixes: []diag::Fix },
+    }
+
+    // A body's Lates, lates[from..to], and the derived sets its check made, derived[sets..sets_to].
+    struct Replay { d: u32, from: usize, to: usize, sets: usize, sets_to: usize }
 
     // A function made a value (§14, Escape check), whose type's contract must allow what it
     // keeps (check_fn_values): fn d named as a value, or a bind, `f{ x = a, _ }`, of fn d or of
@@ -653,6 +682,8 @@ namespace check {
             borrow_envs = map::new(u32, map::Map(u32, []u32, Heap)){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             escapes = list::new(Escape){ realloc = arena::alloc, &heap },
             fn_values = list::new(FnValue){ realloc = arena::alloc, &heap },
+            lates = list::new(Late){ realloc = arena::alloc, &heap },
+            replays = list::new(Replay){ realloc = arena::alloc, &heap },
             sites = list::new(Site){ realloc = arena::alloc, &heap },
             fault_writers = map::new(u64, []Writer){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             exit_sites = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
@@ -724,24 +755,17 @@ namespace check {
         each{ &c, xs = c.consts, what = Phase::fold }
         attributes{ &c }
         entry_site{ &c }
-        // First resolve body types and inferred error sets; escape diagnostics wait for
-        // direct-call summaries. The second body check replaces the body side tables, and the
-        // lives the first one recorded.
-        let lives = c.lives.len
+        // The bodies, then their inferred error sets, then the borrow summaries made from both;
+        // then what the bodies' checks do that waits for the summaries (Late).
         each{ &c, xs = c.fns, what = Phase::bodies }
         infer_sets{ &c }
         finish_matches{ &c }
         infer_borrows{ &c }
         c.borrow_ready = true
-        c.lives.len = lives
-        list::clear{ list = &c.needs }
-        list::clear{ list = &c.generic_uses }
-        each{ &c, xs = c.fns, what = Phase::bodies }
-        infer_sets{ &c }
+        replay_bodies{ &c }
         check_apis{ &c }
         check_contracts{ &c }
         check_fn_values{ &c }
-        finish_matches{ &c }
         derived_needs{ &c }
         check_declared{ &c }
         finish_escapes{ &c }
@@ -3660,7 +3684,8 @@ namespace check {
         try! map::put{ m = &c.lacks, key = n.text, value = Lack{ first = had.first, uses = had.uses + 1 } }
     }
 
-    // The error at the first use of a name the program lacks, once: a body is checked twice.
+    // The error at the first use of a name the program lacks, once, however often the use is
+    // resolved.
     fn lack_error { mut c: Checker, n: syntax::Name } {
         let mut b = message{ c }
         try! @fmt(&b, "unknown type or namespace `{}`", str{ s = n.text })
@@ -4977,6 +5002,9 @@ namespace check {
             begin_body{ &c, sc = own_scope{ &c, d }, ret = x.ret }
             c.fn_decl = d
             try! map::put{ m = &c.first_var, key = d, value = @as(u32, c.vars.len) }
+            let from = c.lates.len
+            let sets = c.derived.len
+            c.recording = true
             c.live_from = body.span.start
             let mut i: usize = 0
             while i < x.fields.len and i < params.len {
@@ -4993,6 +5021,71 @@ namespace check {
                 errorf{ &c, at = x.syn.span, msg = @fmt("`{}` must end every path in `return` or `@panic()`", str{ s = x.name.text }) }
             }
             finish{ &c, end = body.span.end }
+            c.recording = false
+            try! list::push{ list = &c.replays, item = Replay{ d, from, to = c.lates.len, sets, sets_to = c.derived.len } }
+        }
+    }
+
+    // Records a part of the check of a fn's body that waits for the summaries (Late).
+    fn late { mut c: Checker, x: Late } {
+        if c.recording { try! list::push{ list = &c.lates, item = x } }
+    }
+
+    // A copy of xs, which a list's items are not once it is cleared.
+    fn copied(T) { c: Checker, xs: []T } -> []T {
+        let out = try! alloc::make(T, Heap){ realloc = arena::alloc, heap = c.heap, count = xs.len }
+        slice::copy{ dst = out, src = xs }
+        return out
+    }
+
+    // Each body's Lates, done again once the summaries are known, as a second check of every
+    // body would do them: in the order the check met them, with the body's derived sets made
+    // again from where each was made, and its flow errors counted from the start of the body as
+    // begin_body counts them.
+    fn replay_bodies { mut c: Checker } {
+        let lates = list::items{ list = c.lates }
+        for r in list::items{ list = c.replays } {
+            c.fn_decl = r.d
+            c.body_errors = c.diags.errors
+            c.flow_errors = 0
+            let sets = list::items{ list = c.derived }
+            let mut i = r.sets
+            while i < r.sets_to {
+                sets[i] = no_vars{}
+                i = i + 1
+            }
+            i = r.from
+            while i < r.to {
+                replay{ &c, x = lates[i] }
+                i = i + 1
+            }
+        }
+        c.fn_decl = NONE
+        c.depth = 0
+    }
+
+    fn replay { mut c: Checker, x: Late } {
+        match x {
+            derive{ d, e } => { list::items{ list = c.derived }[d] = derives{ &c, e } }
+            each{ d, iter, by_ref } => {
+                let mut origins = derives{ &c, e = iter }
+                if not by_ref { origins = contents{ c, xs = origins } }
+                list::items{ list = c.derived }[d] = origins
+            }
+            give{ value, at } => { give_escape{ &c, value, at } }
+            branch{ v, depth } => {
+                c.depth = depth
+                branch_escape{ &c, v }
+            }
+            store{ root, through, rhs, at } => { check_store{ &c, root, through, rhs, at } }
+            trying{ e, x = tried, errs } => { try_escape{ &c, e, x = tried, errs } }
+            keeps{ e, callee, items, fields, name } => { check_keeps{ &c, e, callee, items, fields, name } }
+            order{ e, callee, items } => { check_order{ &c, e, callee, items } }
+            flow{ at, msg, notes, fixes } => {
+                for n in notes { diag::note{ diags = c.diags, span = n.span, msg = n.msg } }
+                for f in fixes { diag::fix{ diags = c.diags, safe = f.safe, msg = f.msg, edits = f.edits } }
+                flow_error{ &c, at, msg }
+            }
         }
     }
 
@@ -6096,6 +6189,11 @@ namespace check {
     // Reports a flow error, unless the body already has another error: what flow checks find
     // after a type error is mostly noise.
     fn flow_error { mut c: Checker, at: source::Span, msg: utf8::String } {
+        if c.recording {
+            let notes = copied(diag::Note){ c, xs = list::items{ list = c.diags.staged } }
+            let fixes = copied(diag::Fix){ c, xs = list::items{ list = c.diags.fixes } }
+            late{ &c, x = Late::flow{ at, msg, notes, fixes } }
+        }
         if c.diags.errors != c.body_errors + c.flow_errors {
             diag::unstage{ diags = c.diags }
             return
@@ -6218,6 +6316,7 @@ namespace check {
             let ds = derives{ &c, e = init }
             held = held_of{ c, e = init }
             let d = new_derived{ &c, xs = ds }
+            late{ &c, x = Late::derive{ d, e = init } }
             let h = new_held{ &c, xs = held }
             let at = list::at{ list = c.vars, i = v }
             at.derived = d
@@ -6410,16 +6509,22 @@ namespace check {
                 return
             }
             coerce_node{ &c, e = value, at = t, t = c.ret }
-            let found = derives{ &c, e = value }
-            if found.len > 0 {
-                let ds = vars_in_order{ c, xs = found }
-                let mut b = message{ c }
-                try! @fmt(&b, "returned value holds the address of {}", describe_local{ c, v = ds[0] })
-                note_local{ &c, v = ds[0] }
-                escape_error{ &c, t = value_ty{ c, k = expr_key{ e = value } }, at, msg = utf8::view{ b } }
-            }
+            late{ &c, x = Late::give{ value, at } }
+            give_escape{ &c, value, at }
         }
         c.dead = true
+    }
+
+    // `return value` can't hand the caller the address of a local.
+    fn give_escape { mut c: Checker, value: syntax::Expr, at: source::Span } {
+        let found = derives{ &c, e = value }
+        if found.len > 0 {
+            let ds = vars_in_order{ c, xs = found }
+            let mut b = message{ c }
+            try! @fmt(&b, "returned value holds the address of {}", describe_local{ c, v = ds[0] })
+            note_local{ &c, v = ds[0] }
+            escape_error{ &c, t = value_ty{ c, k = expr_key{ e = value } }, at, msg = utf8::view{ b } }
+        }
     }
 
     // `break` or `continue`, with the loop it leaves.
@@ -6544,7 +6649,9 @@ namespace check {
             // their addresses.
             let mut origins = derives{ &c, e = iter }
             if not by_ref { origins = contents{ c, xs = origins } }
-            push{ xs = &vars, n = each_var{ &c, name = item, t = elem, by_ref, mutable = by_ref and mutable, origins } }
+            let v = each_var{ &c, name = item, t = elem, by_ref, mutable = by_ref and mutable, origins }
+            late{ &c, x = Late::each{ d = get_var{ c, v }.derived, iter, by_ref } }
+            push{ xs = &vars, n = v }
             if let ix = index { push{ xs = &vars, n = each_var{ &c, name = ix, t = types::USIZE, by_ref = false, mutable = false, origins = no_vars{} } } }
         }
         loop_body{ &c, name, facts = slice::empty(Fact){}, vars = list::items{ list = vars }, forever = false, body, at = s.span, k = stmt_key{ s } }
@@ -6802,6 +6909,15 @@ namespace check {
     // A branch's value must not hold the address of a local of the branch, or a bound function
     // holding one (§11, If and match expressions, rule 8).
     fn branch_escape { mut c: Checker, v: Value } {
+        late{ &c, x = Late::branch{ v, depth = c.depth } }
+        // Its flow error is the branch's, which the replay reports where it reports this.
+        let recording = c.recording
+        c.recording = false
+        branch_value_escape{ &c, v }
+        c.recording = recording
+    }
+
+    fn branch_value_escape { mut c: Checker, v: Value } {
         let at = match v { expr{ e } => { expr_at{ e } } nested{ s } => { s.span } none => { nowhere{} } }
         let t = match v { expr{ e } => { value_ty{ c, k = expr_key{ e } } } nested{ s } => { value_ty{ c, k = stmt_key{ s } } } none => { types::NO_TYPE } }
         let found = derives_value{ &c, v }
@@ -7094,6 +7210,7 @@ namespace check {
         // With `match &p`, nothing in the arms may reach p but their bindings.
         let forb: ?Place = match scrut.k { addr{ e = inner } => { place_path{ c, e = inner.* } } else => { null } }
         let scrut_derived = new_derived{ &c, xs = if through { no_vars{} } else { derives{ &c, e = scrut } } }
+        if not through { late{ &c, x = Late::derive{ d = scrut_derived, e = scrut } } }
         let s0 = save{ c }
         let mut seen = list::new(u32){ realloc = arena::alloc, heap = c.heap }
         let mut has_else = false
@@ -7498,6 +7615,7 @@ namespace check {
         }
         let fields: ?[]types::Field = if known { vs[vi].fields } else { null }
         let derived = new_derived{ &c, xs = derives{ &c, e = init } }
+        late{ &c, x = Late::derive{ d = derived, e = init } }
         let bvars = pattern_vars{ &c, variant = variant.text, known, fields, binders, through = false, ptr_mut = false, derived, at = s.span }
         let mut evars: []u32 = slice::empty(u32){}
         if els_variant != null {
@@ -7588,6 +7706,7 @@ namespace check {
             }
         }
         let derived = new_derived{ &c, xs = derives{ &c, e = x } }
+        late{ &c, x = Late::derive{ d = derived, e = x } }
         let mut first: []u32 = slice::empty(u32){}
         let mut i: usize = 0
         while i < pats.len {
@@ -7640,6 +7759,7 @@ namespace check {
             errs = es
         }
         let derived = new_derived{ &c, xs = derives{ &c, e = x } }
+        late{ &c, x = Late::derive{ d = derived, e = x } }
         let mut listed = list::new(u32){ realloc = arena::alloc, heap = c.heap }
         let mut spans = list::new(source::Span){ realloc = arena::alloc, heap = c.heap }
         let mut kinds: u32 = 0          // 1: `ok` or `err`, 2: errors
@@ -9945,6 +10065,7 @@ namespace check {
     // A store of rhs into a place rooted at local root, or through a pointer (through). The
     // place can't hold the address of a local that ends before it, or that is the caller's.
     fn check_store { mut c: Checker, root: u32, through: bool, rhs: syntax::Expr, at: source::Span } {
+        late{ &c, x = Late::store{ root, through, rhs, at } }
         let found = derives{ &c, e = rhs }
         if found.len == 0 { return }
         let t = value_ty{ c, k = expr_key{ e = rhs } }
@@ -10332,7 +10453,10 @@ namespace check {
     // Braces e, of a call, a bind or a literal, while its body is checked: kept for order_post
     // if a part may change a place another reads or changes.
     fn check_order { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item } {
-        if not c.borrow_ready { return }
+        if not c.borrow_ready {
+            late{ &c, x = Late::order{ e, callee, items } }
+            return
+        }
         let mut quiet = calm{ e = callee }
         let mut i: usize = 0
         while i < items.len and quiet {
@@ -12239,7 +12363,7 @@ namespace check {
     }
 
     // The inferred sets that joined a declared one: each must be in it (§8, Errors, rule 14).
-    // Bodies are checked twice, so each is reported once, where it first joined.
+    // Each is reported once, where it first joined.
     fn check_declared { mut c: Checker } {
         let ds = list::items{ list = c.declared }
         let mut i: usize = 0
@@ -12752,19 +12876,8 @@ namespace check {
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
             return ok
         }
-        // Like `return`, `try` can't hand the caller an error that holds the address of a local.
-        if contains_ptr{ &c, t = errs, seen = no_vars{} } {
-            c.borrow_error = true
-            let found = derives_raw{ &c, e = x }
-            c.borrow_error = false
-            if found.len > 0 {
-                let ds = vars_in_order{ c, xs = found }
-                let mut b = message{ c }
-                try! @fmt(&b, "`try` would return an error that may hold the address of {}", describe_local{ c, v = ds[0] })
-                note_local{ &c, v = ds[0] }
-                escape_error{ &c, t = errs, at = expr_at{ e }, msg = utf8::view{ b } }
-            }
-        }
+        late{ &c, x = Late::trying{ e, x, errs } }
+        try_escape{ &c, e, x, errs }
         c.conv_at = expr_at{ e }
         if not flows{ &c, from = errs, into = own } {
             let mut b = message{ c }
@@ -12782,6 +12895,21 @@ namespace check {
             error{ &c, at = expr_at{ e }, msg = utf8::view{ b } }
         }
         return ok
+    }
+
+    // Like `return`, `try x` can't hand the caller an error that holds the address of a local.
+    fn try_escape { mut c: Checker, e: syntax::Expr, x: syntax::Expr, errs: Id } {
+        if not contains_ptr{ &c, t = errs, seen = no_vars{} } { return }
+        c.borrow_error = true
+        let found = derives_raw{ &c, e = x }
+        c.borrow_error = false
+        if found.len > 0 {
+            let ds = vars_in_order{ c, xs = found }
+            let mut b = message{ c }
+            try! @fmt(&b, "`try` would return an error that may hold the address of {}", describe_local{ c, v = ds[0] })
+            note_local{ &c, v = ds[0] }
+            escape_error{ &c, t = errs, at = expr_at{ e }, msg = utf8::view{ b } }
+        }
     }
 
     // An array in immutable const storage, including a field or element of a const. This
@@ -13316,7 +13444,7 @@ namespace check {
             if types::get{ s = c.ty, id = want } is func{ keeps = ks } { keeps = ks }
         }
         // One that starts a task is only called, which is reported (path_expr).
-        if c.borrow_ready and not x.starts_task { try! list::push{ list = &c.fn_values, item = FnValue{ key, d, at, bound = slice::empty([]u8){}, callee = types::NO_TYPE, typed = typed or x.contract } } }
+        if c.recording and not x.starts_task { try! list::push{ list = &c.fn_values, item = FnValue{ key, d, at, bound = slice::empty([]u8){}, callee = types::NO_TYPE, typed = typed or x.contract } } }
         return fn_type_keeping{ &c, d, targs, keeps }
     }
 
@@ -13885,12 +14013,12 @@ namespace check {
         c.cap_shared = starting
         let refs = check_exclusive{ &c, e, items, fields, callee = call_decl, name }
         c.cap_shared = false
-        if c.borrow_ready and not bind and not starting { if e.k is braced{ callee } { check_keeps{ &c, e, callee = callee.*, items, fields, name } } }
+        if not bind and not starting { if e.k is braced{ callee } { late{ &c, x = Late::keeps{ e, callee = callee.*, items, fields, name } } } }
         if bind {
             try! map::put{ m = &c.holds, key = expr_key{ e }, value = refs }
             let mut given = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
             for f in fields { if types::find_field{ fields = gone, name = f.name } == null { try! list::push{ list = &given, item = f.name } } }
-            if c.borrow_ready and not starting { try! list::push{ list = &c.fn_values, item = FnValue{ key = expr_key{ e }, d = call_decl, at = expr_at{ e }, bound = list::items{ list = given }, callee = ft, typed = exp_func{ c, exp } } } }
+            if c.recording and not starting { try! list::push{ list = &c.fn_values, item = FnValue{ key = expr_key{ e }, d = call_decl, at = expr_at{ e }, bound = list::items{ list = given }, callee = ft, typed = exp_func{ c, exp } } } }
             return types::func{ s = &c.ty, fields = gone, ret, bound = true, external = false, keeps = bind_keeps{ c, ft, gone, exp } }
         }
         return ret
@@ -16367,6 +16495,7 @@ namespace check {
         }
         let is_r = vs.len > 0
         let scrut_derived = new_derived{ &c, xs = derives{ &c, e = scrut } }
+        late{ &c, x = Late::derive{ d = scrut_derived, e = scrut } }
         let s0 = save{ c }
         let mut seen = list::new(u32){ realloc = arena::alloc, heap = c.heap }       // 0 for `ok`, 1 for `err`
         let mut listed = list::new(u32){ realloc = arena::alloc, heap = c.heap }
@@ -16997,8 +17126,8 @@ namespace check {
         }
     }
 
-    // Reports msg at `at`, once: a body is checked twice. The notes said before it (`note`)
-    // go with it.
+    // Reports msg at `at`, once: replay_bodies reports a body's flow errors again, and a check
+    // may meet one mistake more than once. The notes said before it (`note`) go with it.
     fn error { mut c: Checker, at: source::Span, msg: utf8::String } {
         let ds = diag::items{ diags = c.diags.* }
         let mut i: usize = 0

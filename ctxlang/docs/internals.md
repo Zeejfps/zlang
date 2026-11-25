@@ -387,8 +387,8 @@ and why they are as they are.
   opaque `type` narrows it, and a clash this makes is reported once (`reclash`). A half has no
   name in any table: uses name the definition, so a fn has one identity at every level and
   lowering never sees a half.
-- **Checking the contract** waits for the bodies' inferred error sets (`check_apis`, after the
-  second `infer_sets`): a half is resolved with its definition's generic parameters, so their
+- **Checking the contract** waits for the bodies' inferred error sets (`check_apis`, after
+  `infer_sets` and the replay of the bodies' escape checks): a half is resolved with its definition's generic parameters, so their
   types are the same ids, and compared field by field (`compare_half`); a fn's `!T` gets the
   error that writes its set (`result_set`); and the names in each api declaration's types are
   looked up in the side table of uses for any that is hidden where the declaration is visible
@@ -487,7 +487,13 @@ and why they are as they are.
   of 48 gained nothing; gcc's `-flto` was as fast at run time but made every link of KOTOR take
   54 s, and `-flto=auto` runs its jobs one after another on Windows.
 - **Direct borrowing summaries.** A checked-AST pass infers whole-parameter success/error
-  origins plus pointer-store effects, then bodies are checked again for escapes. Each store
+  origins plus pointer-store effects, then the bodies' escape checks run with them. A body is
+  checked once: what its check does that a summary changes (`Late`: what each local is derived
+  from, the escape checks, a call's keeps and its parts' order, and the flow errors, which are
+  reported only in a body without other errors since its start) is recorded in order as it
+  is checked, and done again in that order once the summaries are made (`replay_bodies`), with
+  the body's derived sets made again and its errors counted from its start. Checking every body
+  a second time did the same, and was a fifth of checking KOTOR. Each store
   says which fields' places, or what they point to, it goes into, and a call keeps what its
   callee's stores say (`check_keeps`): the `into` of a contract. An origin is a field as it
   is, or what its pointees hold (`PRIME`), so a value read through `&doc` holds what `doc`

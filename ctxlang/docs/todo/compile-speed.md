@@ -30,11 +30,18 @@ After 1 to 3, KOTOR's check is about 1.4 s: the first body pass about 28%, borro
 the second body pass 22%, lexing and parsing 15%, maps still 16% of the time in functions
 themselves.
 
-- [ ] **4. Bodies are checked twice.** `check::program` runs `Phase::bodies` over every fn again
+- [x] **4. Bodies are checked twice.** `check::program` ran `Phase::bodies` over every fn again
   after `infer_borrows`, so that eight `borrow_ready` places (`escape_error`, `derives` through
-  `direct_borrow`, `check_order`, `check_keeps`, the `fn_values`) see the summaries. The second
-  pass is about 22% of KOTOR's check. Checking escapes as a walk of the checked tree of its own,
-  over the side tables, as `borrow_fn` walks it, would replace it.
+  `direct_borrow`, `check_order`, `check_keeps`, the `fn_values`) saw the summaries. The second
+  check gave the same types as the first (441K expressions of KOTOR compared). Now a body is
+  checked once, and what its check does that the summaries change (check.ctx, `Late`) is
+  recorded in order and done again once they are made (`replay_bodies`). KOTOR 1.47 s to
+  1.21 s, ctxc 1.00 s to 0.86 s, the C the same. Its errors are the same but for errors that
+  followed from another the second check had reported already, which it didn't count, as
+  `[200 + 100]`'s "couldn't be computed" after its overflow (the suite's
+  ArrayLiteralViews/constants_fold/01), and `@atomic_load(&n, o)`'s "must be a constant" after
+  "unknown name `o`": no other difference in about 97,000 checks of the corpus's programs and
+  their mutants against the compiler before.
 - [ ] **5. Lexing and parsing, one file at a time.** About 15% of the check, and the files are
   independent: in parallel, on tasks (threads.md), with an arena each. The lexer's keywords are
   found with `slice::eq_bytes` (about 2%).
@@ -65,6 +72,12 @@ themselves.
   maps cost is cache misses in tables of millions of slots.
 
 ## To look at
+
+- The recovery test (`tools/recover.py --sample 25`, 2026-11-25) fails 6 of 117,738 damaged
+  copies, all inside `check::new`'s `Checker{ ... }` literal (check.ctx, about lines 570 to
+  585): deleting or duplicating a token there makes the parser report more errors than its
+  cap. It did before item 3 too (the same literal, at the commit before it), so it is the
+  parser's recovery in a long struct literal, not the tables.
 
 - `comptime` runs each const in a new `arena::new` over the same scratch memory
   (comptime.ctx, `scratch`), so what `eval` allocates there isn't zero, as an arena promises
