@@ -1,25 +1,25 @@
 // The C library calls these by name while ctxtest_hooks runs, on this thread.
-#c::export{ name = "game_add" }
+#c_export{ name = "game_add" }
 fn add { a: i32, b: i32 } -> i32 { return a + b }
 
 // A capability isn't C's: the export supplies it.
-#c::export{ name = "game_tick" }
+#c_export{ name = "game_tick" }
 fn tick { mut io: Io, frame: u64 } {
     _ = @fmt(&io, "tick {}\n", frame)
 }
 
 struct P { x: i32, y: i32 }
-#c::export{ name = "game_swap" }
+#c_export{ name = "game_swap" }
 fn swap { p: P } -> P { return P{ x = p.y, y = p.x } }
 
 // A `mut` field is C's pointer.
-#c::export{ name = "game_count" }
+#c_export{ name = "game_count" }
 fn count { mut total: i64, by: i32 } { total = total + @as(i64, by) }
 
-#c::export{ name = "game_any", any_thread = true }
+#c_export{ name = "game_any", any_thread = true }
 fn any { n: i32 } -> i32 { return n + 1 }
 
-#c::export{ name = "game_check" }
+#c_export{ name = "game_check" }
 fn check { n: i32 } -> i32 {
     if n > 2 { @panic("too many") }
     return n

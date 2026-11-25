@@ -27,7 +27,7 @@ namespace glfw {
     extern fn glfwGetWindowUserPointer { mut glfw: Glfw, window: *mut Window } -> ?*mut u8
 
     // GLFWkeyfun. GLFW calls it only within poll_events, so it may take the Glfw capability: a
-    // `#c::callback` fn of these fields, or fewer (spec §18, Callbacks).
+    // `#c_callback` fn of these fields, or fewer (spec §18, Callbacks).
     type KeyFn = extern fn{ mut glfw: Glfw, window: *mut Window, key: i32, scancode: i32, action: i32, mods: i32 }
     extern fn glfwSetKeyCallback { mut glfw: Glfw, window: *mut Window, callback: ?KeyFn } -> ?KeyFn
 

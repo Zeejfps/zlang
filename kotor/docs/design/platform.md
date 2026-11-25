@@ -133,7 +133,7 @@ size).
 ### Debug output
 
 Where KHR_debug exists, `gl::start_debug{ &gl, &debug, log = &debug_log }` turns it on,
-synchronous, with notifications off. The driver calls `gl::on_debug_message` (a `#c::callback`)
+synchronous, with notifications off. The driver calls `gl::on_debug_message` (a `#c_callback`)
 during the GL call that caused a message. A callback can't take a capability with fields, and
 taking `Io` would promise that GL is only called where `Io` is held, so the callback only appends
 to a `gl::DebugLog` reached through `userParam`, and the program prints the log where it holds

@@ -1,5 +1,5 @@
-#c::export{ name = "two words" }  //~ error at 1: `two words` is not a C identifier
+#c_export{ name = "two words" }  //~ error at 1: `two words` is not a C identifier
 fn f {} {}
-#c::export{ name = "" }  //~ error at 1: `` is not a C identifier
+#c_export{ name = "" }  //~ error at 1: `` is not a C identifier
 fn g {} {}
 fn main {} {}

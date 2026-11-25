@@ -1,14 +1,14 @@
 // One exported fn per C symbol, and none an extern fn calls or a C variable reads.
-#c::export{ name = "hook" }
+#c_export{ name = "hook" }
 fn a {} {}
-#c::export{ name = "hook" }
+#c_export{ name = "hook" }
 fn b {} {}  //~ error at 4: `b` exports C symbol `hook`, which `a` exports already
-#c::export{ name = "labs" }
+#c_export{ name = "labs" }
 fn c {} {}  //~ error at 4: `c` exports C symbol `labs`, which extern fn `long_abs` calls: C would call the export
-#c::symbol{ name = "labs" }
+#c_symbol{ name = "labs" }
 #pure
 extern fn long_abs { n: i64 } -> i64
-#c::export{ name = "errno_like" }
+#c_export{ name = "errno_like" }
 fn d {} {}  //~ error at 4: `d` exports C symbol `errno_like`, which C variable `errno_like` of `Lib` reads
 capability Lib { extern errno_like: i32 }
 fn main {} {}

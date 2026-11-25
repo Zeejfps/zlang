@@ -4,7 +4,7 @@ namespace game {
     extern fn labs { n: i64 } -> i64
     extern union Bits { f: f32, u: u32 }
     capability Lib { extern ctxtest_count: i32 }
-    #c::callback
+    #c_callback
     fn on_key { key: i32 } {}
     fn sum { s: []u8 } -> u64 {
         let p = s.ptr
@@ -16,6 +16,6 @@ namespace game {
         let made = c::String{ ptr = p }
         return (p + 1).* + v.len
     }
-    #c::export{ name = "game_tick" }
+    #c_export{ name = "game_tick" }
     fn tick {} {}
 }

@@ -3,13 +3,13 @@
 namespace m {
     capability L
     capability M { f: extern fn{ n: i64 } -> i64 }
-    #c::symbol{ name = "llabs" }
+    #c_symbol{ name = "llabs" }
     #pure
     extern fn abs { n: i64 } -> i64
     fn load { mut l: L } -> M { return M{ f = abs } }
 }
 
-#c::symbol{ name = "llabs" }
+#c_symbol{ name = "llabs" }
 extern fn magnitude { mut x: m::M, n: i64 } -> i64
 fn main { mut io: Io, mut l: m::L } {
     let mut x = m::load{ &l }

@@ -1,7 +1,7 @@
 // C code between two functions of the program has a line of its own, without a position:
 // here a callback called through its C function pointer, as a C library calls it.
 
-#c::callback
+#c_callback
 fn check { n: i32 } -> i32 {
     if n > 2 { @panic("too many") }
     return n

@@ -19,7 +19,7 @@ namespace rt {
 
     // Panics with a message that needn't be a literal, as `@panic` does, but without a
     // position: for std's checks of what a caller passed.
-    #c::symbol{ name = "ctx_panic_msg" }
+    #c_symbol{ name = "ctx_panic_msg" }
     #pure
     extern fn fail { msg: []u8 }
 
@@ -88,14 +88,14 @@ namespace rt {
 
     // Memory for function values' records (ctxrt.h), once the runtime's own is used up. The
     // runtime calls it only within `start`, which holds the `Mem`. It may make no record.
-    #c::callback
+    #c_callback
     fn record_pages { mut mem: Mem, size: usize } -> ?*mut u8 {
         return os::pages{ &mem, size }
     }
 
     type Pages = extern fn{ mut mem: Mem, size: usize } -> ?*mut u8
 
-    #c::symbol{ name = "ctx_pages_set" }
+    #c_symbol{ name = "ctx_pages_set" }
     extern fn pages_set { mut mem: Mem, pages: Pages }
 
     // ---- threads (std/thread.ctx)
@@ -103,38 +103,38 @@ namespace rt {
     // What the runtime calls when a task's worker, or a thread that called a
     // callback, ends: its standard output, written out. The runtime calls it only within
     // `start`, which holds the `Io`.
-    #c::callback
+    #c_callback
     fn thread_ends { mut io: Io } {
         io::flush{ &io }
     }
 
     type Ends = extern fn{ mut io: Io }
 
-    #c::symbol{ name = "ctx_ends_set" }
+    #c_symbol{ name = "ctx_ends_set" }
     extern fn ends_set { mut io: Io, ends: Ends }
 
     // A new thread's stack limit, `usable` bytes below the caller's frame, and its name for a
     // panic's report (ctxc/rt/ctxthread.c): for task::begin.
-    #c::symbol{ name = "ctx_thread_begin" }
+    #c_symbol{ name = "ctx_thread_begin" }
     extern fn thread_begin { mut threads: Threads, usable: usize, name: []u8 }
 
     // The calling thread's label for a panic's report, which task::begin gave its worker ("task
     // worker") and a task's run renames ("task NAME"): empty on the main thread.
-    #c::symbol{ name = "ctx_here_name" }
+    #c_symbol{ name = "ctx_here_name" }
     extern fn thread_name { mut proc: Proc } -> []u8
 
     // Gives the calling thread, which task::begin started, another label.
-    #c::symbol{ name = "ctx_thread_rename" }
+    #c_symbol{ name = "ctx_thread_rename" }
     extern fn thread_rename { mut threads: Threads, name: []u8 }
 
     // The task the calling thread, which task::begin started, runs from here on: its record
     // (std/task.ctx, a copy of one), or null for none. A panic's call path on the thread then
     // ends with where the task was started.
-    #c::symbol{ name = "ctx_thread_task" }
+    #c_symbol{ name = "ctx_thread_task" }
     extern fn thread_runs { mut threads: Threads, record: ?*u8 }
 
     // The name of the task fn whose record `record` is (std/task.ctx, a copy of one).
-    #c::symbol{ name = "ctx_task_name" }
+    #c_symbol{ name = "ctx_task_name" }
     #pure
     extern fn task_name { record: *u8 } -> []u8
 
@@ -164,11 +164,11 @@ namespace rt {
     // 0 is the function that asks, at this call. A function the compiler wrote isn't an
     // entry, and the path ends at `main`, at a test or at a task's fn. A program built without
     // call paths has the panic's own entry, and none otherwise.
-    #c::symbol{ name = "ctx_path_count" }
+    #c_symbol{ name = "ctx_path_count" }
     extern fn count_frames { mut stack: Stack } -> usize
 
     // Entry `index` of that path, innermost first.
-    #c::symbol{ name = "ctx_path_frame" }
+    #c_symbol{ name = "ctx_path_frame" }
     extern fn get_frame { mut stack: Stack, index: usize } -> Frame
 
     // A path longer than FIRST + LAST entries is written as its first FIRST and its last LAST,

@@ -1,4 +1,4 @@
-// `#c::export` (spec §18, Callbacks, rule 8): C linked into the program calls a callback by its
+// `#c_export` (spec §18, Callbacks, rule 8): C linked into the program calls a callback by its
 // symbol. C is lib/hooks.c, as libctxexport.a.
 //# needs: ar
 //# $ cc -c {dir}/lib/hooks.c -o {dir}/lib/hooks.o

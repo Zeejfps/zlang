@@ -82,7 +82,7 @@ namespace lower {
         let panic = if h == NONE { NONE } else { fn_id{ &l, decl = h, targs = no_ids{} } }
         let v = check::stack_limit{ c }
         let limit = if let value = v { static_of{ &l, v = value } } else { NONE }
-        // Each `#c::export` fn is lowered whether or not the program calls it, since C does.
+        // Each `#c_export` fn is lowered whether or not the program calls it, since C does.
         let mut exports = list::new(ir::Export){ realloc = arena::alloc, heap = l.heap }
         for d in list::items{ list = c.fns } {
             let x = check::get_decl{ c, d }

@@ -1,2 +1,2 @@
 fn main {} {}
-#c::symbol{ name = "a" }
+#c_symbol{ name = "a" }

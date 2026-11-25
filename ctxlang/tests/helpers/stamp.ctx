@@ -13,11 +13,11 @@
 // sets another time are the time's, and STAMP holds which they are. The time of last access is
 // not among them: a read doesn't count.
 
-#c::symbol{ name = "stat" }
+#c_symbol{ name = "stat" }
 extern fn file_status { mut fs: Fs, path: c::String, into: *mut [512]u8 } -> i32
 
 // `times` is C's `struct utimbuf`: the times of access and of modification, in seconds.
-#c::symbol{ name = "utime" }
+#c_symbol{ name = "utime" }
 extern fn set_times { mut fs: Fs, path: c::String, times: *[2]i64 } -> i32
 
 const THEN: i64 = 1000000000        // 2001-09-09

@@ -3,7 +3,7 @@
 
 extern fn close { mut proc: Proc, fd: i32 } -> i32
 
-#c::symbol{ name = "execv" }
+#c_symbol{ name = "execv" }
 extern fn become { mut proc: Proc, path: *u8, argv: *?*u8 } -> i32
 
 fn main { mut proc: Proc, args: Args } -> i32 {

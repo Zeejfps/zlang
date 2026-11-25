@@ -18,10 +18,10 @@ namespace os {
     // _write and _read take an unsigned int count and return an int: at most this many a call.
     const CHUNK: usize = 1073741824
 
-    #c::symbol{ name = "_write" }
+    #c_symbol{ name = "_write" }
     extern fn crt_write { mut io: Io, fd: i32, buf: *u8, count: u32 } -> i32
 
-    #c::symbol{ name = "_read" }
+    #c_symbol{ name = "_read" }
     extern fn crt_read { mut io: Io, fd: i32, buf: *mut u8, count: u32 } -> i32
 
     extern fn VirtualAlloc { mut mem: Mem, address: ?*mut u8, size: usize, kind: u32, protect: u32 } -> ?*mut u8
@@ -79,15 +79,15 @@ namespace os {
         return if r > 0 { @as(usize, r) } else { 0 }
     }
 
-    #c::symbol{ name = "GetStdHandle" }
+    #c_symbol{ name = "GetStdHandle" }
     extern fn std_handle { mut io: Io, which: u32 } -> u64
-    #c::symbol{ name = "GetFileType" }
+    #c_symbol{ name = "GetFileType" }
     extern fn file_type { mut io: Io, file: u64 } -> u32
-    #c::symbol{ name = "WaitForMultipleObjects" }
+    #c_symbol{ name = "WaitForMultipleObjects" }
     extern fn wait_any_io { mut io: Io, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
-    #c::symbol{ name = "PeekConsoleInputW" }
+    #c_symbol{ name = "PeekConsoleInputW" }
     extern fn peek_console { mut io: Io, input: u64, mut rec: InputRecord, count: u32, mut n: u32 } -> i32
-    #c::symbol{ name = "ReadConsoleInputW" }
+    #c_symbol{ name = "ReadConsoleInputW" }
     extern fn read_console { mut io: Io, input: u64, mut rec: InputRecord, count: u32, mut n: u32 } -> i32
 
     // GetFileType's console and pipe, and an INPUT_RECORD, as much of it as a key's event needs:
@@ -346,7 +346,7 @@ namespace os {
 
     // ---- for std's rt: starting the program, and ending it
 
-    #c::symbol{ name = "exit" }
+    #c_symbol{ name = "exit" }
     extern fn c_exit { mut proc: Proc, code: i32 }
 
     // Ends the program with exit code `code`, as C's exit does.
@@ -354,7 +354,7 @@ namespace os {
         c_exit{ &proc, code }
     }
 
-    #c::symbol{ name = "_setmode" }
+    #c_symbol{ name = "_setmode" }
     extern fn set_mode { mut io: Io, fd: i32, mode: i32 } -> i32
 
     const O_BINARY: i32 = 32768
@@ -423,10 +423,10 @@ namespace os {
     // What `commit` asks of the kernel. Committing memory `reserve` made makes usable what
     // was usable to begin with, so these take no capability, and an arena over any memory
     // needs none.
-    #c::symbol{ name = "VirtualQuery" }
+    #c_symbol{ name = "VirtualQuery" }
     #pure
     extern fn query { address: *u8, mut info: MemInfo, size: usize } -> usize
-    #c::symbol{ name = "VirtualAlloc" }
+    #c_symbol{ name = "VirtualAlloc" }
     #pure
     extern fn commit_pages { address: *u8, size: usize, kind: u32, protect: u32 } -> ?*mut u8
 
@@ -480,7 +480,7 @@ namespace os {
     extern fn GetCurrentProcessId { mut proc: Proc } -> u32
     extern fn DuplicateHandle { mut proc: Proc, from_process: u64, handle: u64, to_process: u64, mut copy: u64, access: u32, inherit: i32, options: u32 } -> i32
     extern fn CreateNamedPipeW { mut proc: Proc, name: *u16, open_mode: u32, pipe_mode: u32, instances: u32, out_size: u32, in_size: u32, timeout: u32, security: ?*Security } -> u64
-    #c::symbol{ name = "CreateFileW" }
+    #c_symbol{ name = "CreateFileW" }
     extern fn open_file { mut proc: Proc, name: *u16, access: u32, share: u32, security: ?*Security, disposition: u32, flags: u32, template: u64 } -> u64
     extern fn InitializeProcThreadAttributeList { mut proc: Proc, list: ?*mut u8, count: u32, flags: u32, mut size: usize } -> i32
     extern fn UpdateProcThreadAttribute { mut proc: Proc, list: *mut u8, flags: u32, attribute: usize, value: *u64, size: usize, previous: ?*mut u8, returned: ?*mut usize } -> i32
@@ -493,24 +493,24 @@ namespace os {
     extern fn TerminateJobObject { mut proc: Proc, job: u64, code: u32 } -> i32
     extern fn CreateEventW { mut proc: Proc, security: ?*Security, manual: i32, initial: i32, name: ?*u16 } -> u64
     extern fn GetOverlappedResult { mut proc: Proc, file: u64, mut overlapped: Overlapped, mut done: u32, wait: i32 } -> i32
-    #c::symbol{ name = "ReadFile" }
+    #c_symbol{ name = "ReadFile" }
     extern fn read_overlapped { mut proc: Proc, file: u64, buf: *mut u8, count: u32, done: ?*mut u32, mut overlapped: Overlapped } -> i32
-    #c::symbol{ name = "WriteFile" }
+    #c_symbol{ name = "WriteFile" }
     extern fn write_overlapped { mut proc: Proc, file: u64, buf: *u8, count: u32, done: ?*mut u32, mut overlapped: Overlapped } -> i32
-    #c::symbol{ name = "CloseHandle" }
+    #c_symbol{ name = "CloseHandle" }
     extern fn close_handle { mut proc: Proc, handle: u64 } -> i32
-    #c::symbol{ name = "GetLastError" }
+    #c_symbol{ name = "GetLastError" }
     extern fn last_error { mut proc: Proc } -> u32
-    #c::symbol{ name = "malloc" }
+    #c_symbol{ name = "malloc" }
     extern fn c_malloc { mut proc: Proc, size: usize } -> ?*mut u8
-    #c::symbol{ name = "free" }
+    #c_symbol{ name = "free" }
     extern fn c_free { mut proc: Proc, p: *mut u8 }
 
     // UTF-8 and UTF-16, which convert pure functions.
-    #c::symbol{ name = "MultiByteToWideChar" }
+    #c_symbol{ name = "MultiByteToWideChar" }
     #pure
     extern fn widen { page: u32, flags: u32, text: *u8, n: i32, out: ?*mut u16, cap: i32 } -> i32
-    #c::symbol{ name = "WideCharToMultiByte" }
+    #c_symbol{ name = "WideCharToMultiByte" }
     #pure
     extern fn narrow_utf16 { page: u32, flags: u32, text: *u16, n: i32, out: ?*mut u8, cap: i32, fallback: ?*u8, used: ?*mut i32 } -> i32
 
@@ -999,9 +999,9 @@ namespace os {
         return exit_code{ &proc, id = child.id }
     }
 
-    #c::symbol{ name = "WaitForMultipleObjects" }
+    #c_symbol{ name = "WaitForMultipleObjects" }
     extern fn wait_any { mut proc: Proc, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
-    #c::symbol{ name = "CancelIoEx" }
+    #c_symbol{ name = "CancelIoEx" }
     extern fn cancel_io { mut proc: Proc, file: u64, overlapped: *Overlapped } -> i32
 
     // ERROR_OPERATION_ABORTED: what an operation CancelIoEx ended fails with.
@@ -1226,19 +1226,19 @@ namespace os {
     // What only the interpreter can't do.
     fn concurrency_unsupported { what: []u8 } { rt::fail{ msg = what } }
 
-    #c::symbol{ name = "CreateEventW" }
+    #c_symbol{ name = "CreateEventW" }
     extern fn create_event { mut threads: Threads, security: ?*u8, manual: i32, initial: i32, name: ?*u16 } -> u64
-    #c::symbol{ name = "SetEvent" }
+    #c_symbol{ name = "SetEvent" }
     extern fn set_event { mut threads: Threads, event: u64 } -> i32
-    #c::symbol{ name = "ResetEvent" }
+    #c_symbol{ name = "ResetEvent" }
     extern fn reset_event { mut threads: Threads, event: u64 } -> i32
-    #c::symbol{ name = "GetTickCount64" }
+    #c_symbol{ name = "GetTickCount64" }
     extern fn tick_count { mut threads: Threads } -> u64
-    #c::symbol{ name = "GetCurrentProcess" }
+    #c_symbol{ name = "GetCurrentProcess" }
     extern fn this_process { mut threads: Threads } -> u64
-    #c::symbol{ name = "DuplicateHandle" }
+    #c_symbol{ name = "DuplicateHandle" }
     extern fn duplicate_thread { mut threads: Threads, from_process: u64, handle: u64, to_process: u64, mut copy: u64, access: u32, inherit: i32, options: u32 } -> i32
-    #c::symbol{ name = "CancelSynchronousIo" }
+    #c_symbol{ name = "CancelSynchronousIo" }
     extern fn cancel_synchronous_io { mut threads: Threads, thread: u64 } -> i32
 
     // A task's cancel object (std/task.ctx): a manual-reset event, not signalled, or 0 if
@@ -1271,21 +1271,21 @@ namespace os {
         if thread != 0 { _ = cancel_synchronous_io{ &threads, thread } }
     }
 
-    #c::symbol{ name = "CreateThread" }
+    #c_symbol{ name = "CreateThread" }
     extern fn create_thread { mut threads: Threads, security: ?*u8, stack: usize, entry: extern fn{ start: *mut u8 } -> u32, start: *mut u8, flags: u32, id: ?*mut u32 } -> u64
-    #c::symbol{ name = "WaitForSingleObject" }
+    #c_symbol{ name = "WaitForSingleObject" }
     extern fn wait_thread { mut threads: Threads, handle: u64, ms: u32 } -> u32
-    #c::symbol{ name = "CloseHandle" }
+    #c_symbol{ name = "CloseHandle" }
     extern fn close_thread { mut threads: Threads, handle: u64 } -> i32
-    #c::symbol{ name = "Sleep" }
+    #c_symbol{ name = "Sleep" }
     extern fn c_sleep { mut threads: Threads, ms: u32 }
-    #c::symbol{ name = "SwitchToThread" }
+    #c_symbol{ name = "SwitchToThread" }
     extern fn switch_thread { mut threads: Threads } -> i32
-    #c::symbol{ name = "GetCurrentThreadId" }
+    #c_symbol{ name = "GetCurrentThreadId" }
     extern fn current_thread_id { mut threads: Threads } -> u32
-    #c::symbol{ name = "GetCurrentThread" }
+    #c_symbol{ name = "GetCurrentThread" }
     extern fn current_thread { mut threads: Threads } -> u64
-    #c::symbol{ name = "SetThreadDescription" }
+    #c_symbol{ name = "SetThreadDescription" }
     extern fn set_thread_description { mut threads: Threads, thread: u64, name: *u16 } -> i32
 
     // CreateThread's flag: its stack size is what to reserve, not what to commit.
@@ -1293,7 +1293,7 @@ namespace os {
 
     // Where a new thread starts: a C function that Windows calls on it, which holds no
     // capability.
-    #c::callback{ any_thread = true }
+    #c_callback{ any_thread = true }
     fn thread_entry { start: *mut u8 } -> u32 {
         task::begin{ start }
         return 0
@@ -1367,7 +1367,7 @@ namespace os {
     extern fn ReleaseSRWLockExclusive { lock: *mut Mutex }
     // Waiting without a timeout touches only the lock and the condition; with one, it reads
     // the clock, which takes Threads.
-    #c::symbol{ name = "SleepConditionVariableSRW" }
+    #c_symbol{ name = "SleepConditionVariableSRW" }
     #pure
     extern fn sleep_condition { cv: *mut Condition, lock: *mut Mutex, ms: u32, flags: u32 } -> i32
     extern fn SleepConditionVariableSRW { mut threads: Threads, cv: *mut Condition, lock: *mut Mutex, ms: u32, flags: u32 } -> i32

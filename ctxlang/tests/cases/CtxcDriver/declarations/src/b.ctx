@@ -6,7 +6,7 @@ namespace game {
     capability Gl {
         ..Base,
         clear: extern fn{ mask: u32 },
-        #c::symbol{ name = "gl_env" }
+        #c_symbol{ name = "gl_env" }
         extern env: *u8,
     }
     capability Plain

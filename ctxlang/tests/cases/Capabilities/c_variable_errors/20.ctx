@@ -1,9 +1,9 @@
 capability O {
-    #c::symbol{ name = "x" }
+    #c_symbol{ name = "x" }
     ..Io
 }
 fn main {} {}
 
 //# errors:
 //| 20.ctx:3:5: error: expected a field after an attribute, found '..'
-//| 20.ctx:2:5: error: `c::symbol` on a capability's field applies only to a C variable, `extern name: T`
+//| 20.ctx:2:5: error: `c_symbol` on a capability's field applies only to a C variable, `extern name: T`

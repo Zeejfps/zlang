@@ -8,26 +8,26 @@ namespace ascii {
     // program links only if it uses them. They are pure, so they take no capability.
 
     // Write the shortest round-trip text of n into `into`; panic if it doesn't fit.
-    #c::symbol{ name = "ctx_float_f64_digits" }
+    #c_symbol{ name = "ctx_float_f64_digits" }
     #pure
     extern fn f64_digits { n: f64, into: []mut u8 } -> usize
-    #c::symbol{ name = "ctx_float_f32_digits" }
+    #c_symbol{ name = "ctx_float_f32_digits" }
     #pure
     extern fn f32_digits { n: f32, into: []mut u8 } -> usize
 
     // Write n with `precision` digits after the point, at most 30, rounded to nearest, a
     // halfway case to the even digit, into `into`: `-0.50`, `3`, `inf`, `nan`. Panic if it
     // doesn't fit; fmt::LONGEST bytes always do.
-    #c::symbol{ name = "ctx_float_f64_fixed" }
+    #c_symbol{ name = "ctx_float_f64_fixed" }
     #pure
     extern fn f64_fixed { n: f64, precision: u32, into: []mut u8 } -> usize
 
     // The nearest value to `text`, which must already be valid float syntax (see
     // utf8::parse_f64).
-    #c::symbol{ name = "ctx_float_f64_parse" }
+    #c_symbol{ name = "ctx_float_f64_parse" }
     #pure
     extern fn f64_parse { text: []u8 } -> f64
-    #c::symbol{ name = "ctx_float_f32_parse" }
+    #c_symbol{ name = "ctx_float_f32_parse" }
     #pure
     extern fn f32_parse { text: []u8 } -> f32
 

@@ -1,7 +1,7 @@
 // `_` is the type expected: a local's, an assignment's, a field's, a return type, the
 // other operand's, and an optional's payload.
 
-#c::symbol{ name = "llabs" }
+#c_symbol{ name = "llabs" }
 #pure
 extern fn long_abs { n: i64 } -> i64
 type Abs = extern fn{ n: i64 } -> i64

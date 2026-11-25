@@ -1,4 +1,4 @@
 capability O {
-    #c::symbol{ name = "x" } extern a: i32  //~ error at 30: an attribute goes on its own line, before a field
+    #c_symbol{ name = "x" } extern a: i32  //~ error at 29: an attribute goes on its own line, before a field
 }
 fn main {} {}

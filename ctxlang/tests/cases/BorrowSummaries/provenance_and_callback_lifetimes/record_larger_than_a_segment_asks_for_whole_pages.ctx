@@ -3,7 +3,7 @@
 
 struct Big { a: [40000]i64 }
 fn read { b: Big } -> i64 { return b.a[0] }
-#c::callback
+#c_callback
 fn strict_pages { mut mem: Mem, size: usize } -> ?*mut u8 {
     if size % mem::PAGE != 0 { @panic("record page request is not page-sized") }
     return os::pages{ &mem, size }

@@ -1,3 +1,3 @@
 //# errors:
 //| 08.ctx:3:1: error: expected a declaration after an attribute, found end of file
-//| 08.ctx:2:1: error: `c::symbol` applies only to an extern fn
+//| 08.ctx:2:1: error: `c_symbol` applies only to an extern fn

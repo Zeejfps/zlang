@@ -1,3 +1,3 @@
-#c::export{ name = "f" }  //~ error at 1: a `c::export` fn can't be generic
+#c_export{ name = "f" }  //~ error at 1: a `c_export` fn can't be generic
 fn f(T) { x: T } {}
 fn main {} {}

@@ -4,9 +4,9 @@
 
 namespace sys {
     // Where this thread's errno is: a macro in C, over this function.
-    #c::symbol{ name = "__errno_location" }
+    #c_symbol{ name = "__errno_location" }
     extern fn errno { mut fs: Fs } -> *mut i32
-    #c::symbol{ name = "__errno_location" }
+    #c_symbol{ name = "__errno_location" }
     extern fn proc_errno { mut proc: os::Proc } -> *mut i32
 
     // pthread_mutex_t's and pthread_cond_t's static initializers' first word: all zeros.
@@ -42,7 +42,7 @@ namespace sys {
 
     // C's open, which is variadic: mode, used when it creates the file, is its variadic
     // argument. Linux's C conventions pass that as any other argument.
-    #c::symbol{ name = "open" }
+    #c_symbol{ name = "open" }
     extern fn c_open { mut fs: Fs, path: *u8, flags: i32, mode: u32 } -> i32
 
     fn open { mut fs: Fs, path: *u8, flags: i32, mode: u32 } -> i32 {
@@ -103,14 +103,14 @@ namespace sys {
     extern fn chdir { mut proc: os::Proc, path: *u8 } -> i32
     extern fn getppid { mut proc: os::Proc } -> i32
     extern fn execve { mut proc: os::Proc, path: *u8, argv: *?*u8, envp: *?*u8 } -> i32
-    #c::symbol{ name = "_exit" }
+    #c_symbol{ name = "_exit" }
     extern fn exit_now { mut proc: os::Proc, code: i32 }
-    #c::symbol{ name = "open" }
+    #c_symbol{ name = "open" }
     extern fn proc_open { mut proc: os::Proc, path: c::String, flags: i32, mode: u32 } -> i32
     // prctl, fcntl and syscall are variadic in C, and Linux's C conventions pass their variadic
     // arguments as any other's, as open's mode.
     extern fn prctl { mut proc: os::Proc, option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64 } -> i32
-    #c::symbol{ name = "fcntl" }
+    #c_symbol{ name = "fcntl" }
     extern fn c_fcntl { mut proc: os::Proc, fd: i32, cmd: i32, arg: i64 } -> i32
     extern fn syscall { mut proc: os::Proc, number: i64, a: i64, b: i64 } -> i64
     extern fn poll { mut proc: os::Proc, mut fd: PollFd, count: u64, ms: i32 } -> i32
@@ -335,11 +335,11 @@ namespace sys {
 
     // ---- tasks' cancel objects (os::event_make): an eventfd, numbered from 1 so that 0 is none
 
-    #c::symbol{ name = "eventfd" }
+    #c_symbol{ name = "eventfd" }
     extern fn eventfd { mut threads: os::Threads, initval: u32, flags: i32 } -> i32
-    #c::symbol{ name = "read" }
+    #c_symbol{ name = "read" }
     extern fn event_read { mut threads: os::Threads, fd: i32, buf: *mut u64, count: usize } -> i64
-    #c::symbol{ name = "write" }
+    #c_symbol{ name = "write" }
     extern fn event_write { mut threads: os::Threads, fd: i32, buf: *u64, count: usize } -> i64
 
     const EFD_CLOEXEC: i32 = 524288

@@ -60,12 +60,12 @@ namespace ui_fonts {
     // hb_*_destroy call that drops its last reference, so on the thread that holds `Fonts`. A blob
     // is freed only after the face over it and every font over that face, so the count of blobs
     // freed shows that HarfBuzz released all three.
-    #c::callback
+    #c_callback
     fn count_blob_freed { mut fonts: Fonts } {
         fonts.blobs_freed = fonts.blobs_freed + 1
     }
 
-    #c::callback
+    #c_callback
     fn count_buffer_freed { mut fonts: Fonts } {
         fonts.buffers_freed = fonts.buffers_freed + 1
     }

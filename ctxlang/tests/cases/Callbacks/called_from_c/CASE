@@ -1,4 +1,4 @@
-// `#c::callback` (spec §12, §18): a ctxlang fn that C calls through a pointer, converted
+// `#c_callback` (spec §12, §18): a ctxlang fn that C calls through a pointer, converted
 // where an extern fn type is expected. C is lib/op.c, as libctxtest.a.
 //# needs: ar
 //# $ cc -c {dir}/lib/op.c -o {dir}/lib/op.o

@@ -1,4 +1,4 @@
-// A capability's field still takes `thread_local` on a static (and `c::symbol` on a C
+// A capability's field still takes `thread_local` on a static (and `c_symbol` on a C
 // variable, `stack_limit` on a static: Capabilities), and any other as data, beside a
 // struct's.
 

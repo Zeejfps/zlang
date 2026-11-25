@@ -6,7 +6,7 @@
 struct App { keys: i64 }
 
 // GLFW calls this from poll_events. It finds the App through the window's user pointer.
-#c::callback
+#c_callback
 fn on_key { mut glfw: glfw::Glfw, window: *mut glfw::Window, key: i32, action: i32 } {
     if action != glfw::PRESS { return }
     let p = glfw::user_pointer{ &glfw, window } ifnull { return }

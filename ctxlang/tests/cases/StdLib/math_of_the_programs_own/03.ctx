@@ -1,5 +1,5 @@
 #pure
-#c::symbol{ name = "sqrt" }
+#c_symbol{ name = "sqrt" }
 extern fn isqrt { n: i64 } -> i64
 const A: i64 = isqrt{ n = 9 }
 

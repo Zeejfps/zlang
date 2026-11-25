@@ -1,5 +1,5 @@
 capability O {
-    #c::symbol{ name = "x" }  //~ error at 5: `c::symbol` on a capability's field applies only to a C variable, `extern name: T`
+    #c_symbol{ name = "x" }  //~ error at 5: `c_symbol` on a capability's field applies only to a C variable, `extern name: T`
     f: extern fn{}
 }
 fn main {} {}

@@ -1,5 +1,5 @@
 #pure
-#c::symbol{ name = "sqrt" }
+#c_symbol{ name = "sqrt" }
 extern fn rootf { x: f32 } -> f32
 const A: f32 = rootf{ x = 9.0 }
 

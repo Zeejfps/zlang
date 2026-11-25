@@ -92,7 +92,7 @@ as the write-ups gave them.
 
 19. **A GL function is written three times:** a capability field with its C type, then `name =
     @cast(_, try proc{ get_proc, name = "glName" })` in the loader, the C name the field's in
-    another case. An attribute on the field (`#c::symbol{ name = "glClear" }`; fields carry
+    another case. An attribute on the field (`#c_symbol{ name = "glClear" }`; fields carry
     attributes since `304f48d`) and a generator over `build::declarations` would make a binding
     one line per function. *Hit by 1:* glspike (132 loader lines).
 

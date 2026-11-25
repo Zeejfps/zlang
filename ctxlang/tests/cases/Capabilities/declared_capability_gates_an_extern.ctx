@@ -3,7 +3,7 @@ namespace clib {
     // Permission to call the C library's math.
     capability Lib
 
-    #c::symbol{ name = "labs" }
+    #c_symbol{ name = "labs" }
     extern fn long_abs { mut lib: Lib, n: i64 } -> i64
 }
 

@@ -1,0 +1,7 @@
+#c_callback{ any_thread = 1 }  //~ error at 14: `c_callback` takes one field, which may be left out: `any_thread = true` or `false`
+fn f {} {}
+#c_export  //~ error at 1: `c_export` takes `name = "symbol"`, a string literal, and `any_thread = true` or `false`, which may be left out
+fn g {} {}
+#c_export{ name = "h", name = "i" }  //~ error at 24: `name` is given twice
+fn h {} {}
+fn main {} {}

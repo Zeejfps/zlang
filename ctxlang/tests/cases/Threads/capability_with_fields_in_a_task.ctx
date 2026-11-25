@@ -3,7 +3,7 @@
 namespace lib {
     capability Lib { abs: extern fn{ n: i64 } -> i64 }
 
-    #c::symbol{ name = "llabs" }
+    #c_symbol{ name = "llabs" }
     #pure
     extern fn c_llabs { n: i64 } -> i64
 

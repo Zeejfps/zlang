@@ -126,7 +126,7 @@ types). Through a pointer, `p.x` is the field and `p.*` the value: no `->`, no `
   `(s.ptr + i).*` skips a slice's check. Keep these to hot loops whose bounds are checked once.
 - The **unchecked operations** (§13, Unchecked operations) are `@cast`, `@slice`, pointer
   arithmetic (`q + n`, so `(q + i).*` too), a `c::String` from a pointer, and declaring an
-  `extern fn`, an `extern union`, a C variable or a `#c::callback` or `#c::export` fn. A build
+  `extern fn`, an `extern union`, a C variable or a `#c_callback` or `#c_export` fn. A build
   can make them errors outside the directories it names (`build::deny_unchecked`, §19); the
   error names the checked form: `s[i]` and `a[lo..hi]`, `alloc::free` for one object from
   `alloc::new`, std's `math` for libm, a string literal for a `c::String`.
@@ -307,14 +307,14 @@ let p = try alloc::new(Point, arena::Arena){ realloc = arena::alloc, &heap, valu
 `main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32` receives the capabilities;
 pass them down to what needs them (`&fs`): a function that prints takes `mut io: Io`. Code
 without capabilities is pure. C functions are `extern fn name { ... } -> R` with
-`#c::symbol{ name = "..." }`. Each takes a capability field for what it touches, or is `#pure`
+`#c_symbol{ name = "..." }`. Each takes a capability field for what it touches, or is `#pure`
 (it touches only its arguments and what they point to), or it is an error. std's `math` has
 libm's functions, `#pure`; they are the only extern fns a const may call
 (`const T: [8]f32 = make_table{}` with `math::cos` in `make_table`), and the const has the bits
 the same call gives at run time. A program's own namespace of the same name (a `math` of its own) hides std's
 whole (§10, rule 4).
-C calls a fn through a pointer if it is `#c::callback`, and by name too if it is
-`#c::export{ name = "symbol" }`, one or the other (§18, Callbacks).
+C calls a fn through a pointer if it is `#c_callback`, and by name too if it is
+`#c_export{ name = "symbol" }`, one or the other (§18, Callbacks).
 
 ## Printing and text
 

@@ -4,9 +4,9 @@
 
 namespace sys {
     // Where this thread's errno is: a macro in C, over this function.
-    #c::symbol{ name = "__error" }
+    #c_symbol{ name = "__error" }
     extern fn errno { mut fs: Fs } -> *mut i32
-    #c::symbol{ name = "__error" }
+    #c_symbol{ name = "__error" }
     extern fn proc_errno { mut proc: os::Proc } -> *mut i32
 
     // pthread_mutex_t's and pthread_cond_t's static initializers' first word, their signatures.
@@ -46,14 +46,14 @@ namespace sys {
     // on the stack, not in registers as other arguments: so this declares six more after
     // flags, which fill the remaining registers, and passes mode both first among them, where
     // x86_64 reads it, and after them, on the stack, where arm64 does.
-    #c::symbol{ name = "open" }
+    #c_symbol{ name = "open" }
     extern fn c_open { mut fs: Fs, path: *u8, flags: i32, mode: u32, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: u32 } -> i32
 
     fn open { mut fs: Fs, path: *u8, flags: i32, mode: u32 } -> i32 {
         return c_open{ &fs, path, flags, mode, r3 = 0, r4 = 0, r5 = 0, r6 = 0, r7 = 0, stacked = mode }
     }
 
-    #c::symbol{ name = "_NSGetExecutablePath" }
+    #c_symbol{ name = "_NSGetExecutablePath" }
     extern fn executable_path { mut proc: os::Proc, buf: *mut u8, mut size: u32 } -> i32
     extern fn realpath { mut proc: os::Proc, path: *u8, resolved: ?*mut u8 } -> ?*u8
 
@@ -97,9 +97,9 @@ namespace sys {
 
     // fcntl and open are variadic in C, and their variadic argument goes where arm64 and
     // x86_64 each read it, as c_open's mode does.
-    #c::symbol{ name = "fcntl" }
+    #c_symbol{ name = "fcntl" }
     extern fn c_fcntl { mut proc: os::Proc, fd: i32, cmd: i32, arg: i64, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: i64 } -> i32
-    #c::symbol{ name = "open" }
+    #c_symbol{ name = "open" }
     extern fn proc_open { mut proc: os::Proc, path: c::String, flags: i32, mode: u32, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: u32 } -> i32
 
     // posix_spawnattr_setflags' flags: the child in the process group setpgroup gives, and
@@ -236,13 +236,13 @@ namespace sys {
     // ---- tasks' cancel objects (os::event_make): a pipe, both ends non-blocking, read end + 1
     // in the low half and write end + 1 in the high half, so that 0 is none
 
-    #c::symbol{ name = "pipe" }
+    #c_symbol{ name = "pipe" }
     extern fn event_pipe { mut threads: os::Threads, fds: *mut i32 } -> i32
-    #c::symbol{ name = "fcntl" }
+    #c_symbol{ name = "fcntl" }
     extern fn event_fcntl { mut threads: os::Threads, fd: i32, cmd: i32, arg: i64, r3: u64, r4: u64, r5: u64, r6: u64, r7: u64, stacked: i64 } -> i32
-    #c::symbol{ name = "read" }
+    #c_symbol{ name = "read" }
     extern fn event_read { mut threads: os::Threads, fd: i32, buf: *mut u8, count: usize } -> i64
-    #c::symbol{ name = "write" }
+    #c_symbol{ name = "write" }
     extern fn event_write { mut threads: os::Threads, fd: i32, buf: *u8, count: usize } -> i64
 
     // fcntl's command that sets a descriptor's status flags, and its flag for one that doesn't

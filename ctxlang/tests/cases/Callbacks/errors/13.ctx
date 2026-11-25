@@ -1,4 +1,4 @@
-#c::export{ name = "f" }  //~ error at 1: `c::export` applies only to a fn with a body, not an extern fn
+#c_export{ name = "f" }  //~ error at 1: `c_export` applies only to a fn with a body, not an extern fn
 #pure
 extern fn f { n: i64 }
 fn main {} {}

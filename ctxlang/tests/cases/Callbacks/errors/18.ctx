@@ -1,19 +1,19 @@
 // Names the program's C has already.
-#c::export{ name = "main" }  //~ error at 1: `main` can't be an exported fn's C symbol: the program's C defines `main`, which calls its start fn
+#c_export{ name = "main" }  //~ error at 1: `main` can't be an exported fn's C symbol: the program's C defines `main`, which calls its start fn
 fn a {} {}
-#c::export{ name = "ctx_hook" }  //~ error at 1: `ctx_hook` can't be an exported fn's C symbol: a name starting with `ctx_` or `CTX_` is the runtime's
+#c_export{ name = "ctx_hook" }  //~ error at 1: `ctx_hook` can't be an exported fn's C symbol: a name starting with `ctx_` or `CTX_` is the runtime's
 fn b {} {}
-#c::export{ name = "CTX_HOOK" }  //~ error at 1: `CTX_HOOK` can't be an exported fn's C symbol: a name starting with `ctx_` or `CTX_` is the runtime's
+#c_export{ name = "CTX_HOOK" }  //~ error at 1: `CTX_HOOK` can't be an exported fn's C symbol: a name starting with `ctx_` or `CTX_` is the runtime's
 fn c {} {}
-#c::export{ name = "f_main" }  //~ error at 1: `f_main` can't be an exported fn's C symbol: a lowercase letter and then a digit or `_` starts the names ctxc gives its own C
+#c_export{ name = "f_main" }  //~ error at 1: `f_main` can't be an exported fn's C symbol: a lowercase letter and then a digit or `_` starts the names ctxc gives its own C
 fn d {} {}
-#c::export{ name = "t5" }  //~ error at 1: `t5` can't be an exported fn's C symbol: a lowercase letter and then a digit or `_` starts the names ctxc gives its own C
+#c_export{ name = "t5" }  //~ error at 1: `t5` can't be an exported fn's C symbol: a lowercase letter and then a digit or `_` starts the names ctxc gives its own C
 fn e {} {}
 // These are fine.
-#c::export{ name = "F_main" }
+#c_export{ name = "F_main" }
 fn ok1 {} {}
-#c::export{ name = "tick5" }
+#c_export{ name = "tick5" }
 fn ok2 {} {}
-#c::export{ name = "_t5" }
+#c_export{ name = "_t5" }
 fn ok3 {} {}
 fn main {} {}

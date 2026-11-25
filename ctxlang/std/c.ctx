@@ -1,43 +1,16 @@
-// std: c. What calling C needs (spec §18): attributes, and C's strings.
+// std: c. C's strings, for calling C (spec §18). The attributes `c_symbol`, `c_callback` and
+// `c_export` are the compiler's own (§18, Attributes, rule 4).
 //
 // An extern fn is a function that C provides. Its context fields are C's parameters in the order
 // they are declared, and capability fields aren't passed: they only say who may call it.
 //
-//   #c::symbol{ name = "labs" }
+//   #c_symbol{ name = "labs" }
 //   extern fn long_abs { n: i64 } -> i64      // C's labs; without the attribute, `long_abs`
 //
 //   extern fn puts { s: c::String } -> i32
 //   _ = puts{ s = "hello" }                   // a literal ends in its hidden zero (from_literal)
 
 namespace c {
-    // The C symbol an extern fn calls, when it isn't the fn's own name.
-    struct symbol { name: []u8 }
-
-    // On a fn: C may call it. Where an extern fn type is expected, the fn is a C function that
-    // calls it, so a C library can take it as a callback. Its fields need only be among the
-    // type's, and the capabilities among them are supplied without C passing them. C must call
-    // it on the thread that called into C, unless `any_thread`: then C may call it from any
-    // thread, and it takes no capability (§18, Callbacks, rule 6).
-    //
-    //   #c::callback
-    //   fn on_key { window: *mut Window, key: i32 } { ... }
-    //   glfwSetKeyCallback{ &glfw, window, cb = on_key }
-    //
-    //   #c::callback{ any_thread = true }
-    //   fn fill_audio { data: *mut Ring, stream: *mut u8, length: i32 } { ... }
-    struct callback { any_thread: bool }
-
-    // On a fn: a callback that C may also call by name, as the public C symbol `name`, so that
-    // C linked into the program can call it without being handed a pointer. Its C parameters
-    // are its own fields in the order they are declared, without the capabilities, which it is
-    // supplied as any callback is (§18, Callbacks, rules 4 and 8). A C declaration of it is C's to write:
-    //
-    //   #c::export{ name = "game_tick" }
-    //   fn tick { mut io: Io, frame: u64 } -> i32 { ... }     // int32_t game_tick(uint64_t frame);
-    //
-    // `any_thread` is a callback's. A fn has `c::export` or `c::callback`, never both.
-    struct export { name: []u8, any_thread: bool }
-
     // A NUL-terminated string, as C's `const char *`: read-only, and not owned by its holder. A
     // string literal where one is expected is its static bytes, which the hidden zero after them
     // ends (from_literal). C takes and returns it as a plain pointer, and `?String` as one that

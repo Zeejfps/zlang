@@ -1,5 +1,5 @@
 
-#c::symbol{ name = "labs" }
+#c_symbol{ name = "labs" }
 #pure
 extern fn long_abs { n: i64 } -> i64
 fn main {} -> i32 { return @trunc(i32, long_abs{ n = 3 }) }

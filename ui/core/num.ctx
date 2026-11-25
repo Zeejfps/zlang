@@ -3,37 +3,37 @@
 // whole namespace of that name in a kotor build. So the few libm functions the library needs are
 // declared here, in `ui`, the same on every platform.
 namespace ui {
-    #c::symbol{ name = "floorf" }
+    #c_symbol{ name = "floorf" }
     #pure
     extern fn floor_f32 { x: f32 } -> f32
-    #c::symbol{ name = "ceilf" }
+    #c_symbol{ name = "ceilf" }
     #pure
     extern fn ceil_f32 { x: f32 } -> f32
-    #c::symbol{ name = "roundf" }
+    #c_symbol{ name = "roundf" }
     #pure
     extern fn round_f32 { x: f32 } -> f32
-    #c::symbol{ name = "truncf" }
+    #c_symbol{ name = "truncf" }
     #pure
     extern fn trunc_f32 { x: f32 } -> f32
-    #c::symbol{ name = "fabsf" }
+    #c_symbol{ name = "fabsf" }
     #pure
     extern fn abs_f32 { x: f32 } -> f32
-    #c::symbol{ name = "sqrtf" }
+    #c_symbol{ name = "sqrtf" }
     #pure
     extern fn sqrt_f32 { x: f32 } -> f32
-    #c::symbol{ name = "sinf" }
+    #c_symbol{ name = "sinf" }
     #pure
     extern fn sin_f32 { x: f32 } -> f32
-    #c::symbol{ name = "cosf" }
+    #c_symbol{ name = "cosf" }
     #pure
     extern fn cos_f32 { x: f32 } -> f32
-    #c::symbol{ name = "atan2f" }
+    #c_symbol{ name = "atan2f" }
     #pure
     extern fn atan2_f32 { y: f32, x: f32 } -> f32
-    #c::symbol{ name = "powf" }
+    #c_symbol{ name = "powf" }
     #pure
     extern fn pow_f32 { x: f32, y: f32 } -> f32
-    #c::symbol{ name = "fmodf" }
+    #c_symbol{ name = "fmodf" }
     #pure
     extern fn mod_f32 { x: f32, y: f32 } -> f32
 

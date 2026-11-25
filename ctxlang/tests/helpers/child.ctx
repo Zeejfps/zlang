@@ -35,7 +35,7 @@
 
 extern fn close { mut proc: Proc, fd: i32 } -> i32
 
-#c::symbol{ name = "fstat" }
+#c_symbol{ name = "fstat" }
 extern fn file_status { mut proc: Proc, fd: i32, into: *mut [256]u8 } -> i32
 
 fn main { mut io: Io, mut fs: Fs, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {

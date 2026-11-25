@@ -169,7 +169,7 @@ namespace test {
         return @atomic_load(&t.checks, atomic::Order::relaxed)
     }
 
-    #c::symbol{ name = "exit" }
+    #c_symbol{ name = "exit" }
     extern fn c_exit { mut t: Test, code: i32 }
 
     // `FILE:LINE` and `word` (`: fail: `, `: skip: ` or `: checks: `), then `NAME: `, on

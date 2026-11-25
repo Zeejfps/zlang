@@ -35,7 +35,7 @@
 //| type game::Slot(T) : ?[]mut T @ src/b.ctx:5:5
 //| capability game::Gl @ src/b.ctx:6:5
 //|   clear: extern fn{ mask: u32 }
-//|   #c::symbol name="gl_env" (s gl_env)
+//|   #c_symbol name="gl_env" (s gl_env)
 //|   env: *u8
 //| capability game::Plain @ src/b.ctx:12:5
 //| error game::bad @ src/b.ctx:13:5

@@ -5,33 +5,33 @@ extern fn ctxtest_apply { f: Op, a: i32, b: i32 } -> i32
 #pure
 extern fn ctxtest_each { f: extern fn{ mut total: i64, i: i32 }, mut total: i64, n: i32 }
 
-#c::symbol{ name = "ctxtest_apply" }
+#c_symbol{ name = "ctxtest_apply" }
 extern fn apply_io { mut io: Io, f: extern fn{ mut io: Io, a: i32, b: i32 } -> i32, a: i32, b: i32 } -> i32
 
 struct P { x: i32, y: i32 }
-#c::symbol{ name = "ctxtest_swap" }
+#c_symbol{ name = "ctxtest_swap" }
 #pure
 extern fn swap_via { f: extern fn{ p: P } -> P, p: P } -> P
 
 // Fields of the type it doesn't take are dropped: this one ignores `a`.
-#c::callback
+#c_callback
 fn twice { b: i32 } -> i32 { return b * 2 }
 
-#c::callback
+#c_callback
 fn sub { a: i32, b: i32 } -> i32 { return a - b }
 
 // A capability in the type is supplied, not passed by C.
-#c::callback
+#c_callback
 fn noisy { mut io: Io, a: i32, b: i32 } -> i32 {
     io::println_i64{ &io, n = a }
     return a + b
 }
 
 // A `mut` field is C's pointer: here, the user data.
-#c::callback
+#c_callback
 fn add_to { mut total: i64, i: i32 } { total = total + @as(i64, i) }
 
-#c::callback
+#c_callback
 fn swap { p: P } -> P { return P{ x = p.y, y = p.x } }
 
 fn main { mut io: Io } {

@@ -1,13 +1,13 @@
-#c::export{ name = "fill", any_thread = true }
+#c_export{ name = "fill", any_thread = true }
 fn f { mut io: Io, n: i32 } {}  //~ error at 1: callback `f` can't take `io`: C may call it from any thread, and a thread the program didn't start holds no capability
-#c::export{ name = "g" }
+#c_export{ name = "g" }
 fn g { x: ?i32 } {}  //~ error at 8: callback `g` can't pass `x` to C: it has type ?i32, which C has no equivalent of
 capability Lib {
-    #c::export{ name = "v" }  //~ error at 5: `c::export` applies only to a fn
+    #c_export{ name = "v" }  //~ error at 5: `c_export` applies only to a fn
     extern v: i32
 }
 struct S {
-    #c::export{ name = "w" }  //~ error at 5: `c::export` applies only to a fn
+    #c_export{ name = "w" }  //~ error at 5: `c_export` applies only to a fn
     w: i32
 }
 fn main {} {}

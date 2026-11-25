@@ -37,7 +37,7 @@ namespace ir {
         // the start fn takes `Threads`, or C may call a callback from any thread. Only then are
         // `#thread_local` statics and the stack limit per thread.
         threaded: bool,
-        // The `#c::export` fns (§18, Callbacks, rule 8), each a C function the program defines
+        // The `#c_export` fns (§18, Callbacks, rule 8), each a C function the program defines
         // under a public symbol.
         exports: []Export,
     }

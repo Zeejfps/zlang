@@ -1,3 +1,3 @@
-#c::symbol{ name = "" }  //~ error at 1: `` is not a C identifier
+#c_symbol{ name = "" }  //~ error at 1: `` is not a C identifier
 extern fn f {}  //~ error at 11: extern fn `f` takes no capability: add a capability field for what it touches, or `#pure` if it touches only its arguments and the memory they point to
 fn main {} {}

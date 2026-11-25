@@ -1,3 +1,3 @@
-#c::callback
+#c_callback
 fn g { n: i64 } {}
 fn main {} { let f: extern fn{ mut n: i64 } = g }  //~ error at 47: expected extern fn{ mut n: i64 }, got extern fn{ n: i64 }

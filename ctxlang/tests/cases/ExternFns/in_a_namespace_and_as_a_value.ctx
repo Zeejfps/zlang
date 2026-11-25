@@ -1,6 +1,6 @@
 
 namespace cmath {
-    #c::symbol{ name = "sqrt" }
+    #c_symbol{ name = "sqrt" }
     #pure
     extern fn root { x: f64 } -> f64
 }

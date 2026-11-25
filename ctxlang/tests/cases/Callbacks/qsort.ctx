@@ -2,7 +2,7 @@
 #pure
 extern fn qsort { base: *mut u8, n: usize, size: usize, cmp: extern fn{ a: *u8, b: *u8 } -> i32 }
 
-#c::callback
+#c_callback
 fn descending { a: *u8, b: *u8 } -> i32 {
     let x = @cast(*i32, a).*
     let y = @cast(*i32, b).*

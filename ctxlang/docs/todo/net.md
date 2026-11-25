@@ -663,7 +663,7 @@ libcrypto (`TLS_client_method`, `TLS_server_method`, `SSL_CTX_new`, `SSL_new`, `
 (`SSL_set_tlsext_host_name`, `SSL_CTX_set_min_proto_version`, `SSL_CTX_add1_chain_cert`) are `SSL_ctrl`
 and `SSL_CTX_ctrl` calls with their constants, since ctxlang reads no headers. Every extern fn takes
 `mut tls: os::Tls`, the layer's capability for the engine's libraries, which `Net` includes. The ALPN
-selection callback is a `#c::callback` that OpenSSL calls inside `SSL_do_handshake`, on the calling
+selection callback is a `#c_callback` that OpenSSL calls inside `SSL_do_handshake`, on the calling
 thread. OpenSSL 3 needs no initialization call, and its contexts (`SSL_CTX`) are safe to share between
 threads, which a config is (The API).
 

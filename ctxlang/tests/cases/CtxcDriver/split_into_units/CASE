@@ -51,7 +51,7 @@
 //|     #pure
 //|     extern fn qsort { base: *mut u8, n: usize, size: usize, cmp: extern fn{ x: *u8, y: *u8 } -> i32 }
 //|
-//|     #c::callback
+//|     #c_callback
 //|     fn descending { x: *u8, y: *u8 } -> i32 {
 //|         let p = @cast(*i32, x).*
 //|         let q = @cast(*i32, y).*

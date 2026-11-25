@@ -5,7 +5,7 @@ namespace cm {
     #pure
     extern fn cos { x: f64 } -> f64
     #pure
-    #c::symbol{ name = "sqrtf" }
+    #c_symbol{ name = "sqrtf" }
     extern fn root { x: f32 } -> f32
 }
 const C: f64 = cm::cos{ x = 0.0 }

@@ -1,5 +1,5 @@
 capability O {
-    #c::symbol{ name = "opterr" }
+    #c_symbol{ name = "opterr" }
     extern reports: i32
 }
 fn main { mut o: O } -> i32 { return o.reports }

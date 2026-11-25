@@ -6,7 +6,7 @@ namespace ecs {
 }
 const DEPTH: i32 = 2 + 1
 fn f {
-    #c::callback  //~ error at 5: `c::callback` applies only to a fn
+    #c_callback  //~ error at 5: `c_callback` applies only to a fn
     a: i32
 } {}
 fn main {} {}

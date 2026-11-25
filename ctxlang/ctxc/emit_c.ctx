@@ -20,7 +20,7 @@
 //                passed; a `mut` field's pointer is.
 //   C fn types   an extern fn{...} type is a C function pointer typedef, called directly, with
 //                the same rules for capabilities and `mut` fields; a named extern fn as its
-//                value is xN. A `#c::callback` fn as one is k_NAME, a C function with the type's
+//                value is xN. A `#c_callback` fn as one is k_NAME, a C function with the type's
 //                params that calls f_NAME, supplying the capabilities C doesn't pass.
 //   consts       static const qN, initialized with the literals of its value.
 //   C variables  vN, declared with the C symbol as its assembler name, as an extern fn is.
@@ -100,7 +100,7 @@ namespace emit {
     struct Pair { from: ir::TypeId, to: ir::TypeId }
 
     // A C function k_NAME calling function callee, of C function type ty, and the C symbol it
-    // is exported as (`#c::export`), or "".
+    // is exported as (`#c_export`), or "".
     struct Callback { callee: u32, ty: ir::TypeId, export: []u8 }
 
     // A function's C, with markers: its body, the bind records it makes, which go before it, and

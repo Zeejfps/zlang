@@ -1,4 +1,4 @@
-// Calls the program's `#c::export` fns by their symbols, which the program defines.
+// Calls the program's `#c_export` fns by their symbols, which the program defines.
 #include <stdint.h>
 
 typedef struct { int32_t x, y; } P;

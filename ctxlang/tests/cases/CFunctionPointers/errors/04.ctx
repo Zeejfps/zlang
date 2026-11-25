@@ -1,2 +1,2 @@
 fn g { n: i64 } -> i64 { return n }
-fn main {} { let f: extern fn{ n: i64 } -> i64 = g }  //~ error at 50: a ctxlang function can't be passed as a C function pointer (extern fn{ n: i64 } -> i64): only an extern fn or a `#c::callback` fn can
+fn main {} { let f: extern fn{ n: i64 } -> i64 = g }  //~ error at 50: a ctxlang function can't be passed as a C function pointer (extern fn{ n: i64 } -> i64): only an extern fn or a `#c_callback` fn can

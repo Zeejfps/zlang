@@ -382,7 +382,7 @@ namespace gl {
 
     // The driver calls this within a GL call. It appends "severity: message\n" to the log, or
     // counts the message as dropped when the log is full.
-    #c::callback
+    #c_callback
     fn on_debug_message { severity: u32, length: i32, message: *u8, log: *mut DebugLog } {
         let prefix = if severity == DEBUG_SEVERITY_HIGH { "high: " }
             else if severity == DEBUG_SEVERITY_MEDIUM { "medium: " }

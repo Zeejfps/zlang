@@ -3,7 +3,7 @@
 
 namespace lib {
     capability Lib
-    #c::symbol{ name = "llabs" }
+    #c_symbol{ name = "llabs" }
     #pure
     extern fn long_abs { n: i64 } -> i64
     fn find { mut l: Lib, name: c::String } -> ?extern fn{ n: i64 } -> i64 { return long_abs }
