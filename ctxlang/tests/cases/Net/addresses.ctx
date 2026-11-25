@@ -1,0 +1,112 @@
+// parse_address takes an address and a required port, a v6 address in brackets with its scope
+// inside them; push_address writes it back the same way. A literal where an Address is
+// expected is parsed while compiling (from_literal), and the constants are the addresses their
+// names say.
+
+fn show { mut io: Io, text: []u8 } {
+    let mut mem: [512]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let address = net::parse_address{ text } iferr err{ error } {
+        _ = @fmt(&io, "{} -> {}\n", text, error)
+        return
+    }
+    try! @fmt(&b, "{}", address)
+    _ = @fmt(&io, "{} -> {} (port {})\n", text, utf8::view{ b }, address.port)
+    // What is written reads back as the same address.
+    let again = net::parse_address{ text = utf8::view{ b }.bytes } iferr { @panic("doesn't read back") }
+    if not net::eq_ip{ a = again.ip, b = address.ip } or again.port != address.port { @panic("reads back as another") }
+}
+
+fn write_ip { mut io: Io, ip: net::Ip } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&b, "{}", ip)
+    _ = @fmt(&io, "{} loopback {}\n", utf8::view{ b }, net::is_loopback{ ip })
+}
+
+fn main { mut io: Io } {
+    show{ &io, text = "127.0.0.1:80" }
+    show{ &io, text = "0.0.0.0:0" }
+    show{ &io, text = "1.2.3.4:65535" }
+    show{ &io, text = "[::1]:443" }
+    show{ &io, text = "[2001:DB8:0:0:0:0:0:1]:8080" }
+    show{ &io, text = "[fe80::1%3]:80" }
+    show{ &io, text = "[::ffff:10.0.0.1]:22" }
+    show{ &io, text = "1.2.3.4:65536" }         // past a u16
+    show{ &io, text = "1.2.3.4:080" }           // a leading zero
+    show{ &io, text = "1.2.3.4" }               // the port is required
+    show{ &io, text = "1.2.3.4:" }
+    show{ &io, text = "1.2.3.4:x" }
+    show{ &io, text = "1.2.3:80" }
+    show{ &io, text = "::1:443" }               // v6 needs its brackets
+    show{ &io, text = "[::1]" }
+    show{ &io, text = "[::1]443" }
+    show{ &io, text = "[::1" }
+    show{ &io, text = "[::1x]:443" }            // offsets count from the text's start
+    show{ &io, text = "[1.2.3.4]:80" }          // v4 has none
+    show{ &io, text = "[fe80::1]%3:80" }
+    show{ &io, text = "" }
+
+    let a: net::Address = "192.168.0.1:8080"
+    let c: net::Address = "[fe80::abcd%7]:53"
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    try! @fmt(&b, "{} and {}", a, c)
+    io::println{ &io, s = utf8::view{ b } }
+
+    write_ip{ &io, ip = net::LOOPBACK_V4 }
+    write_ip{ &io, ip = net::LOOPBACK_V6 }
+    write_ip{ &io, ip = net::ANY_V4 }
+    write_ip{ &io, ip = net::ANY_V6 }
+    write_ip{ &io, ip = try! net::parse_ip{ text = "127.255.0.9" } }
+    write_ip{ &io, ip = try! net::parse_ip{ text = "128.0.0.1" } }
+    write_ip{ &io, ip = try! net::parse_ip{ text = "::1%2" } }
+    write_ip{ &io, ip = try! net::parse_ip{ text = "::2" } }
+    write_ip{ &io, ip = try! net::parse_ip{ text = "::ffff:127.0.0.1" } }
+
+    let one = try! net::parse_ip{ text = "fe80::1%1" }
+    let two = try! net::parse_ip{ text = "fe80::1%2" }
+    let same = try! net::parse_ip{ text = "FE80:0::0001%1" }
+    _ = @fmt(&io, "{} {} {}\n", net::eq_ip{ a = one, b = two }, net::eq_ip{ a = one, b = same }, net::eq_ip{ a = net::LOOPBACK_V6, b = try! net::parse_ip{ text = "::1" } })
+    _ = @fmt(&io, "{} {}\n", net::eq_ip{ a = net::LOOPBACK_V4, b = try! net::parse_ip{ text = "::ffff:127.0.0.1" } }, net::eq_ip{ a = net::ANY_V4, b = try! net::parse_ip{ text = "0.0.0.0" } })
+    _ = @fmt(&io, "{} {}\n", a.ip is v4, a.port)
+}
+
+//# stdout:
+//| 127.0.0.1:80 -> 127.0.0.1:80 (port 80)
+//| 0.0.0.0:0 -> 0.0.0.0:0 (port 0)
+//| 1.2.3.4:65535 -> 1.2.3.4:65535 (port 65535)
+//| [::1]:443 -> [::1]:443 (port 443)
+//| [2001:DB8:0:0:0:0:0:1]:8080 -> [2001:db8::1]:8080 (port 8080)
+//| [fe80::1%3]:80 -> [fe80::1%3]:80 (port 80)
+//| [::ffff:10.0.0.1]:22 -> [::ffff:10.0.0.1]:22 (port 22)
+//| 1.2.3.4:65536 -> net::bad_address{ at = 8 }
+//| 1.2.3.4:080 -> net::bad_address{ at = 8 }
+//| 1.2.3.4 -> net::bad_address{ at = 7 }
+//| 1.2.3.4: -> net::bad_address{ at = 8 }
+//| 1.2.3.4:x -> net::bad_address{ at = 8 }
+//| 1.2.3:80 -> net::bad_address{ at = 5 }
+//| ::1:443 -> net::bad_address{ at = 0 }
+//| [::1] -> net::bad_address{ at = 5 }
+//| [::1]443 -> net::bad_address{ at = 5 }
+//| [::1 -> net::bad_address{ at = 4 }
+//| [::1x]:443 -> net::bad_address{ at = 4 }
+//| [1.2.3.4]:80 -> net::bad_address{ at = 1 }
+//| [fe80::1]%3:80 -> net::bad_address{ at = 9 }
+//|  -> net::bad_address{ at = 0 }
+//| 192.168.0.1:8080 and [fe80::abcd%7]:53
+//| 127.0.0.1 loopback true
+//| ::1 loopback true
+//| 0.0.0.0 loopback false
+//| :: loopback false
+//| 127.255.0.9 loopback true
+//| 128.0.0.1 loopback false
+//| ::1%2 loopback true
+//| ::2 loopback false
+//| ::ffff:127.0.0.1 loopback false
+//| false true true
+//| false true
+//| true 8080

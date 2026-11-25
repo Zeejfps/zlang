@@ -202,6 +202,22 @@ These are pure: no capability, so they run in the interpreter and while compilin
 IPv6 address (`::ffff:1.2.3.4`) stays a v6 address: no socket of net's ever produces one, since
 listeners are IPv6-only (Listening).
 
+Built (Order of work, 3), with what the text reads settled as inet_pton reads it, and std/net.ctx's
+header saying it in full:
+
+- **v4** is four decimal numbers to 255, none with a leading zero (`01` would be octal to some
+  readers and decimal to others), so `1.2.3` and `1.2.3.4.5` aren't addresses.
+- **v6** may end in a dotted IPv4 address as its last two groups, as inet_pton and RFC 4291 read
+  it. Written, only an IPv4-mapped address (`::ffff:0:0/96`) keeps the dotted tail, as RFC 5952 §5
+  writes it; any other, the deprecated `::1.2.3.4` included, is written in hexadecimal.
+- **A scope** is a decimal `u32`. An interface's name (`%eth0`) is bad text at its first letter: its
+  index is the system's to give, and parsing takes no capability. `%0` is no scope.
+- **A port** is a decimal `u16` without a leading zero.
+- **`at`** is the first byte that can't continue an address, or where a number starts whose value
+  or leading zero is wrong, or the text's length when it ends too soon; in `parse_address` it counts
+  from the text's start, brackets included.
+- **`is_loopback`** of an IPv4-mapped `::ffff:127.0.0.1` is false: it is a v6 address that isn't `::1`.
+
 ## Name lookup
 
 ```

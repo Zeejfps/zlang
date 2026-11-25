@@ -1,0 +1,77 @@
+// v6 text is written as RFC 5952 says (§4): leading zeros suppressed, the longest run of zero
+// groups as `::`, the first of equal runs, a single zero group not shortened, lower case; an
+// IPv4-mapped address with its dotted tail (§5); and v4 as dotted decimal. Each line is what
+// parse_ip reads, then what push_ip writes.
+
+fn show { mut io: Io, text: []u8 } {
+    let mut mem: [512]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let ip = net::parse_ip{ text } iferr err{ error } {
+        _ = @fmt(&io, "{} -> {}\n", text, error)
+        return
+    }
+    try! @fmt(&b, "{}", ip)
+    _ = @fmt(&io, "{} -> {}\n", text, utf8::view{ b })
+}
+
+fn main { mut io: Io } {
+    show{ &io, text = "2001:0db8:0000:0000:0000:0000:0000:0001" }      // §4.1, §4.2.1
+    show{ &io, text = "2001:db8::0:1" }
+    show{ &io, text = "2001:db8:0:0:0:0:2:1" }
+    show{ &io, text = "2001:db8:0:1:1:1:1:1" }                        // §4.2.2: one zero group stays
+    show{ &io, text = "2001:0:0:1:0:0:0:1" }                          // §4.2.3: the longest run
+    show{ &io, text = "2001:db8:0:0:1:0:0:1" }                        // §4.2.3: the first of equal runs
+    show{ &io, text = "2001:DB8::AbCd" }                              // §4.3: lower case
+    show{ &io, text = "0:0:0:0:0:0:0:0" }
+    show{ &io, text = "::" }
+    show{ &io, text = "::1" }
+    show{ &io, text = "1::" }
+    show{ &io, text = "1:0:0:0:0:0:0:0" }
+    show{ &io, text = "0:0:0:0:0:0:0:1" }
+    show{ &io, text = "1:2:3:4:5:6:7:8" }
+    show{ &io, text = "1:2:3:4:5:6:7::" }
+    show{ &io, text = "::2:3:4:5:6:7:8" }
+    show{ &io, text = "1:0:3:4:5:6:7:8" }
+    show{ &io, text = "::ffff:1.2.3.4" }                              // §5: mapped, dotted
+    show{ &io, text = "::FFFF:0102:0304" }
+    show{ &io, text = "::ffff:0:0" }
+    show{ &io, text = "::1.2.3.4" }                                   // deprecated "compatible": hex
+    show{ &io, text = "64:ff9b::192.0.2.33" }
+    show{ &io, text = "fe80::1%3" }
+    show{ &io, text = "fe80::1%4294967295" }
+    show{ &io, text = "fe80::1%0" }                                   // scope 0 is none
+    show{ &io, text = "127.0.0.1" }
+    show{ &io, text = "0.0.0.0" }
+    show{ &io, text = "255.255.255.255" }
+}
+
+//# stdout:
+//| 2001:0db8:0000:0000:0000:0000:0000:0001 -> 2001:db8::1
+//| 2001:db8::0:1 -> 2001:db8::1
+//| 2001:db8:0:0:0:0:2:1 -> 2001:db8::2:1
+//| 2001:db8:0:1:1:1:1:1 -> 2001:db8:0:1:1:1:1:1
+//| 2001:0:0:1:0:0:0:1 -> 2001:0:0:1::1
+//| 2001:db8:0:0:1:0:0:1 -> 2001:db8::1:0:0:1
+//| 2001:DB8::AbCd -> 2001:db8::abcd
+//| 0:0:0:0:0:0:0:0 -> ::
+//| :: -> ::
+//| ::1 -> ::1
+//| 1:: -> 1::
+//| 1:0:0:0:0:0:0:0 -> 1::
+//| 0:0:0:0:0:0:0:1 -> ::1
+//| 1:2:3:4:5:6:7:8 -> 1:2:3:4:5:6:7:8
+//| 1:2:3:4:5:6:7:: -> 1:2:3:4:5:6:7:0
+//| ::2:3:4:5:6:7:8 -> 0:2:3:4:5:6:7:8
+//| 1:0:3:4:5:6:7:8 -> 1:0:3:4:5:6:7:8
+//| ::ffff:1.2.3.4 -> ::ffff:1.2.3.4
+//| ::FFFF:0102:0304 -> ::ffff:1.2.3.4
+//| ::ffff:0:0 -> ::ffff:0.0.0.0
+//| ::1.2.3.4 -> ::102:304
+//| 64:ff9b::192.0.2.33 -> 64:ff9b::c000:221
+//| fe80::1%3 -> fe80::1%3
+//| fe80::1%4294967295 -> fe80::1%4294967295
+//| fe80::1%0 -> fe80::1
+//| 127.0.0.1 -> 127.0.0.1
+//| 0.0.0.0 -> 0.0.0.0
+//| 255.255.255.255 -> 255.255.255.255

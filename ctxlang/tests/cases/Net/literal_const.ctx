@@ -1,0 +1,21 @@
+// A converted literal is a const's value too, and from_literal is an ordinary fn that a call
+// runs when the program does.
+
+const SERVER: net::Address = "[2001:db8::7]:443"
+
+fn main { mut io: Io } {
+    let mut mem: [256]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    let mut b = utf8::builder{ realloc = arena::alloc, &heap }
+    let local = try! net::from_literal{ s = "10.1.2.3:9" }
+    try! @fmt(&b, "{} {}", SERVER, local)
+    io::println{ &io, s = utf8::view{ b } }
+    match net::from_literal{ s = "10.1.2.3" } {
+        ok => {}
+        net::bad_address{ at } => { _ = @fmt(&io, "at {}\n", at) }
+    }
+}
+
+//# stdout:
+//| [2001:db8::7]:443 10.1.2.3:9
+//| at 8
