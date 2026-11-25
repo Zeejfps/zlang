@@ -95,6 +95,15 @@ namespace diag {
         return list::items{ list = diags.items }
     }
 
+    // Adds the diagnostics another Diags kept, `items`, of `errors` errors and `dropped` past
+    // its cap, as if they had been added here: in order, under this one's cap.
+    fn append { mut diags: Diags, items: []Diag, errors: usize, dropped: usize } {
+        let total = diags.errors + errors
+        for d in items { add{ &diags, d } }
+        diags.errors = total
+        diags.dropped = diags.dropped + dropped
+    }
+
     // Where the diagnostics stand, for rewind.
     struct Mark { len: usize, errors: usize, dropped: usize }
 

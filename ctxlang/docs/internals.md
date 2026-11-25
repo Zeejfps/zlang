@@ -27,6 +27,9 @@ cc -std=gnu11 -O1 -w -fwrapv -fno-optimize-sibling-calls -Ictxc/rt bootstrap/ctx
   whose C, runtime, compiler and flags haven't changed isn't compiled again: `ctxc run` of an
   unchanged small program takes about 40 ms, the front end included (drive.ctx). `ctxc build`
   writes one file, as the bootstraps are.
+- ctxc takes `Threads`: the front end lexes and parses a program's files on tasks, in chunks of
+  about equal bytes with an arena each, and adds each file's diagnostics in the files' order
+  (main.ctx, `parse_files`). The rest of a compile runs on one thread.
 - ctxc0 is the bootstrap's. `./ctxc0 exe ctxc -o ctxc1` builds the current source's with it
   (about 3 s), for `./ctxc1 run`. The suite's runner builds its own for the cases, into
   `build/suite/ctxc` (cached after the first time).

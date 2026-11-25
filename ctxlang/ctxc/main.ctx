@@ -53,7 +53,7 @@
 // bootstrap/ctxc.PLATFORM.c is this program as C with std's layer for PLATFORM (std/os), for
 // building ctxc with only a C compiler.
 
-fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {
     let mut to_c = false
     if args.len >= 1 and slice::eq_bytes{ a = args[0], b = "run" } {
         return drive::command{ run = true, .. }
@@ -198,7 +198,7 @@ enum Mode: u8 { decls, ir, build, interp, units, check, where, api }
 // `ctxc decls STD... -- FILE...`: lexes and parses every file, then checks the program, all in
 // one arena. `ctxc ir ...` prints the program's IR instead, if it has no errors, and
 // `ctxc build OUT.c ...` writes it as C.
-fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args, mode: Mode } -> i32 {
+fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, args: Args, mode: Mode } -> i32 {
     let first: usize = if mode == Mode::build { 2 } else { 1 }
     // The lists of what the arguments name are on pages, not the stack: the program's files
     // and modules keep their paths (spec §14, Escape check, `into`).
@@ -258,7 +258,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
     }
     let mut scratch = arena::new{ buf = pages }
     let mut found = report::found{ heap = &scratch }
-    let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, places = list::items{ list = places }, testing = false, &found }
+    let code = analyze{ &io, &fs, &mem, &proc, &threads, paths = list::items{ list = paths }, std_files = split - first, extras = slice::empty([]u8){}, mode, out, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = list::items{ list = denied }, places = list::items{ list = places }, testing = false, &found }
     report::write{ &io, heap = &scratch, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
     return code
 }
@@ -280,7 +280,7 @@ fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Ar
 // nothing is made of the program: every diagnostic is kept, whatever their number, the program
 // is checked as a test build as well (check::Checker.checking). A program's errors are added
 // to found, which the caller shows (report::write), but those `ir` prints in its own form.
-fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool, places: [][]u8, testing: bool, mut found: report::Found } -> i32 {
+fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, paths: [][]u8, std_files: usize, extras: [][]u8, mode: Mode, out: []u8, argv: [][]u8, env: [][]u8, stack: u64, size: usize, copy: usize, mut made: [][]u8, texts: [][]u8, denied: []bool, places: [][]u8, testing: bool, mut found: report::Found } -> i32 {
     let given = paths.len - texts.len               // paths[given..] are texts'
     let mut total: u64 = 0
     let mut i: usize = 0
@@ -323,47 +323,63 @@ fn analyze { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, paths: [][]u8
         i = i + 1
     }
     let all = list::items{ list = read }
-    // The program's files are parsed with diagnostics of their own until it is known whether it
-    // is a build program, whose files come after the extras.
+    // The files are parsed at once (parse_files). The program's own files' diagnostics wait until
+    // it is known whether it is a build program, whose files come after the extras.
+    let keep_all = mode == Mode::check
+    let parsed = parse_files{ &mem, &proc, &threads, &heap, names = paths, texts = all, first = 0, keep_all } ifnull {
+        io::eprintln{ &io, s = "out of memory" }
+        return 1
+    }
     let mut own = diag::new{ &heap }
-    if mode == Mode::check { diag::keep_all{ diags = &own } }
+    if keep_all { diag::keep_all{ diags = &own } }
     i = 0
     while i < paths.len {
         if i < std_files {
-            add_file{ &files, &heap, &diags, name = paths[i], text = all[i], denied = false }
+            add_parsed{ &files, &diags, name = paths[i], text = all[i], p = parsed[i], denied = false }
         } else {
-            add_file{ &files, &heap, diags = &own, name = paths[i], text = all[i], denied = i < denied.len and denied[i] }
+            add_parsed{ &files, diags = &own, name = paths[i], text = all[i], p = parsed[i], denied = i < denied.len and denied[i] }
         }
         i = i + 1
     }
     let mut std_count = std_files
     if extras.len > 0 and builds{ files = list::items{ list = files }[std_files..] } {
+        // The extras, then the program's own files again, numbered after them.
         files.len = std_files
-        i = 0
-        while i < extras.len {
-            let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = extras[i] } else {
-                cannot{ &io, path = extras[i], what = "cannot read" }
+        let mut names = list::new([]u8){ realloc = arena::alloc, &heap }
+        let mut texts = list::new([]u8){ realloc = arena::alloc, &heap }
+        for path in extras {
+            let ok{ value = text } = fs::read_all{ &fs, &heap, realloc = arena::alloc, path } else {
+                cannot{ &io, path, what = "cannot read" }
                 return 1
             }
-            add_file{ &files, &heap, &diags, name = extras[i], text, denied = false }
+            try! list::push{ list = &names, item = path }
+            try! list::push{ list = &texts, item = text }
+        }
+        i = std_files
+        while i < paths.len {
+            try! list::push{ list = &names, item = paths[i] }
+            try! list::push{ list = &texts, item = all[i] }
+            i = i + 1
+        }
+        let ns = list::items{ list = names }
+        let ts = list::items{ list = texts }
+        let again = parse_files{ &mem, &proc, &threads, &heap, names = ns, texts = ts, first = @as(u32, std_files), keep_all } ifnull {
+            io::eprintln{ &io, s = "out of memory" }
+            return 1
+        }
+        i = 0
+        while i < ns.len {
+            let mut no = false
+            if i >= extras.len {
+                let k = std_files + (i - extras.len)        // its index in paths
+                no = k < denied.len and denied[k]
+            }
+            add_parsed{ &files, &diags, name = ns[i], text = ts[i], p = again[i], denied = no }
             i = i + 1
         }
         std_count = std_files + extras.len
-        i = std_files
-        while i < paths.len {
-            add_file{ &files, &heap, &diags, name = paths[i], text = all[i], denied = i < denied.len and denied[i] }
-            i = i + 1
-        }
     } else {
-        let errors = diags.errors + own.errors
-        let ds = diag::items{ diags = own }
-        i = 0
-        while i < ds.len {
-            diag::add{ &diags, d = ds[i] }
-            i = i + 1
-        }
-        diags.errors = errors
-        diags.dropped = diags.dropped + own.dropped
+        diag::append{ &diags, items = diag::items{ diags = own }, errors = own.errors, dropped = own.dropped }
     }
     // A test is given the directory of its own file (spec §20, rule 12): each of the program's
     // files' directories as an absolute path, from the working directory, which the files'
@@ -581,6 +597,76 @@ fn builds { files: []check::File } -> bool {
 
 // Lexes and parses a file into the program's list, where its index is its file id. denied:
 // the unchecked operations are errors in it (spec §13).
+// A file's lexing, parsing and line starts, made in a Chunk's arena, and the diagnostics they
+// reported, which add_parsed adds to the program's.
+struct Parsed { tree: syntax::File, lines: []u32, diags: []diag::Diag, errors: usize, dropped: usize }
+
+// Files that one task parses (parse_chunk): texts, named names, numbered from first, each into
+// done; size is their bytes. Its arena, which holds what it parses, lives as long as ctxc.
+struct Chunk { heap: arena::Arena, names: [][]u8, texts: [][]u8, first: u32, size: usize, keep_all: bool, done: []mut Parsed }
+
+// How many chunks a program's files are parsed in for each processor: several, of about equal
+// bytes, so that a big file doesn't leave the others waiting.
+const CHUNKS_EACH: usize = 4
+
+// Lexes and parses texts, named names and numbered from first, at once on the processors: each
+// one's Parsed, in order, or null if there is no memory for them. Each file's diagnostics are
+// its own, kept as diag::keep_all does if keep_all, so that adding them to the program's in
+// order (add_parsed) gives what parsing the files one after another into it gives.
+fn parse_files { mut mem: Mem, mut proc: Proc, mut threads: Threads, mut heap: arena::Arena, names: [][]u8, texts: [][]u8, first: u32, keep_all: bool } -> ?[]Parsed {
+    let done = try! alloc::make(Parsed, arena::Arena){ realloc = arena::alloc, &heap, count = texts.len }
+    let mut total: usize = 0
+    for t in texts { total = total + t.len }
+    let count = @as(usize, proc::processors{ &proc }) * CHUNKS_EACH
+    let each = total / count + 1
+    let mut chunks = list::new(Chunk){ realloc = arena::alloc, &heap }
+    let mut at: usize = 0
+    while at < texts.len {
+        let mut end = at
+        let mut size: usize = 0
+        while end < texts.len and (end == at or size + texts[end].len <= each) {
+            size = size + texts[end].len
+            end = end + 1
+        }
+        try! list::push{ list = &chunks, item = Chunk{ heap = arena::new{ buf = slice::empty(u8){} }, names = names[at..end], texts = texts[at..end], first = first + @as(u32, at), size, keep_all, done = done[at..end] } }
+        at = end
+    }
+    let cs = list::items{ list = chunks }
+    let mut group: task::Group
+    let mut i: usize = 0
+    while i < cs.len {
+        task::start_in{ &threads, group = &group, run = parse_chunk{ &mem, chunk = &cs[i], _ } }
+        i = i + 1
+    }
+    task::wait_all{ &threads, group = &group } iferr { return null }
+    return done
+}
+
+// A chunk's files, one after another, in an arena of the chunk's own.
+#task
+fn parse_chunk { mut mem: Mem, chunk: *mut Chunk } -> ! {
+    let pages = mem::reserve{ &mem, size = 16777216 + chunk.size * 256 } ifnull { return alloc::out_of_memory }
+    chunk.heap = arena::new{ buf = pages }
+    let mut i: usize = 0
+    while i < chunk.texts.len {
+        let text = chunk.texts[i]
+        let file = chunk.first + @as(u32, i)
+        let mut diags = diag::new{ heap = &chunk.heap }
+        if chunk.keep_all { diag::keep_all{ &diags } }
+        let lexed = lexer::lex{ text, file, heap = &chunk.heap, &diags }
+        let tree = parser::parse{ text, file, tokens = lexed.tokens, api = parser::is_api{ path = chunk.names[i] }, heap = &chunk.heap, &diags }
+        let lines = source::line_starts{ text, heap = &chunk.heap }
+        chunk.done[i] = Parsed{ tree, lines, diags = diag::items{ diags }, errors = diags.errors, dropped = diags.dropped }
+        i = i + 1
+    }
+}
+
+// A file parse_files parsed, as the program's next, with its diagnostics added to diags.
+fn add_parsed { mut files: list::List(check::File, arena::Arena), mut diags: diag::Diags, name: []u8, text: []u8, p: Parsed, denied: bool } {
+    diag::append{ &diags, items = p.diags, errors = p.errors, dropped = p.dropped }
+    try! list::push{ list = &files, item = check::File{ name, text, lines = p.lines, tree = p.tree, denied, dir = "", api = parser::is_api{ path = name }, .. } }
+}
+
 fn add_file { mut files: list::List(check::File, arena::Arena), mut heap: arena::Arena, mut diags: diag::Diags, name: []u8, text: []u8, denied: bool } {
     let file = @as(u32, files.len)
     let lexed = lexer::lex{ text, file, &heap, &diags }

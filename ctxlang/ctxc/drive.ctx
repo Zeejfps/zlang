@@ -126,7 +126,7 @@ namespace drive {
     // the same for every path to the file (`key_of`), to find one reached twice.
     struct Found { paths: Strs, keys: Strs }
 
-    fn command { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args, run: bool } -> i32 {
+    fn command { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, args: Args, run: bool } -> i32 {
         let pages = mem::reserve{ &mem, size = 16777216 } ifnull {
             io::eprintln{ &io, s = "out of memory" }
             return 1
@@ -146,7 +146,7 @@ namespace drive {
         let d = setup{ &io, &fs, &proc, &heap, path, builds = true, json } ifnull { return 1 }
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let mut why = Why::failed
-        let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
+        let code = describe{ &io, &fs, &mem, &proc, &threads, &heap, d, path, &targets, &why }
         if code != 0 { return code }
 
         let mut first = ""
@@ -160,7 +160,7 @@ namespace drive {
             add_all{ xs = &flags, ys = list::items{ list = t.libs } }
             let out: []u8 = if i == 0 and not run { given[3] } else { "" }
             let root = place{ &heap, dir = path, rel = t.root }
-            let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root, level = t.level, trace = traces{ level = t.level, trace = t.trace, testing = false }, flags = list::items{ list = flags }, out, testing = false, origin = origin_of{ &fs, &heap, path, t }, &why } ifnull { return 1 }
+            let exe = compile{ &io, &fs, &mem, &proc, &threads, &heap, d, dir = d.work, name = t.name, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root, level = t.level, trace = traces{ level = t.level, trace = t.trace, testing = false }, flags = list::items{ list = flags }, out, testing = false, origin = origin_of{ &fs, &heap, path, t }, &why } ifnull { return 1 }
             if i == 0 { first = exe }
             i = i + 1
         }
@@ -193,7 +193,7 @@ namespace drive {
     // each edit, and checks again, until a check has none to apply or ROUNDS of them are
     // done; what is reported is what the last check found. `--dry-run` with it says the
     // edits of the first check and writes nothing (`mend`).
-    fn check { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+    fn check { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {
         let pages = mem::reserve{ &mem, size = 268435456 } ifnull {
             io::eprintln{ &io, s = "out of memory" }
             return 1
@@ -219,7 +219,7 @@ namespace drive {
         while true {
             found = report::found{ &heap }
             failed = false
-            let code = check_once{ &io, &fs, &mem, &proc, &heap, d, path, &found, &failed }
+            let code = check_once{ &io, &fs, &mem, &proc, &threads, &heap, d, path, &found, &failed }
             if code != 0 { return code }
             round = round + 1
             if not fix or round > ROUNDS { break }
@@ -270,7 +270,7 @@ namespace drive {
     // any namespace, with its module and where it is visible; `ctxc api PATH FOLDER`: writes
     // FOLDER/api.ctx, a first contract for the folder from what the rest of the program names
     // of its files (spec §10, Modules, Tooling). Both take the program's first executable.
-    fn query { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args, api: bool } -> i32 {
+    fn query { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, args: Args, api: bool } -> i32 {
         if args.len != 3 {
             io::eprintln{ &io, s = if api { "usage: ctxc api PATH FOLDER" } else { "usage: ctxc where PATH NAME" } }
             return 2
@@ -296,7 +296,7 @@ namespace drive {
         let d = setup{ &io, &fs, &proc, &heap, path, builds = has_build, json = false } ifnull { return 1 }
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let mut why = Why::failed
-        let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
+        let code = describe{ &io, &fs, &mem, &proc, &threads, &heap, d, path, &targets, &why }
         if code != 0 { return code }
         if targets.len == 0 {
             cannot{ &io, path, what = "has no executable for" }
@@ -309,7 +309,7 @@ namespace drive {
         let all = program_paths{ &heap, d, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root }
         let mut units: [][]u8 = slice::empty([]u8){}
         let mut found = report::found{ &heap }
-        let r = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = if api { Mode::api } else { Mode::where }, out = what, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing = false, &found }
+        let r = analyze{ &io, &fs, &mem, &proc, &threads, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = if api { Mode::api } else { Mode::where }, out = what, argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing = false, &found }
         report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
         return r
     }
@@ -323,10 +323,10 @@ namespace drive {
     // found. Returns 0, or the exit code after saying why the program couldn't be described
     // (`describe`); failed is set if an executable couldn't be checked for another reason
     // than its errors, which was said.
-    fn check_once { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, path: []u8, mut found: report::Found, mut failed: bool } -> i32 {
+    fn check_once { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, mut heap: Heap, d: Driver, path: []u8, mut found: report::Found, mut failed: bool } -> i32 {
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let mut why = Why::failed
-        let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
+        let code = describe{ &io, &fs, &mem, &proc, &threads, &heap, d, path, &targets, &why }
         if code != 0 { return code }
         let mut i: usize = 0
         while i < targets.len {
@@ -343,7 +343,7 @@ namespace drive {
             let mut units: [][]u8 = slice::empty([]u8){}
             let all = program_paths{ &heap, d, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root = place{ &heap, dir = path, rel = t.root } }
             let mut own = report::found{ &heap }
-            let r = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::check, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing = false, found = &own }
+            let r = analyze{ &io, &fs, &mem, &proc, &threads, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::check, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = 0, copy = 0, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing = false, found = &own }
             // 1 with errors, which are in own, or after saying what else stopped it.
             if r != 0 and own.entries.len == 0 { failed = true }
             explain{ &io, &fs, &heap, d, found = &own, origin = origin_of{ &fs, &heap, path, t }, files }
@@ -605,7 +605,7 @@ namespace drive {
     // build's diagnostics and the tests' results are both JSON then, and it may come before
     // PATH, as for `run`. It is built as NAME.test, beside the program's own build, which it
     // leaves alone. The exit code is the runner's.
-    fn test { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+    fn test { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {
         let first: usize = if args.len >= 2 and slice::eq_bytes{ a = args[1], b = "--json" } { 2 } else { 1 }
         if args.len <= first {
             io::eprintln{ &io, s = "usage: ctxc test [--json] PATH [--list] [-v] [--json] [--no-skips] [--jobs N] [--timeout SECONDS] [FILTER...] [-- ARG...]" }
@@ -621,7 +621,7 @@ namespace drive {
         let d = setup{ &io, &fs, &proc, &heap, path, builds = true, json } ifnull { return 1 }
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
         let mut why = Why::failed
-        let code = describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why }
+        let code = describe{ &io, &fs, &mem, &proc, &threads, &heap, d, path, &targets, &why }
         if code != 0 { return code }
         if targets.len == 0 {
             cannot{ &io, path, what = "no executable to test in" }
@@ -635,7 +635,7 @@ namespace drive {
         add_all{ xs = &flags, ys = list::items{ list = t.libs } }
         let origin = origin_of{ &fs, &heap, path, t }
         let root = place{ &heap, dir = path, rel = t.root }
-        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = d.work, name = cat{ &heap, a = t.name, b = ".test" }, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root, level = t.level, trace = traces{ level = t.level, trace = t.trace, testing = true }, flags = list::items{ list = flags }, out = "", testing = true, origin, &why } ifnull { return 1 }
+        let exe = compile{ &io, &fs, &mem, &proc, &threads, &heap, d, dir = d.work, name = cat{ &heap, a = t.name, b = ".test" }, files, gens = list::items{ list = t.gens }, denied = no, deny = t.deny, root, level = t.level, trace = traces{ level = t.level, trace = t.trace, testing = true }, flags = list::items{ list = flags }, out = "", testing = true, origin, &why } ifnull { return 1 }
         if d.json { report::summary{ &io, &heap, errors = 0, dropped = false, waiting = 0 } }
         let mut argv = list::new([]u8){ realloc = arena::alloc, &heap }
         try! list::push{ list = &argv, item = exe }
@@ -668,7 +668,7 @@ namespace drive {
     //                 and then the framework's NAME
     //
     // The build program's output is ctxc's, and errors are reported as `run` reports them.
-    fn graph { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+    fn graph { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {
         if args.len != 4 {
             io::eprintln{ &io, s = "usage: ctxc graph DIR GEN LIST" }
             return 2
@@ -683,7 +683,7 @@ namespace drive {
         let mut heap = arena::new{ buf = pages }
         let mut why = Why::failed
         let mut text = list::new(u8){ realloc = arena::alloc, &heap }
-        let done = describe_all{ &io, &fs, &mem, &proc, &heap, path, gen, &text, &why }
+        let done = describe_all{ &io, &fs, &mem, &proc, &threads, &heap, path, gen, &text, &why }
         let all = if done { cat{ &heap, a = "status\tok\n", b = list::items{ list = text } } } else { status_line{ &heap, why } }
         match fs::write_all{ &fs, path = list_file, bytes = all } {
             ok => {}
@@ -709,7 +709,7 @@ namespace drive {
 
     // For `graph`: describes the program at path into text, writing generated files to gen.
     // False after saying why it can't, and setting why.
-    fn describe_all { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, path: []u8, gen: []u8, mut text: list::List(u8, Heap), mut why: Why } -> bool {
+    fn describe_all { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, mut heap: Heap, path: []u8, gen: []u8, mut text: list::List(u8, Heap), mut why: Why } -> bool {
         let d = setup{ &io, &fs, &proc, &heap, path, builds = true, json = false } ifnull { return false }
         if kind_of{ &fs, path = join{ &heap, a = path, b = "build.ctx" } } != 1 {
             cannot{ &io, path, what = "has no build program" }
@@ -717,7 +717,7 @@ namespace drive {
             return false
         }
         let mut targets = list::new(Target){ realloc = arena::alloc, &heap }
-        if describe{ &io, &fs, &mem, &proc, &heap, d, path, &targets, &why } != 0 { return false }
+        if describe{ &io, &fs, &mem, &proc, &threads, &heap, d, path, &targets, &why } != 0 { return false }
         let ts = list::items{ list = targets }
         let mut i: usize = 0
         while i < ts.len {
@@ -820,7 +820,7 @@ namespace drive {
     // describes, their generated files written (`generate`), if it is a directory with a
     // build.ctx, or else the program itself. Returns 0, or an exit code after saying why not,
     // and setting why.
-    fn describe { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, path: []u8, mut targets: list::List(Target, Heap), mut why: Why } -> i32 {
+    fn describe { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, mut heap: Heap, d: Driver, path: []u8, mut targets: list::List(Target, Heap), mut why: Why } -> i32 {
         let kind = kind_of{ &fs, path }
         let build_file = normalize{ &heap, path = join{ &heap, a = path, b = "build.ctx" } }
         if kind != 2 or kind_of{ &fs, path = build_file } != 1 {
@@ -828,7 +828,7 @@ namespace drive {
             add_target{ &targets, &heap, name = d.program, root }
             return 0
         }
-        let code = build_program{ &io, &fs, &mem, &proc, &heap, d, dir = path, build_file, &targets, &why }
+        let code = build_program{ &io, &fs, &mem, &proc, &threads, &heap, d, dir = path, build_file, &targets, &why }
         if code != 0 { return code }
         why = Why::errors
         if targets.len == 0 {
@@ -868,7 +868,7 @@ namespace drive {
     // instead of the C compiler. Its environment is ctxc's, but for each --env, which sets NAME
     // or, without a value, removes it: ctxc's own CTX_STACK and CTX_HOME needn't be the
     // program's. A directory with a build program is an error: interp doesn't run one.
-    fn interp { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args } -> i32 {
+    fn interp { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, args: Args } -> i32 {
         let mut at: usize = 1
         while at + 1 < args.len and slice::eq_bytes{ a = args[at], b = "--env" } { at = at + 2 }
         let edits = args[1..at]
@@ -939,7 +939,7 @@ namespace drive {
             k = k + 2
         }
         let mut found = report::found{ &heap }
-        let code = analyze{ &io, &fs, &mem, &proc, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = if end > at + 1 { "program" } else { stem{ path = base{ path } } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, places = slice::empty([]u8){}, testing = false, &found }
+        let code = analyze{ &io, &fs, &mem, &proc, &threads, paths = list::items{ list = paths }, std_files = std.len, extras, mode = Mode::interp, out = if end > at + 1 { "program" } else { stem{ path = base{ path } } }, argv, env = list::items{ list = env }, stack, size = 0, copy = 0, made = &units, texts = slice::empty([]u8){}, denied = slice::empty(bool){}, places = slice::empty([]u8){}, testing = false, &found }
         report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = false }
         return code
     }
@@ -970,14 +970,14 @@ namespace drive {
     }
 
     // Compiles and runs dir's build program, and adds the executables its graph describes.
-    fn build_program { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, build_file: []u8, mut targets: list::List(Target, Heap), mut why: Why } -> i32 {
+    fn build_program { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, mut heap: Heap, d: Driver, dir: []u8, build_file: []u8, mut targets: list::List(Target, Heap), mut why: Why } -> i32 {
         let work = join{ &heap, a = d.work, b = "build" }
         if not made{ &io, &fs, path = work } { return 1 }
         let files = gather_build_files{ &io, &fs, &heap, os = d.os, dir, build_file, as_json = d.json } ifnull {
             why = Why::errors
             return 1
         }
-        let exe = compile{ &io, &fs, &mem, &proc, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, denied = slice::empty(bool){}, deny = false, root = "", level = 1, trace = true, flags = slice::empty([]u8){}, out = "", testing = false, origin = Origin{ kind = Kind::none, dir = "", roots = slice::empty([]u8){} }, &why } ifnull { return 1 }
+        let exe = compile{ &io, &fs, &mem, &proc, &threads, &heap, d, dir = work, name = "build", files, gens = slice::empty(Gen){}, denied = slice::empty(bool){}, deny = false, root = "", level = 1, trace = true, flags = slice::empty([]u8){}, out = "", testing = false, origin = Origin{ kind = Kind::none, dir = "", roots = slice::empty([]u8){} }, &why } ifnull { return 1 }
         let graph = claim{ &io, &fs, &heap, base = join{ &heap, a = work, b = "graph" }, ext = ".txt" } ifnull { return 1 }
         defer _ = fs::remove{ &fs, path = graph }
         let mut env = list::new([]u8){ realloc = arena::alloc, &heap }
@@ -1814,12 +1814,12 @@ namespace drive {
     // gens are denied them too. Returns the executable; null after saying why there is none,
     // and setting why to errors if the program has errors.
     // root: the executable's root, where its generated files are for modules (program_paths).
-    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, root: []u8, level: u8, trace: bool, flags: [][]u8, out: []u8, testing: bool, origin: Origin, mut why: Why } -> ?[]u8 {
+    fn compile { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, mut threads: Threads, mut heap: Heap, d: Driver, dir: []u8, name: []u8, files: [][]u8, gens: []Gen, denied: []bool, deny: bool, root: []u8, level: u8, trace: bool, flags: [][]u8, out: []u8, testing: bool, origin: Origin, mut why: Why } -> ?[]u8 {
         let base = join{ &heap, a = dir, b = name }
         let all = program_paths{ &heap, d, files, gens, denied, deny, root }
         let mut units: [][]u8 = slice::empty([]u8){}
         let mut found = report::found{ &heap }
-        let code = analyze{ &io, &fs, &mem, &proc, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing, &found }
+        let code = analyze{ &io, &fs, &mem, &proc, &threads, paths = all.paths, std_files = d.std.len, extras = d.extras, mode = Mode::units, out = "", argv = slice::empty([]u8){}, env = slice::empty([]u8){}, stack = 0, size = d.unit, copy = if level == 0 { 0 } else { d.copy }, made = &units, texts = all.texts, denied = all.denied, places = all.places, testing, &found }
         if code != 0 {
             explain{ &io, &fs, &heap, d, &found, origin, files }
             report::write{ &io, &heap, es = list::items{ list = found.entries }, dropped = found.dropped, as_json = d.json }

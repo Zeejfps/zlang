@@ -42,9 +42,14 @@ themselves.
   ArrayLiteralViews/constants_fold/01), and `@atomic_load(&n, o)`'s "must be a constant" after
   "unknown name `o`": no other difference in about 97,000 checks of the corpus's programs and
   their mutants against the compiler before.
-- [ ] **5. Lexing and parsing, one file at a time.** About 15% of the check, and the files are
-  independent: in parallel, on tasks (threads.md), with an arena each. The lexer's keywords are
-  found with `slice::eq_bytes` (about 2%).
+- [x] **5. Lexing and parsing, one file at a time.** About 15% of the check, and the files are
+  independent. Now ctxc takes `Threads`, and `analyze` parses the files on tasks (main.ctx,
+  `parse_files`): chunks of about equal bytes, four for each processor, each with an arena of
+  its own, and each file's diagnostics added to the program's in the files' order, so the
+  output is the same. KOTOR 1.19 s to 0.99 s; ctxc 0.85 s to 0.81 s, most of whose source is
+  check.ctx, one file. A threaded program's stack check reads a thread's slot: within the noise
+  on Windows (the TEB), and on Linux a `_Thread_local`; macOS's isn't measured. Still to do:
+  the lexer's keywords are found with `slice::eq_bytes` (about 2%).
 - [ ] **6. The other side tables, as `nodes::Table`s.** `uses` (iterated with `map::next` for `ctxc api` and
   `where`, so it needs a way to walk it), `literal`, `spreads`, `narrowed`, `braces`,
   `forwards`, `is_vars`, `filled`, `holds`; and the maps keyed by a declaration's index
