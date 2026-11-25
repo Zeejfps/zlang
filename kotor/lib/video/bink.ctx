@@ -16,15 +16,6 @@
 // Frames are read from the file one at a time, in order: KOTOR's movies have a single keyframe,
 // frame 0, so a movie plays from its start and never seeks.
 namespace bink {
-    error not_bink                                       // no "BIK" signature
-    error unsupported{ revision: u8, video_flags: u32 }  // a revision other than 'i', or alpha/grey/scaled video
-    error bad_frame_count{ frames: u32 }
-    error bad_frame_rate{ num: u32, den: u32 }
-    error too_many_tracks{ tracks: u32 }
-    error bad_frame{ frame: u32 }                        // its packets don't fit it, or the index is out of order
-    error truncated{ frame: u32 }                        // the file ends inside a frame (or its header)
-    error bad_audio_size{ bytes: u32 }                   // the track's largest packet is implausibly large
-
     const HEADER_SIZE: usize = 44
     const MAX_TRACKS: u32 = 8
     const MAX_FRAMES: u32 = 1000000
@@ -35,48 +26,6 @@ namespace bink {
     const FLAG_ALPHA: u32 = 0x00100000
     const FLAG_GREY: u32 = 0x00020000
     const FLAG_SCALING: u32 = 0xF0000000
-
-    // An audio track: the largest packet's decoded size in bytes, the sample rate, the flags
-    // (0x1000 DCT, 0x2000 stereo, 0x4000 16-bit) and the track's id.
-    struct Track { max_decoded: u32, rate: u32, flags: u32, id: u32 }
-
-    struct Header {
-        revision: u8,                // the letter after "BIK"
-        frames: u32,
-        largest_frame: u32,          // in bytes
-        width: u32,
-        height: u32,
-        rate_num: u32,               // frames per second: rate_num / rate_den
-        rate_den: u32,
-        video_flags: u32,
-        track_count: u32,
-        tracks: [8]Track,            // the first track_count
-    }
-
-    struct Movie {
-        header: Header,
-        file: fs::File,
-        index: []mut u32,            // frames + 1 offsets; bit 0 marks a keyframe, the last is the end
-        frame: u32,                  // the next frame to decode
-        pos: u64,                    // where the file is read next
-        buffer: alloc::Bytes,        // one frame's bytes
-        video: bink_video::Decoder,
-        audio_rate: u32,             // track 0's samples per second and channels; 0 without audio
-        audio_channels: u32,
-        audio_unsupported: bool,     // track 0 isn't Bink's DCT audio: the movie plays silent
-        audio: bink_audio::Decoder,  // only when audio_rate isn't 0
-        pcm: []mut i16,              // the samples of the last frame's audio packet
-    }
-
-    // One decoded frame. Its planes and samples live in the movie until the next call to `next`.
-    struct Frame {
-        number: u32,
-        keyframe: bool,
-        y: bink_video::Plane,
-        u: bink_video::Plane,        // Cb
-        v: bink_video::Plane,        // Cr
-        audio: []i16,                // track 0's samples from this frame's packet, interleaved
-    }
 
     // ---- header
 
@@ -296,9 +245,6 @@ namespace bink {
         m.pos = end
         return bytes
     }
-
-    // A frame's packets: track 0's audio (empty if none) and the video.
-    struct Packets { audio: []u8, video: []u8 }
 
     // Splits a frame's bytes: one packet per audio track, each a u32 size and that many bytes,
     // then the video packet.

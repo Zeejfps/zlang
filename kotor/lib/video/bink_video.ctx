@@ -16,14 +16,6 @@
 // zeros past the end of the packet, bundles that run dry give zeros and are reported at the end
 // of the row, and motion vectors are checked against the previous picture before copying.
 namespace bink_video {
-    error bad_size{ width: u32, height: u32 }               // 0, or larger than we allow
-    error overrun{ plane: u32, row: u32 }                   // the plane's bits run past the packet
-    error starved{ plane: u32, row: u32 }                   // a block took a value its bundle didn't have
-    error bad_values{ plane: u32, row: u32 }                // a bundle's values overflow its count or range
-    error bad_block{ plane: u32, row: u32, col: u32, kind: i32 }
-    error bad_run{ plane: u32, row: u32, col: u32 }         // a run block's runs cover more than 64 pixels
-    error bad_motion{ plane: u32, row: u32, col: u32, x: i32, y: i32 }
-
     const MAX_SIDE: u32 = 4096
 
     // Block types.
@@ -51,10 +43,6 @@ namespace bink_video {
 
     // One plane's pixels: rows of `stride` bytes, enough rows for whole 16x16 blocks.
     struct Buffer { pixels: []mut u8, stride: usize, rows: usize }
-
-    // What a caller sees of a plane of the last picture decoded: `width` x `height` pixels,
-    // row r starting at pixels[r * stride].
-    struct Plane { pixels: []u8, stride: usize, width: u32, height: u32 }
 
     // A prefix code (one of the 16 in the tables) and the symbols its 16 codes stand for.
     struct Tree { base: usize, syms: [16]u8 }

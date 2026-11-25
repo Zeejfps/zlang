@@ -19,13 +19,6 @@
 // over X at t; as v is real, the right channel's V goes into the imaginary part and comes out as
 // the imaginary part of the result.
 namespace bink_audio {
-    // The track isn't the DCT variant, or its rate is 0.
-    error unsupported{ rate: u32, flags: u32 }
-    // The packet is shorter than its u32 header, or a block runs past its end.
-    error bad_packet
-    // `out` can't hold what the packet's decoded field says it decodes to.
-    error short_output{ need: usize, have: usize }
-
     // A track's flags (the track table's u16 after the rate).
     const FLAG_DCT: u32 = 0x1000
     const FLAG_STEREO: u32 = 0x2000

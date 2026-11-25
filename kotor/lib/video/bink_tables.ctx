@@ -12,16 +12,6 @@
 // works on any build of the DLL that holds them, wherever its linker put them, and a DLL with
 // different tables is refused rather than decoded into garbage. The game then skips its movies.
 namespace bink_tables {
-    // A table the DLL doesn't hold (no region with its shape has its CRC).
-    error no_code_lengths
-    error no_codes
-    error no_scan
-    error no_patterns
-    error no_intra_quantizers
-    error no_inter_quantizers
-    // The prefix codes don't form 16 complete codes of at most 7 bits.
-    error bad_codes{ tree: u32 }
-
     // Longest code of any of the 16 prefix codes, in bits.
     const MAX_CODE_BITS: u32 = 7
     const LOOKUP_SIZE: usize = 128            // 1 << MAX_CODE_BITS
