@@ -170,6 +170,7 @@ namespace check {
         files:     []File,
         modules:   []Module,                     // by index; File.module and Decl.module name them
         api_decls: list::List(u32, Heap),        // the declarations of api.ctx files, in order
+        handle_spaces: list::List(u32, Heap),    // the namespaces of the `#task_handle` structs (handles_own)
         restates:  list::List(u32, Heap),        // those that restate a nested module's
         clashes:   map::Map(u64, bool, Heap),    // pairs of declarations reported as clashing (reclash)
         std_files: usize,               // files[..std_files] are std's
@@ -556,7 +557,7 @@ namespace check {
     fn new { files: []File, modules: []Module, std_files: usize, mut heap: Heap, mut diags: diag::Diags } -> Checker {
         let mut c = Checker{
             heap = &heap, diags = &diags, files, modules, std_files,
-            api_decls = ids{ &heap }, restates = ids{ &heap },
+            api_decls = ids{ &heap }, restates = ids{ &heap }, handle_spaces = ids{ &heap },
             clashes = map::new(u64, bool){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             ty = types::store{ &heap },
             spaces = list::new(Space){ realloc = arena::alloc, &heap },
@@ -2412,6 +2413,7 @@ namespace check {
         }
         let d = map::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
         list::at{ list = c.decls, i = d }.task_handle = true
+        try! list::push{ list = &c.handle_spaces, item = get_decl{ c, d }.ns }
     }
 
     // Whether capability d is thread-bound: it has `#thread_bound`, or includes one that has.
@@ -2472,13 +2474,7 @@ namespace check {
     // Whether namespace ns declares a handle type: the handles' implementation, std's task,
     // which keeps pointers to them and copies their results (spec §15, Tasks, rule 4).
     fn handles_own { c: Checker, ns: u32 } -> bool {
-        let mut d: usize = 0
-        while d < c.decls.len {
-            let x = get_decl{ c, d = @as(u32, d) }
-            if x.task_handle and x.ns == ns { return true }
-            d = d + 1
-        }
-        return false
+        return has_id{ xs = list::items{ list = c.handle_spaces }, n = ns }
     }
 
     // Whether t may be a local's type, holding a handle: a handle, or an array of them.

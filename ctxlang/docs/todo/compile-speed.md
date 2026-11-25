@@ -9,7 +9,7 @@ ctxc.
 
 ## Measured
 
-- [ ] **1. `handles_own` is a scan of every declaration.** It copies each `Decl` (about 300
+- [x] **1. `handles_own` is a scan of every declaration.** It copies each `Decl` (about 300
   bytes) to test `task_handle`, and runs for every call with type arguments (`braced_as`), for
   every local holding a handle (`handle_local`), and once per declaration in `task_decls`, which
   makes that quadratic. 80% of KOTOR's check, 56% of ctxc's. Keep the namespaces that declare a
