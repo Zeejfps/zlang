@@ -2,8 +2,9 @@
 //
 //   kotor/tools/ctxc run kotor -- --module end_m01aa
 //   kotor/tools/ctxc run kotor -- --module end_m01aa --headless --frames 90 --screenshot-at 60:kotor/out/game/m1.png
-// Taking Threads makes the game a threaded program (spec §15, Entry point): the sound is mixed on a
-// thread of its own (lib/audio/audio.ctx), so a slow frame doesn't empty the device's queue.
+// Threads lets the game start the sound's task, which makes it a threaded program (spec §15, Entry
+// point): the sound is mixed on a thread of its own (lib/audio/audio.ctx), so a slow frame doesn't
+// empty the device's queue.
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut sdl: sdl::Sdl, mut threads: Threads, args: Args } -> i32 {
     let opts = options::parse{ &io, args } ifnull { return 2 }
     let mut h = heap::new{ &mem }
