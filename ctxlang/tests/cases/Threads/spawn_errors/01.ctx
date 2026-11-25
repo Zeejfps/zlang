@@ -1,0 +1,13 @@
+// thread::spawn's misuse: a lent local used while its thread runs (01), a thread-bound capability
+// in what runs (02), and a join of a handle that holds no thread, which std reports at run time (03).
+fn count { mut n: u64 } -> u64 {
+    n = n + 1
+    return n
+}
+
+fn main { mut threads: Threads } -> ! {
+    let mut n: u64 = 41
+    let mut h: thread::Handle(u64)
+    try thread::spawn{ &threads, handle = &h, run = count{ &n, _ } }
+    n = 0  //~ error at 5: `n` is lent into `h` at 11:22, and held until `h` is ended
+}

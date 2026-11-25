@@ -557,7 +557,7 @@ namespace task {
         // The stack is larger than what the worker may use, so a frame that crosses the limit
         // still reaches the check, and the panic can be reported.
         let room: usize = if usable / 4 > 1048576 { usable / 4 } else { 1048576 }
-        let mut start = Start{ slot = s, usable, started = 0 }
+        let mut start = Start{ kind = thread::WORKER, slot = s, usable, started = 0 }
         let handle = os::thread_create{ &threads, start = @cast(*mut u8, &start), stack_size = usable + room } ifnull { return false }
         // start is this frame's: the worker copies it before it says it has started.
         while @atomic_load_acquire(&start.started) == 0 { os::thread_yield{ &threads } }
@@ -566,7 +566,9 @@ namespace task {
     }
 
     // What a new worker starts with, in its starter's frame until it has copied it.
-    struct Start { slot: *mut Slot, usable: usize, started: u32 }
+    // kind first, which says to the platform layer's thread entry that it is a worker's
+    // (thread::entry).
+    struct Start { kind: u32, slot: *mut Slot, usable: usize, started: u32 }
 
     // A worker's first fn, which the platform's layer calls on the new thread (os::thread_create):
     // its stack limit and its label for a panic's report, then its first task. When the thread

@@ -1292,14 +1292,14 @@ namespace os {
     const STACK_SIZE_PARAM_IS_A_RESERVATION: u32 = 65536
 
     // Where a new thread starts: a C function that Windows calls on it, which holds no
-    // capability.
+    // capability. It runs what start's first field says it is (thread::entry).
     #c_callback{ any_thread = true }
     fn thread_entry { start: *mut u8 } -> u32 {
-        task::begin{ start }
+        thread::entry{ start }
         return 0
     }
 
-    // Starts a thread that runs task::begin{ start }, with a stack of stack_size bytes: its
+    // Starts a thread that runs thread::entry{ start }, with a stack of stack_size bytes: its
     // handle, or null if Windows won't.
     fn thread_create { mut threads: Threads, start: *mut u8, stack_size: usize } -> ?u64 {
         let h = create_thread{ &threads, security = null, stack = stack_size, entry = thread_entry, start, flags = STACK_SIZE_PARAM_IS_A_RESERVATION, id = null }
@@ -1309,6 +1309,12 @@ namespace os {
 
 
     fn thread_detach { mut threads: Threads, handle: u64 } {
+        _ = close_thread{ &threads, handle }
+    }
+
+    // Waits for the thread to end, and lets its handle go.
+    fn thread_join { mut threads: Threads, handle: u64 } {
+        _ = wait_thread{ &threads, handle, ms = INFINITE }
         _ = close_thread{ &threads, handle }
     }
 

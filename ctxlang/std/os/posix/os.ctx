@@ -844,6 +844,7 @@ namespace os {
     extern fn pthread_attr_destroy { mut threads: Threads, mut attr: Attr } -> i32
     extern fn pthread_create { mut threads: Threads, mut thread: u64, attr: *Attr, entry: extern fn{ start: *mut u8 } -> ?*mut u8, start: *mut u8 } -> i32
     extern fn pthread_detach { mut threads: Threads, thread: u64 } -> i32
+    extern fn pthread_join { mut threads: Threads, thread: u64, result: ?*mut ?*mut u8 } -> i32
     extern fn pthread_self { mut threads: Threads } -> u64
     extern fn nanosleep { mut threads: Threads, request: *Timespec, remaining: ?*mut Timespec } -> i32
     extern fn sched_yield { mut threads: Threads } -> i32
@@ -852,14 +853,14 @@ namespace os {
     const CLOCK_REALTIME: i32 = 0
 
     // Where a new thread starts: a C function that pthreads call on it, which holds no
-    // capability.
+    // capability. It runs what start's first field says it is (thread::entry).
     #c_callback{ any_thread = true }
     fn thread_entry { start: *mut u8 } -> ?*mut u8 {
-        task::begin{ start }
+        thread::entry{ start }
         return null
     }
 
-    // Starts a thread that runs task::begin{ start }, with a stack of stack_size bytes, rounded
+    // Starts a thread that runs thread::entry{ start }, with a stack of stack_size bytes, rounded
     // up to 64 KiB as macOS wants a multiple of its pages: its pthread_t, or null.
     fn thread_create { mut threads: Threads, start: *mut u8, stack_size: usize } -> ?u64 {
         let mut attr = Attr{ bytes = [0; 8] }
@@ -875,6 +876,11 @@ namespace os {
 
     fn thread_detach { mut threads: Threads, handle: u64 } {
         _ = pthread_detach{ &threads, thread = handle }
+    }
+
+    // Waits for the thread to end, and lets its pthread_t go.
+    fn thread_join { mut threads: Threads, handle: u64 } {
+        _ = pthread_join{ &threads, thread = handle, result = null }
     }
 
     fn thread_sleep { mut threads: Threads, nanoseconds: u64 } {

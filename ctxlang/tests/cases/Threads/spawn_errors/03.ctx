@@ -1,0 +1,14 @@
+fn take { mut threads: Threads, mut h: thread::Handle(u64) } -> u64 {
+    return thread::join{ &threads, handle = &h }
+}
+
+fn main { mut threads: Threads } {
+    let mut h: thread::Handle(u64)
+    _ = take{ &threads, &h }
+}
+
+//# panic: program: panic: thread::join on a handle that holds no thread
+//# path:
+//|   at thread::join(u64) (std/thread.ctx:128:43)
+//|   at take (03.ctx:2:24)
+//|   at main (03.ctx:7:13)

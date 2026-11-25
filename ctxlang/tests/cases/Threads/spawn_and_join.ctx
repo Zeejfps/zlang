@@ -1,0 +1,34 @@
+// std's thread::spawn and join (std/thread.ctx): a thread of its own runs a bind, which lends what it
+// borrows into the handle until join, or the end of the handle's scope, which joins it.
+fn count { mut n: u64 } -> u64 {
+    n = n + 1
+    return n
+}
+
+fn square { k: u64 } -> u64 { return k * k }
+
+fn bump { mut threads: Threads, mut n: u64 } -> ! {
+    let mut h: thread::Handle(u64)
+    try thread::spawn{ &threads, handle = &h, run = count{ &n, _ } }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> ! {
+    let mut n: u64 = 41
+    let mut h: thread::Handle(u64)
+    try thread::spawn{ &threads, handle = &h, run = count{ &n, _ } }
+    let r = thread::join{ &threads, handle = &h }
+    io::println_u64{ &io, n = r }
+    io::println_u64{ &io, n }
+    let mut hs: [4]thread::Handle(u64)
+    for i in 0..4 { try thread::spawn{ &threads, handle = &hs[i], run = square{ k = @as(u64, i + 1), _ } } }
+    let mut sum: u64 = 0
+    for i in 0..4 { sum = sum + thread::join{ &threads, handle = &hs[i] } }
+    io::println_u64{ &io, n = sum }
+    try bump{ &threads, &n }
+    io::println_u64{ &io, n }
+}
+//# stdout:
+//| 42
+//| 42
+//| 30
+//| 43

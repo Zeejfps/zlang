@@ -47,6 +47,109 @@ namespace thread {
     fn current_id { mut threads: Threads } -> u64 {
         return os::thread_id{ &threads }
     }
+
+    // ---- a thread of its own (spec §15, Tasks)
+    //
+    // A thread that runs one function value and ends, which its handle joins: a task that always
+    // has a thread to itself. What it borrows is lent into its handle until `join`, or the end of
+    // the handle's scope, which joins it.
+    //
+    //   fn count { mut n: u64 } -> u64 { n = n + 1; return n }
+    //
+    //   let mut n: u64 = 41
+    //   let mut h: thread::Handle(u64)
+    //   try thread::spawn{ &threads, handle = &h, run = count{ &n, _ } }
+    //   let r = thread::join{ &threads, handle = &h }       // 42, and `n` is usable again
+    //
+    // A thread that outlives every scope, as the task backend's workers do, starts through the
+    // platform layer (os::thread_create), which is unchecked.
+
+    // A thread's handle and, once it has been joined, its result. Zero is no thread. Only a
+    // local, a local array's element, or a `mut` field: never copied, so it never moves while
+    // its thread writes its result into it.
+    #loan_holder
+    struct Handle(R) {
+        os: u64,                    // the platform layer's handle, while RUNNING
+        record: []mut u8,           // the copy of what it runs, from task's records
+        state: u32,                 // NONE or RUNNING
+        result: R,                  // what it returned, once joined
+    }
+
+    const NONE: u32 = 0
+    const RUNNING: u32 = 1
+
+    error out_of_resources          // no thread, or no room for what it runs
+
+    // What a new thread is given, in its starter's frame until it has copied it. Its first field
+    // says whose it is, a task's worker (task::Start) or a spawned thread's (Start), which
+    // entry, the platform layer's first call on the thread, goes by.
+    struct Start { kind: u32, entry: fn{ record: *mut u8, result: *mut u8 }, record: *mut u8, result: *mut u8, usable: usize, started: u32 }
+
+    const WORKER: u32 = 1
+    const SPAWNED: u32 = 2
+
+    fn entry { start: *mut u8 } {
+        if @cast(*u32, start).* == WORKER { task::begin{ start } } else { begin{ start } }
+    }
+
+    // Runs `run` on a new thread, with task's stack size (task::set_stack). `handle` must be
+    // zero. Fails with out_of_resources when the platform won't start one.
+    fn spawn(R) { mut threads: Threads, mut handle: Handle(R), run: &thread fn{} -> R into handle } -> ! {
+        if handle.state != NONE { rt::fail{ msg = "thread::spawn into a handle that holds a thread" } }
+        let t = task::table{ state = &threads }
+        mutex::lock{ mutex = &t.lock }
+        let usable = if t.stack == 0 { task::DEFAULT_STACK } else { t.stack }
+        let rec = task::new_record{ &threads, t, size = @record_size(run) } ifnull {
+            mutex::unlock{ mutex = &t.lock }
+            return out_of_resources
+        }
+        mutex::unlock{ mutex = &t.lock }
+        let entry = @record_copy(run, rec)
+        let mut start = Start{ kind = SPAWNED, entry, record = rec.ptr, result = @cast(*mut u8, &handle.result), usable, started = 0 }
+        // As a worker's: room past what it may use, so a frame that crosses the limit still
+        // reaches the check, and the panic can be reported.
+        let room: usize = if usable / 4 > 1048576 { usable / 4 } else { 1048576 }
+        let h = os::thread_create{ &threads, start = @cast(*mut u8, &start), stack_size = usable + room } ifnull {
+            mutex::lock{ mutex = &t.lock }
+            task::free_record{ t, rec }
+            mutex::unlock{ mutex = &t.lock }
+            return out_of_resources
+        }
+        // start is this frame's: the thread copies it before it says it has started.
+        while @atomic_load_acquire(&start.started) == 0 { os::thread_yield{ &threads } }
+        handle.os = h
+        handle.record = rec
+        handle.state = RUNNING
+    }
+
+    // Waits for the thread to end, and gives what it returned. Its loan ends: what it borrowed
+    // is the caller's again.
+    fn join(R) { mut threads: Threads, mut handle: Handle(R) ends } -> R {
+        if handle.state == NONE { rt::fail{ msg = "thread::join on a handle that holds no thread" } }
+        os::thread_join{ &threads, handle = handle.os }
+        let t = task::table{ state = &threads }
+        mutex::lock{ mutex = &t.lock }
+        task::free_record{ t, rec = handle.record }
+        mutex::unlock{ mutex = &t.lock }
+        handle.state = NONE
+        return handle.result
+    }
+
+    // What the end of a handle's scope runs: it joins a thread the handle still has.
+    #scope_end
+    fn end(R) { mut threads: Threads, mut handle: Handle(R) ends } {
+        if handle.state != NONE { _ = join{ &threads, &handle } }
+    }
+
+    // A spawned thread's first fn (entry): it copies start, says it has started, and runs.
+    fn begin { start: *mut u8 } {
+        let mut threads = @cast(*Threads, start).*
+        let s = @cast(*Start, start).*
+        rt::thread_begin{ &threads, usable = s.usable, name = "thread" }
+        os::thread_name{ &threads, name = "thread" }
+        @atomic_store_release(&@cast(*mut Start, start).started, 1)
+        s.entry{ record = s.record, result = s.result }
+    }
 }
 
 // A lock that one thread at a time holds: Windows' slim reader/writer lock, or a
