@@ -433,12 +433,19 @@ namespace os {
     // Makes an arena's memory from first to last usable: commits each run of reserved pages
     // from first's page on, the last of them to the end of the MiB that holds last, or to the end
     // of what `reserve` made, if that is sooner. Pages that are committed already, as memory
-    // `reserve` didn't make always is, need nothing. VirtualQuery describes the run of pages
-    // alike from an address on, so this asks once a run.
+    // `reserve` didn't make always is, need nothing.
+    //
+    // Committing pages that are committed already succeeds, so the whole range is committed at
+    // once first, which is all an arena from `reserve` ever needs. Only if that fails, as it
+    // does past the end of what `reserve` made or over memory it didn't make, is each run of
+    // pages asked about: VirtualQuery describes the run of pages alike from an address on, and
+    // takes longer the more is reserved past the address (10% of checking KOTOR, asked at
+    // every MiB of a reservation of GBs).
     fn commit { first: *u8, last: *u8 } -> bool {
-        let mut info = MemInfo{ base = 0, allocation_base = 0, allocation_protect = 0, partition = 0, size = 0, state = 0, protect = 0, kind = 0, pad = 0 }
         let start = @addr(first)
         let mib = (@addr(last) | 1048575) + 1
+        if commit_pages{ address = first, size = mib - start, kind = MEM_COMMIT, protect = PAGE_READWRITE } != null { return true }
+        let mut info = MemInfo{ base = 0, allocation_base = 0, allocation_protect = 0, partition = 0, size = 0, state = 0, protect = 0, kind = 0, pad = 0 }
         let mut at = start
         while at <= @addr(last) {
             let p = first + (at - start)

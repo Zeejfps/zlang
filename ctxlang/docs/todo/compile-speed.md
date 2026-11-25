@@ -14,7 +14,7 @@ ctxc.
   every local holding a handle (`handle_local`), and once per declaration in `task_decls`, which
   makes that quadratic. 80% of KOTOR's check, 56% of ctxc's. Keep the namespaces that declare a
   `#task_handle` struct, filled in `handle_attr`. KOTOR 14.8 s to 1.87 s, ctxc 2.8 s to 1.16 s.
-- [ ] **2. Windows' `os::commit` asks `VirtualQuery` at every MiB an arena reaches.** `analyze`
+- [x] **2. Windows' `os::commit` asks `VirtualQuery` at every MiB an arena reaches.** `analyze`
   reserves `64 MiB + 512 × the source's bytes`, several GB for KOTOR, and the query's cost grows
   with what is reserved after the address: 10% of KOTOR's check, 8% of ctxc's. Commit to the
   end of the MiB at once (`VirtualAlloc` with `MEM_COMMIT` succeeds on committed pages), and ask

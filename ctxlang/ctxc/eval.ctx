@@ -1651,6 +1651,14 @@ namespace eval {
             try store{ &m, a = info + 32, n = 4, v = 4096 }
             return try store{ &m, a = res, n = 8, v = 48 }
         }
+        if slice::eq_bytes{ a = s, b = "VirtualAlloc" } {
+            // `commit` asks VirtualAlloc to commit pages at an address first, and VirtualQuery
+            // only if that fails: committing this memory, always usable, succeeds. Reserving
+            // (MEM_RESERVE, with no address) can't run while compiling.
+            let address = try arg_bits{ &m, f, base, name = "address" }
+            let kind = try arg_bits{ &m, f, base, name = "kind" }
+            if address != 0 and kind == 4096 { return try store{ &m, a = res, n = 8, v = address } }
+        }
         if slice::eq_bytes{ a = s, b = "ctx_panic_msg" } {
             // std's rt::fail: a panic without a position.
             let msg = try arg_at{ &m, f, base, name = "msg" }
