@@ -1,7 +1,8 @@
 // ctxc's tools for modules (spec §10, Modules, Tooling). `ctxc api` writes a folder's first
 // api.ctx from what the rest of the program names of it: a fn's signature with the errors it
 // is inferred to fail with, and its comment; a capability without its static, which stays;
-// and what is complete without a body moved from its file, comments and all (rule 3).
+// and what is complete without a body moved from its file, comments and all (rule 3), with
+// the blank line after it where the move leaves the block opening.
 //# $ ctxc api . lib/geo
 //# stdout:
 //| wrote lib/geo/api.ctx: 7 declarations

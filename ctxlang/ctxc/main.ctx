@@ -490,6 +490,13 @@ fn first_api { mut io: Io, mut fs: Fs, mut heap: arena::Arena, c: check::Checker
             }
             for ch in f.text[at..next] { try! list::push{ list = &kept, item = ch } }
             at = if next == f.text.len { next } else { skip_to }
+            // A blank line after a cut goes with it where the text before it ends in a blank
+            // line or opens a block, so the cut leaves no gap of its own.
+            if next < f.text.len and opens_or_blank{ text = list::items{ list = kept } } {
+                let mut after = at
+                while after < f.text.len and (f.text[after] == ' ' or f.text[after] == '\t' or f.text[after] == '\r') { after = after + 1 }
+                if after < f.text.len and f.text[after] == '\n' { at = after + 1 }
+            }
         }
         let ok = fs::write_all{ &fs, path = f.name, bytes = list::items{ list = kept } } else {
             cannot{ &io, path = f.name, what = "cannot write" }
@@ -503,6 +510,15 @@ fn first_api { mut io: Io, mut fs: Fs, mut heap: arena::Arena, c: check::Checker
     try! @fmt(&b, "wrote {}: {} declaration{}", utf8::String{ bytes = path }, count, utf8::String{ bytes = if count == 1 { "" } else { "s" } })
     io::println{ &io, s = utf8::view{ b } }
     return 0
+}
+
+// Whether text ends with a line that is blank or ends in `{`, then its line break.
+fn opens_or_blank { text: []u8 } -> bool {
+    if text.len == 0 { return true }
+    if text[text.len - 1] != '\n' { return false }
+    let mut n = text.len - 1
+    while n > 0 and (text[n - 1] == ' ' or text[n - 1] == '\t' or text[n - 1] == '\r') { n = n - 1 }
+    return n == 0 or text[n - 1] == '\n' or text[n - 1] == '{'
 }
 
 // Runs p in the interpreter, as C's main would run it, in environment env ("KEY=VALUE"), and

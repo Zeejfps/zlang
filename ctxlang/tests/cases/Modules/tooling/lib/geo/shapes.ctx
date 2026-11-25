@@ -7,6 +7,7 @@ namespace geo {
     }
     error empty
     error flipped{ at: i32 }      // lo is right of hi
+
     capability Counter { static made: u32 }
 
     // A box from its corners.
