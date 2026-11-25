@@ -622,8 +622,8 @@ fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, site: *S
 Each connection's buffers are its task's locals, on the worker's stack: nothing is allocated per
 connection, and nothing needs returning to a free list. `site` is shared read-only through a pointer
 (spec §3.1, rule 6); a site that changes while served puts its state behind a mutex. This server, and
-`serve_until` below, are compiled and run as tests/cases/Http/small_server.ctx, with `site_page` and
-`wait_for_signal` of its own.
+`serve_until` below, are compiled and run as tests/cases/Http/small_server.ctx, with `site_page` of
+its own, which stops `serve_until` with `stop::ask`, as Ctrl-C would.
 
 ### Stopping
 
@@ -645,11 +645,11 @@ fn accept_into { mut net: Net, mut threads: Threads, listener: net::Listener, si
     }
 }
 
-fn serve_until { mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site, stop: *Signal, grace_ns: u64 } -> ! {
+fn serve_until { mut net: Net, mut threads: Threads, mut stop: Stop, listener: net::Listener, site: *Site, grace_ns: u64 } -> ! {
     let mut connections: task::Group
     let mut acceptor: task::Task(!)
     try task::start_concurrent{ &threads, task = &acceptor, run = accept_into{ &net, &threads, listener, site, &connections, _ } }
-    wait_for_signal{ &threads, stop }                       // the program's: a condition, a console handler
+    _ = try stop::wait{ &stop }                             // Ctrl-C, or the system asking
     _ = task::cancel{ &threads, task = &acceptor }          // no new connections
     if task::wait_all_for{ &threads, group = &connections, nanoseconds = grace_ns } {
         return task::wait_all{ &threads, group = &connections }     // at once: the first error of the connections
@@ -657,6 +657,13 @@ fn serve_until { mut net: Net, mut threads: Threads, listener: net::Listener, si
     task::cancel_all{ &threads, group = &connections }      // the grace period is over
 }
 ```
+
+`stop::wait` (spec §17, `stop`) returns when the console or the system asks the program to stop:
+Ctrl-C, Ctrl-Break or the console closing on Windows, SIGINT or SIGTERM on Linux and macOS, or the
+program itself with `stop::ask`. A second request ends the program at once, so a person whose
+graceful stop takes too long presses Ctrl-C again. On Windows the console closing (`terminate`)
+leaves the program about 5 seconds, so a grace period that the Reason `wait` returns says is a
+`terminate` must fit in them.
 
 The connections' tasks finish their exchange and then wait for the next request's head, so a client
 that keeps its connection idle holds it until the grace period ends, when the cancel reaches it. A

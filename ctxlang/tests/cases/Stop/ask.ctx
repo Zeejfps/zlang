@@ -1,0 +1,34 @@
+// A program asks itself to stop, as the console would (spec §17, stop): before it, a wait with
+// a time gives up, and a wait of none looks; after it, every wait returns the first request at
+// once, and a second `ask` changes nothing. The interpreter, which installs no handler, gives
+// the same: only `ask` asks a program there.
+//# stdout:
+//| before: not asked
+//| a while: not asked
+//| wait: terminate
+//| after: terminate
+
+fn show { mut io: Io, what: []u8, r: stop::Error!?stop::Reason } {
+    match r {
+        ok{ value } => {
+            if let reason = value {
+                match reason {
+                    interrupt => { _ = @fmt(&io, "{}: interrupt\n", what) }
+                    terminate => { _ = @fmt(&io, "{}: terminate\n", what) }
+                }
+            } else {
+                _ = @fmt(&io, "{}: not asked\n", what)
+            }
+        }
+        err{ error } => { _ = @fmt(&io, "{}: {}\n", what, error) }
+    }
+}
+
+fn main { mut io: Io, mut stop: Stop } -> ! {
+    show{ &io, what = "before", r = stop::wait_for{ &stop, nanoseconds = 0 } }
+    show{ &io, what = "a while", r = stop::wait_for{ &stop, nanoseconds = 20000000 } }
+    try stop::ask{ &stop, reason = stop::Reason::terminate }
+    try stop::ask{ &stop, reason = stop::Reason::interrupt }
+    show{ &io, what = "wait", r = try stop::wait{ &stop } }
+    show{ &io, what = "after", r = stop::wait_for{ &stop, nanoseconds = 0 } }
+}

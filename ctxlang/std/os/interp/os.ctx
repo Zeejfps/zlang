@@ -194,6 +194,29 @@ namespace os {
         return ""
     }
 
+    // ---- for std's stop: no handler. The console's requests reach ctxc, which Ctrl-C ends,
+    // and the run with it, as it ends a program without stop; only `ask` asks the program. So a
+    // wait returns what `ask` asked, and a wait for as long as it takes that nothing asked yet
+    // would wait for nothing that can come: it stops the run, as not supported by interp. A
+    // wait with a time returns at once, as thread::sleep does here.
+
+    // What std's Stop holds here: what `ask` asked (stop::INTERRUPT or TERMINATE), 0 until then.
+    capability Stop {
+        static asked: u32,
+    }
+
+    fn stop_wait { mut stop: Stop, mut cancel: task::Cancel, nanoseconds: u64 } -> stop::Error!u32 {
+        try task::check{ &cancel }
+        if stop.asked == 0 and nanoseconds == stop::FOREVER {
+            _ = unsupported{ what = "waiting until the console asks the program to stop" }
+        }
+        return stop.asked
+    }
+
+    fn stop_ask { mut stop: Stop, code: u32 } -> stop::Error! {
+        if stop.asked == 0 { stop.asked = code }
+    }
+
     // ---- threads (std/thread.ctx): one at a time
     //
     // A thread runs to its end inside os::thread_create, before its starter goes on, with its own

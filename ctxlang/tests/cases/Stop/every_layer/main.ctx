@@ -1,0 +1,14 @@
+// Every one of stop's calls, so that each layer's are checked and lowered.
+
+fn main { mut io: Io, mut stop: Stop } -> i32 {
+    stop::ask{ &stop, reason = stop::Reason::terminate } iferr err{ error } {
+        match error {
+            stop::other{ code } => { return 1 }
+            task::cancelled => { return 2 }
+        }
+    }
+    let first = stop::wait{ &stop } iferr { return 3 }
+    let later = stop::wait_for{ &stop, nanoseconds = 1000000 } iferr { return 4 }
+    _ = @fmt(&io, "{} {}\n", first is terminate, later != null)
+    return 0
+}

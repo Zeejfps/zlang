@@ -1,0 +1,9 @@
+// A program that takes no Stop: Ctrl-Break ends it as it ends any console program, through
+// Windows' own handler.
+
+fn main { mut io: Io, mut threads: Threads } {
+    io::println{ &io, s = "ready" }
+    io::flush{ &io }
+    thread::sleep{ &threads, nanoseconds = 60000000000 }
+    io::println{ &io, s = "slept a minute" }
+}

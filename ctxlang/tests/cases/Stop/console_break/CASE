@@ -1,0 +1,37 @@
+// std's stop against a real console's Ctrl-Break (spec §17, stop; internals.md, Asked to stop),
+// sent by tests/helpers/console_break.py to programs in process groups of their own. A program
+// that takes no Stop is ended by it, as before; one that waits learns of it, keeps it for every
+// later wait, and is ended at once by the second; a task's wait is cancelled, and a later wait
+// in another task still waits, until the Ctrl-Break, which it returns.
+//# only: windows: GenerateConsoleCtrlEvent is Windows'; the Linux and macOS layers are compiled by Stop/every_layer
+//# needs: python
+//# build waiter: waiter.ctx
+//# build plain: plain.ctx
+//# build driver: main.ctx
+//# $ {driver} {home}/tests/helpers/console_break.py {waiter} {plain}
+//# timeout: 180
+//# exit: 0
+//# stdout:
+//| plain:
+//|   ready
+//| plain: ended by Ctrl-Break (0xC000013A)
+//| once:
+//|   not asked yet
+//|   ready
+//|   asked: interrupt
+//|   still asked: interrupt
+//| once: exit code 0
+//| twice:
+//|   not asked yet
+//|   ready
+//|   asked: interrupt
+//|   still asked: interrupt
+//|   ready
+//| twice: ended by Ctrl-Break (0xC000013A)
+//| tasks:
+//|   first wait: task::cancelled
+//|   a timed wait: not asked
+//|   second wait: still waiting
+//|   ready
+//|   second wait: interrupt
+//| tasks: exit code 0

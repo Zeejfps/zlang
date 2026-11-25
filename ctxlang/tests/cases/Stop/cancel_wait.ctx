@@ -1,0 +1,25 @@
+// A wait in a task, cancelled: it fails with task::cancelled (spec §17, stop). Compiled, `start`
+// runs the task on a worker, whose wait the cancel ends. The interpreter runs it at once, where
+// a wait that nothing has asked would wait for a request that can't come (internals.md, Asked
+// to stop): it stops the run.
+//# interp: cannot run
+//# stdout:
+//| cancelled
+
+fn waiter { mut stop: Stop } -> stop::Error!stop::Reason {
+    return stop::wait{ &stop }
+}
+
+fn main { mut io: Io, mut stop: Stop, mut threads: Threads } {
+    let mut t: task::Task(stop::Error!stop::Reason)
+    task::start{ &threads, task = &t, run = waiter{ &stop, _ } }
+    match task::cancel{ &threads, task = &t } {
+        ok => { io::println{ &io, s = "asked" } }
+        err{ error } => {
+            match error {
+                task::cancelled => { io::println{ &io, s = "cancelled" } }
+                stop::other{ code } => { io::println{ &io, s = "failed" } }
+            }
+        }
+    }
+}

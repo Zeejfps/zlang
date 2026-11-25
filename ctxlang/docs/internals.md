@@ -145,7 +145,7 @@ behaves, and why.
 ### Capabilities
 
 `Io`, `Fs`, `Proc` (through `Io`) and `Threads` include `task::Cancel`, whose `#thread_local` static
-`current` is the running task's slot, and so does `Net` (net.md). `Threads` is
+`current` is the running task's slot, and so do `Net` (net.md) and `Stop`. `Threads` is
 `{ ..os::Threads, ..Mem, ..task::State, ..task::Cancel }`: permission to run tasks, with the
 backend's state, and `Mem` because the table lives in pages. Each is a capability without fields, so
 `main` receives them. Everything a capability std hands out reaches is safe from many threads at
@@ -154,7 +154,8 @@ once: per-thread (`io`'s output buffer), behind a lock, or atomic. Only namespac
 `end_synchronous`, passing the capability they hold. `proc`'s layer functions take `os::Proc`, which
 doesn't include `Io`, so `os::pipe_read`, `pipe_write`, `wait` and `wait_for` take a
 `mut cancel: task::Cancel`, passed as `cancel = &proc`; `net`'s blocking layer functions take
-`os::Net` and one too, passed as `cancel = &net`.
+`os::Net` and one too, passed as `cancel = &net`, and `os::stop_wait` takes `os::Stop` and one, passed
+as `cancel = &stop`.
 
 ### Cancellation
 
@@ -177,6 +178,7 @@ they block:
 | `io::read` (standard input) | a console: wait on the input handle and the cancel event, then `PeekConsoleInputW`; events that aren't key presses are read and dropped and the wait goes on; on a key press the read begins, and waits for its line uninterruptibly. An inherited pipe: `begin_synchronous`, `_read`, `end_synchronous` (below). A file: checked before only | `poll` on fd 0 and the eventfd, then `read` (fd 0 stays blocking: it is shared with other programs) | as Linux |
 | `thread::sleep` | `WaitForSingleObject` on the cancel event, with the time | `poll` on the eventfd, with the time | as Linux |
 | `net`'s | overlapped, as pipes | `poll`, as pipes | as Linux |
+| `stop::wait`, `wait_for` | `WaitForMultipleObjects` on stop's event and the cancel event | `poll` on stop's eventfd and the task's | `poll` on stop's pipe and the task's |
 
 **Checked before only**, by decision, each with its reason: `fs`'s calls (regular files, and
 metadata: `open`, `list`, `remove`, renames), since disk IO can't be waited on with poll or kqueue
@@ -229,6 +231,7 @@ let response = if task::wait_for{ &threads, task = &t, nanoseconds = 5000000000 
 | `Proc` | `read`, `write` (pipes), `wait`, `wait_for`, `run` | block the worker. A cancelled `wait` or `wait_for` leaves the `Child` as it was: not released, its pipes open, to be waited on or killed. A cancelled `run`, which owns its child, kills it, waits for it uninterruptibly (a killed child ends at once), and fails with `cancelled` |
 | `Threads` | `sleep` | waits on the cancel object |
 | `Net` | connect, accept, send, receive, name lookup | block the worker |
+| `Stop` | `wait`, `wait_for` | block the worker, and wait on the cancel object (Asked to stop, below) |
 
 `Net` and HTTP are designed in their own documents (net.md, http.md), with TLS: they are a protocol
 and a library, not concurrency. What this design fixes for them: blocking calls, `..task::Cancel` in
@@ -360,6 +363,95 @@ What the Threaded backend's build settled, where this document left room:
    another in vain.
 10. **KOTOR's mixer shares its device through a pointer** (spec §3.1, rule 6), as the thread did: the game
    reads `pumping` and `underruns` while it runs, so the device can't be the task's alone.
+
+## Asked to stop: std's stop
+
+The API is spec §17, `stop`, and std/stop.ctx; the layers' halves are std/os/windows/os.ctx,
+std/os/posix/os.ctx with std/os/linux/sys.ctx and std/os/macos/sys.ctx, and std/os/interp/os.ctx.
+This section is how the console's and the system's requests reach a program, and why it is built so.
+
+### How it works
+
+The layer keeps three things in `os::Stop`'s statics: a once-guard, what the program was asked (0
+until then, then `stop::INTERRUPT` or `TERMINATE`, set once with a compare and exchange), and an
+object that is signalled once it has been asked and stays signalled. The first `stop::wait`,
+`wait_for` or `ask` makes the object and installs a handler, behind the guard as Winsock's start is.
+The handler and `ask` both record: the first to swap 0 for a reason signals the object; any later
+request isn't recorded, and ends the program. A wait waits on the object and, in a task, on the
+task's cancel object (Cancellation, above), and returns the recorded reason. Nothing ever reads or
+resets the object, so every wait after the first request returns at once.
+
+| | Windows | Linux | macOS |
+|---|---|---|---|
+| handler | `SetConsoleCtrlHandler`: Ctrl-C and Ctrl-Break `interrupt`, the window closing and shutdown `terminate` | `sigaction` for SIGINT (`interrupt`) and SIGTERM (`terminate`), `SA_RESTART`, both blocked while it runs | as Linux, with macOS's `struct sigaction` |
+| object | a manual-reset event, `SetEvent` | an eventfd, written | a pipe, its write end non-blocking, written |
+| a later request | the handler returns FALSE: Windows' own handler ends the program, exit code 0xC000013A | the first request put both signals back to `SIG_DFL`, so the signal's default action ends it; one that reaches the handler meanwhile puts them back itself and raises its signal again, which the handler's mask holds until it returns | as Linux |
+| waits | `WaitForMultipleObjects` on the event and the cancel event | `poll` on the eventfd and the cancel eventfd, again after `EINTR` | `poll` on the pipe's read end and the cancel pipe |
+
+**What the handler may do.** On Windows it runs on a thread Windows starts for the event: it sets an
+atomic and an event, which any thread may. On Linux and macOS it runs on whichever thread the
+signal lands on, between any two instructions: it uses only atomics and async-signal-safe calls
+(`sigaction`, `write`, `raise`) and keeps `errno` around them. Either way it is a
+`#c_callback{ any_thread = true }` (spec §18, Callbacks, rule 6): only the install reaches it, so only
+a program that calls `stop`'s functions is threaded by it (spec §15, Entry point, rule 8), and one
+that doesn't installs nothing, links nothing more, and has Ctrl-C end it as before. The callback
+holds no capability, and makes the `os::Stop` it needs from nothing, as `task::begin` does: a
+capability without fields is no bytes (friction.md, 41).
+
+**The console's window closing.** For `CTRL_CLOSE_EVENT` and `CTRL_SHUTDOWN_EVENT`, Windows ends the
+process as soon as the handler returns, whatever it returns, or about 5 seconds after the event if
+it doesn't. So the handler records `terminate` and then sleeps until the process ends: the program
+has those seconds for its graceful stop, and ends when `main` returns or when Windows ends it. That
+is why `Reason` tells `terminate` from `interrupt`: a program picks a grace period that fits.
+
+**The interpreter** installs no handler: Ctrl-C ends `ctxc interp`, and the run with it, as it ends a
+program without `stop`. Its `Stop` keeps only what `ask` asked, which its waits return; a wait with
+a time returns at once, as its `thread::sleep` does, and a wait for as long as it takes that nothing
+asked would wait for a request that can't come, so it stops the run, as not supported by interp.
+
+### Decisions
+
+1. **A wait a task can be cancelled out of, and a wait with a time**, as proc's `wait` and
+   `wait_for` are, rather than a flag to read or a callback of the program's. The program's shape
+   is "serve until asked, then stop gracefully" (http.md, Stopping): a task or `main` waits, and
+   cancelling it is how the program stops for another reason. `wait_for` with 0 is the look a
+   loop that computes makes between items. A callback of the program's would run on the handler's
+   thread, where a signal handler can do nearly nothing.
+2. **`Stop`, a capability of its own**, not `Io` or `Proc`. Taking the requests over changes how the
+   whole process ends: a library given `Proc` to run a compiler, or `Io` to print, shouldn't be able
+   to swallow Ctrl-C. SIGTERM and the system's shutdown aren't the console's, and `Proc` is starting
+   programs and reading the environment. With its own capability, `main`'s fields say whether a
+   program takes Ctrl-C over, as they say whether it reaches the network.
+3. **Installed by the first call, not by a call of its own.** A separate install would be one more
+   call that must come first, with a misuse to define (a wait before it). The first wait is when a
+   program starts caring; one that wants Ctrl-C taken over sooner, before a long start, looks with
+   `wait_for{ nanoseconds = 0 }` then. Until then, Ctrl-C ends the program as it always did, which
+   is what a program that isn't ready to stop gracefully wants. It is never uninstalled: a program
+   is asked to stop once.
+4. **The first request is kept for good.** A request isn't an event to consume: a program asked to
+   stop stays asked, so every wait after it returns at once, and a wait that was cancelled leaves
+   nothing behind that a later wait could find stale. Nothing is reset, so the object needs no
+   reading in the handler, and two waiters, in two tasks, both return.
+5. **A second request ends the program at once**, as it would without `stop`, which is common
+   practice: a graceful stop that hangs (a connection that won't close, a grace period too long)
+   leaves a person a way out, Ctrl-C again, without a second terminal and `kill -9`. The program
+   ends as Windows or the signal ends any program, so its exit code says it was ended by the
+   request. A request after `ask` counts as the second: the program was already stopping.
+6. **`ask`**, so that a program stops itself through the same waits: an administrative request, a
+   task that found the program can't go on, a test. It takes a `Reason`, so a program passes on
+   what a supervisor told it.
+7. **Ignored stays ignored.** A shell starts a background job with SIGINT ignored, and a Windows
+   process may inherit Ctrl-C ignored (`SetConsoleCtrlHandler(NULL, TRUE)`): `stop` takes over only
+   what would have ended the program, and doesn't turn back on what its parent turned off.
+8. **Not handled, each with its reason:** SIGHUP, which servers use for "reload your configuration",
+   a meaning a program gives it, not std; SIGQUIT, Ctrl-\, which asks for a core dump; and Windows'
+   `CTRL_LOGOFF_EVENT`, which only services see, for any user's logoff, and which doesn't mean this
+   program ends.
+9. **A handler and an object, not `signalfd` or a thread in `sigwait`.** `signalfd` and `sigwait`
+   need the signals blocked in every thread, those started before the install and those a C
+   library starts included, or a signal lands on a thread that doesn't block it and takes its
+   default action. A handler works on whichever thread the signal lands on, and the object is
+   waited on as a task's cancel object already is, with the same `poll`.
 
 ## Modules
 

@@ -182,3 +182,15 @@ as the write-ups gave them.
     start into a group whose tasks' failures are their own, kept or counted for `wait_all`
     without cancelling the rest, would say it. *Hit by 1:* http (the small server's
     `connection`, and the tests' servers).
+
+41. **A callback that any thread calls can't reach its own namespace's statics.** std's stop
+    handler (a console control handler on Windows, a signal handler on Linux and macOS) only sets
+    the layer's atomics and signals its object, all `os::Stop` statics, which are global anyway;
+    but a `#c_callback{ any_thread = true }` takes no capability (§18, Callbacks, rule 6), and
+    neither Windows' handler nor a signal handler gets a user pointer to pass one through. Written:
+    `let none: u8 = 0` and `let mut stop = @cast(*Stop, &none).*`, a capability forged from a
+    local's address (§15, rule 4), as `task::begin` forges `Threads` from its start pointer. Letting
+    such a callback take a capability without fields that isn't `#thread_bound`, on the
+    binding's word that what it reaches is safe from any thread, would say what is meant without
+    a cast. *Hit by 1:* std (stop's
+    handler on every layer, and task's and thread's thread entries).

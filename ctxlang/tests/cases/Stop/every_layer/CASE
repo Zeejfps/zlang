@@ -1,0 +1,76 @@
+// std's stop over each platform's layer (std/os/PLATFORM, spec §17), as Net/tcp_every_layer
+// builds net's: main.ctx calls every one of stop's functions, and is built here for each layer
+// from any machine; the C written for Linux and macOS is compiled as far as C's syntax and types
+// go, without their system headers, since the generated C declares each C function itself. A
+// program that calls them has a handler that any thread calls, so it is threaded (spec §15,
+// Entry point, rule 8); one that doesn't has none, and isn't.
+
+// linux: sigaction, an eventfd for the waits to poll, raise for a request after the first.
+//# $ ctxc build linux.c {std:linux} -- main.ctx
+//# exit: 0
+//# file linux.c has:
+//| CTX_SYMBOL("sigaction")
+//# file linux.c has:
+//| CTX_SYMBOL("eventfd")
+//# file linux.c has:
+//| CTX_SYMBOL("raise")
+//# file linux.c has:
+//| CTX_SYMBOL("poll")
+//# $ cc {cflags} -fsyntax-only -I {home}/ctxc/rt linux.c
+//# exit: 0
+
+// macos: sigaction, and a pipe made with fcntl, as macOS's tasks' cancel objects are.
+//# $ ctxc build macos.c {std:macos} -- main.ctx
+//# exit: 0
+//# file macos.c has:
+//| CTX_SYMBOL("sigaction")
+//# file macos.c has:
+//| CTX_SYMBOL("pipe")
+//# file macos.c has:
+//| CTX_SYMBOL("fcntl")
+//# file macos.c lacks:
+//| CTX_SYMBOL("eventfd")
+//# $ cc {cflags} -fsyntax-only -I {home}/ctxc/rt macos.c
+//# exit: 0
+
+// windows: a console control handler, and the program threaded by it.
+//# $ ctxc build windows.c {std:windows} -- main.ctx
+//# exit: 0
+//# file windows.c has:
+//| CTX_SYMBOL("SetConsoleCtrlHandler")
+//# $ ctxc ir {std:windows} -- main.ctx
+//# exit: 0
+//# stdout has:
+//| (threaded)
+
+// The Linux and macOS layers are threaded by their signal handler too.
+//# $ ctxc ir {std:linux} -- main.ctx
+//# exit: 0
+//# stdout has:
+//| (threaded)
+
+// interp: no handler, and nothing threaded.
+//# $ ctxc build interp.c {std:interp} -- main.ctx
+//# exit: 0
+//# file interp.c lacks:
+//| CTX_SYMBOL("SetConsoleCtrlHandler")
+//# file interp.c lacks:
+//| CTX_SYMBOL("sigaction")
+
+// A program that takes no Stop installs nothing, and isn't threaded.
+//# write plain.ctx:
+//| fn main { mut io: Io } {
+//|     io::println{ &io, s = "plain" }
+//| }
+//# $ ctxc ir {std:windows} -- plain.ctx
+//# exit: 0
+//# stdout lacks:
+//| SetConsoleCtrlHandler
+//# stdout lacks:
+//| (threaded)
+//# $ ctxc ir {std:linux} -- plain.ctx
+//# exit: 0
+//# stdout lacks:
+//| sigaction
+//# stdout lacks:
+//| (threaded)

@@ -3,8 +3,9 @@
 // and `accept_into` and `serve_until` for a graceful stop. A client of raw sockets, which reads
 // the responses with http's own parser, has three requests answered on one connection; the
 // server that `serve` runs is then stopped at once by cancelling its task, which closes that
-// connection. `serve_until` then serves another, which is asked to stop: the connection it
-// keeps is still served during the grace period, and closed at its end.
+// connection. `serve_until` then serves another, which the program asks to stop as Ctrl-C
+// would (stop::ask): the connection it keeps is still served during the grace period, and
+// closed at its end.
 //# interp: cannot run
 //# timeout: 120
 //# stdout:
@@ -25,13 +26,6 @@ fn site_page { site: *Site, path: []u8 } -> ?[]u8 {
     if slice::eq_bytes{ a = path, b = "/" } { return site.home }
     if slice::eq_bytes{ a = path, b = "/about" } { return site.about }
     return null
-}
-
-// What a program sets to stop serve_until, and how serve_until waits for it.
-struct Signal { raised: u32 }
-
-fn wait_for_signal { mut threads: Threads, stop: *Signal } {
-    while @atomic_load(&stop.raised) == 0 { thread::sleep{ &threads, nanoseconds = 1000000 } }
 }
 
 // ---- the design's server
@@ -89,11 +83,11 @@ fn accept_into { mut net: Net, mut threads: Threads, listener: net::Listener, si
     }
 }
 
-fn serve_until { mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site, stop: *Signal, grace_ns: u64 } -> ! {
+fn serve_until { mut net: Net, mut threads: Threads, mut stop: Stop, listener: net::Listener, site: *Site, grace_ns: u64 } -> ! {
     let mut connections: task::Group
     let mut acceptor: task::Task(!)
     try task::start_concurrent{ &threads, task = &acceptor, run = accept_into{ &net, &threads, listener, site, &connections, _ } }
-    wait_for_signal{ &threads, stop }                       // the program's: a condition, a console handler
+    _ = try stop::wait{ &stop }                             // Ctrl-C, or the system asking
     _ = task::cancel{ &threads, task = &acceptor }          // no new connections
     if task::wait_all_for{ &threads, group = &connections, nanoseconds = grace_ns } {
         return task::wait_all{ &threads, group = &connections }     // at once: the first error of the connections
@@ -152,7 +146,7 @@ fn report { mut io: Io, what: []u8, r: ! } {
     }
 }
 
-fn main { mut io: Io, mut net: Net, mut threads: Threads } -> i32 {
+fn main { mut io: Io, mut net: Net, mut threads: Threads, mut stop: Stop } -> i32 {
     let site = Site{ home = "<p>home</p>\n", about = "<p>about</p>\n" }
     let listener = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 1 }
     defer net::close_listener{ &net, listener }
@@ -170,13 +164,12 @@ fn main { mut io: Io, mut net: Net, mut threads: Threads } -> i32 {
     if is_closed{ &net, socket = a } { io::println{ &io, s = "at once: the connection closed" } }
 
     // Stopping gracefully.
-    let mut stop = Signal{ raised = 0 }
     let mut graceful: task::Task(!)
-    task::start_concurrent{ &threads, task = &graceful, run = serve_until{ &net, &threads, listener, site = &site, stop = &stop, grace_ns = 1000000000, _ } } iferr { return 5 }
+    task::start_concurrent{ &threads, task = &graceful, run = serve_until{ &net, &threads, &stop, listener, site = &site, grace_ns = 1000000000, _ } } iferr { return 5 }
     let b = net::connect{ &net, address = at } iferr { return 6 }
     defer net::close{ &net, socket = b }
     ask{ &io, &net, socket = b, request = "GET /about HTTP/1.1\r\nHost: x\r\n\r\n", line = "GET /about" } iferr { return 7 }
-    @atomic_store(&stop.raised, 1)
+    stop::ask{ &stop, reason = stop::Reason::interrupt } iferr { return 9 }      // as Ctrl-C would
     io::println{ &io, s = "asked to stop" }
     ask{ &io, &net, socket = b, request = "GET / HTTP/1.1\r\nHost: x\r\n\r\n", line = "GET / during the grace period" } iferr { return 8 }
     report{ &io, what = "serve_until", r = task::wait{ &threads, task = &graceful } }

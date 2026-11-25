@@ -1,0 +1,96 @@
+// std: stop. Learning that the console or the system asked this program to stop: Ctrl-C,
+// Ctrl-Break, the console's window closing or the system shutting down on Windows; SIGINT or
+// SIGTERM on Linux and macOS.
+//
+//   fn main { mut net: Net, mut threads: Threads, mut stop: Stop } -> ! {
+//       let mut server: task::Task(!)
+//       try task::start_concurrent{ &threads, task = &server, run = serve{ &net, &threads, _ } }
+//       _ = try stop::wait{ &stop }                        // until Ctrl-C
+//       return task::cancel{ &threads, task = &server }
+//   }
+//
+// Until the program first calls `wait`, `wait_for` or `ask`, the console's requests do what
+// they do in a program without stop: Ctrl-C ends it. That first call takes them over for the
+// rest of the program's life (internals.md, Asked to stop). From then on:
+//
+//   - The first request is kept: `wait` returns its Reason, and so does every wait after it, at
+//     once. A program is asked to stop once, so a wait is never stale and needs no reset.
+//   - The next request ends the program at once, as it would have without stop: a second Ctrl-C
+//     is how a person ends a program whose graceful stop takes too long. On Windows the program
+//     ends as Windows' own handler ends it, with exit code 0xC000013A; on Linux and macOS the
+//     signal ends it, as its default action does.
+//   - On Windows, closing the console's window or shutting the system down (`terminate`) gives
+//     the program about 5 seconds, after which Windows ends it: its graceful stop must fit.
+//   - A signal that was ignored when stop took them over (a shell's background job ignores
+//     SIGINT) stays ignored, as Ctrl-C stays ignored on Windows in a process that inherited
+//     that: stop only learns of what would have ended the program.
+//
+// `ask` asks the program to stop as the console would: an administrative request, or a task
+// that found the program can't go on, stops it through the same waits.
+//
+// Taking the requests over installs a handler that the system calls on a thread of its own (a
+// console control handler on Windows, a signal handler on Linux and macOS), so a program that
+// calls these is threaded (spec §15, Entry point, rule 8). A program that takes no Stop installs
+// nothing, and isn't threaded for it.
+
+// Permission to take over the console's and the system's requests to stop, and to learn of them.
+// It includes what its platform's layer needs, os::Stop (std/os): the state that the handler
+// and the waits share, as statics. task::Cancel lets a wait see a task asked to stop.
+capability Stop { ..os::Stop, ..task::Cancel }
+
+namespace stop {
+    // Who asked: the person at the console (Ctrl-C, Ctrl-Break, SIGINT), or the system
+    // (the console's window closing, the system shutting down, SIGTERM), which may not wait long:
+    // on Windows it ends the program about 5 seconds later.
+    union Reason {
+        interrupt,
+        terminate,
+    }
+
+    error other{ code: i64 }    // the OS's error number: the handler couldn't be installed, or a wait failed
+
+    // What `wait`, `wait_for` and `ask` may fail with, on every platform (spec §8, Errors,
+    // rule 14).
+    type Error = error(other, task::cancelled)
+
+    // Waits until the program is asked to stop, and returns who asked. In a task asked to stop
+    // it fails with task::cancelled.
+    fn wait { mut stop: Stop } -> Error!Reason {
+        while true {
+            let code = try os::stop_wait{ &stop, cancel = &stop, nanoseconds = FOREVER }
+            if code != 0 { return decode_reason{ code } }
+        }
+    }
+
+    // As `wait`, giving up after `nanoseconds`: null if the program hasn't been asked by then.
+    // 0 looks without waiting.
+    fn wait_for { mut stop: Stop, nanoseconds: u64 } -> Error!?Reason {
+        let code = try os::stop_wait{ &stop, cancel = &stop, nanoseconds }
+        if code == 0 { return null }
+        return decode_reason{ code }
+    }
+
+    // Asks the program to stop, as the console or the system would, for `reason`. If it has
+    // been asked already, nothing changes: the first request is kept.
+    fn ask { mut stop: Stop, reason: Reason } -> Error! {
+        try os::stop_ask{ &stop, code = encode_reason{ reason } }
+    }
+
+    fn decode_reason { code: u32 } -> Reason {
+        if code == TERMINATE { return Reason::terminate }
+        return Reason::interrupt
+    }
+
+    fn encode_reason { reason: Reason } -> u32 {
+        return match reason { interrupt => { INTERRUPT } terminate => { TERMINATE } }
+    }
+
+    // ---- for the platform's layer (std/os)
+
+    // How a layer keeps a Reason, in an atomic u32 that is 0 until the program is asked.
+    const INTERRUPT: u32 = 1
+    const TERMINATE: u32 = 2
+
+    // os::stop_wait's `nanoseconds` for waiting as long as it takes.
+    const FOREVER: u64 = 18446744073709551615
+}

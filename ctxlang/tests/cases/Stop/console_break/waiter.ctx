@@ -1,0 +1,64 @@
+// The program that tests/helpers/console_break.py sends Ctrl-Break to: what it does is its
+// first argument. It prints `ready` whenever it waits for the next Ctrl-Break, once stop has
+// taken the requests over.
+//
+//   once      waits, prints what it was asked, and looks again: the first request is kept
+//   twice     as once, then sleeps for a minute: the second Ctrl-Break ends it at once
+//   tasks     a task's wait cancelled, then another task's wait, which isn't stale: it is still
+//             waiting until the Ctrl-Break, which it then returns
+
+fn name_of { r: stop::Reason } -> []u8 {
+    return match r { interrupt => { "interrupt" } terminate => { "terminate" } }
+}
+
+fn say { mut io: Io, s: []u8 } {
+    _ = @fmt(&io, "{}\n", s)
+    io::flush{ &io }
+}
+
+fn wait_once { mut io: Io, mut stop: Stop } -> ! {
+    let before = try stop::wait_for{ &stop, nanoseconds = 0 }
+    if before == null { say{ &io, s = "not asked yet" } }
+    say{ &io, s = "ready" }
+    let reason = try stop::wait{ &stop }
+    _ = @fmt(&io, "asked: {}\n", name_of{ r = reason })
+    let again = try stop::wait_for{ &stop, nanoseconds = 0 } ifnull { return }
+    _ = @fmt(&io, "still asked: {}\n", name_of{ r = again })
+    io::flush{ &io }
+}
+
+fn waiter { mut stop: Stop } -> stop::Error!stop::Reason {
+    return stop::wait{ &stop }
+}
+
+fn wait_in_tasks { mut io: Io, mut stop: Stop, mut threads: Threads } -> ! {
+    let mut first: task::Task(stop::Error!stop::Reason)
+    try task::start_concurrent{ &threads, task = &first, run = waiter{ &stop, _ } }
+    thread::sleep{ &threads, nanoseconds = 50000000 }
+    match task::cancel{ &threads, task = &first } {
+        ok{ value } => { _ = @fmt(&io, "first wait: {}\n", name_of{ r = value }) }
+        err{ error } => { _ = @fmt(&io, "first wait: {}\n", error) }
+    }
+    let timed = try stop::wait_for{ &stop, nanoseconds = 20000000 }
+    if timed == null { say{ &io, s = "a timed wait: not asked" } }
+    let mut second: task::Task(stop::Error!stop::Reason)
+    try task::start_concurrent{ &threads, task = &second, run = waiter{ &stop, _ } }
+    if not task::wait_for{ &threads, task = &second, nanoseconds = 200000000 } { say{ &io, s = "second wait: still waiting" } }
+    say{ &io, s = "ready" }
+    let reason = try task::wait{ &threads, task = &second }
+    _ = @fmt(&io, "second wait: {}\n", name_of{ r = reason })
+    io::flush{ &io }
+}
+
+fn main { mut io: Io, mut stop: Stop, mut threads: Threads, args: Args } -> ! {
+    if args.len == 0 { return }
+    if slice::eq_bytes{ a = args[0], b = "once" } { return wait_once{ &io, &stop } }
+    if slice::eq_bytes{ a = args[0], b = "twice" } {
+        try wait_once{ &io, &stop }
+        say{ &io, s = "ready" }
+        thread::sleep{ &threads, nanoseconds = 60000000000 }
+        say{ &io, s = "slept a minute" }
+        return
+    }
+    if slice::eq_bytes{ a = args[0], b = "tasks" } { return wait_in_tasks{ &io, &stop, &threads } }
+}

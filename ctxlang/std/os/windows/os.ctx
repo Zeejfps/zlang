@@ -1618,6 +1618,134 @@ namespace os {
         return net::other{ code = @as(i64, code) }
     }
 
+    // ---- the console's requests to stop, for std's stop: a console control handler
+    // (SetConsoleCtrlHandler), installed the first time a program waits or asks, and kernel32's
+    // own after that.
+    //
+    // Windows calls the handler on a thread it starts in the process for each event. Ctrl-C and
+    // Ctrl-Break are `interrupt`; the console's window closing and the system shutting down are
+    // `terminate`. The first event is kept and signals the event the waits wait on, and the
+    // handler returns TRUE, which ends Ctrl-C's handling there. For `terminate`, Windows ends the
+    // process as soon as the handler returns, or about 5 seconds after the event if it doesn't:
+    // so the handler doesn't return, and the program ends when its graceful stop ends it, or when
+    // Windows does. Any event after the first returns FALSE, so that the next handler, Windows'
+    // own, ends the program at once, as it would without stop. A user logging off isn't handled:
+    // only services see it, for any user, and it doesn't mean this program ends.
+
+    // What std's Stop holds on Windows: whether the handler is installed (0, 1 while it is
+    // being, 2), what the program was asked (stop::INTERRUPT or TERMINATE, 0 until then), and a
+    // manual-reset event, signalled once it has been asked, which stays signalled. Made and
+    // installed behind a once-guard, as start_winsock does.
+    capability Stop {
+        static ready: u32,
+        static asked: u32,
+        static event: u64,
+    }
+
+    extern fn SetConsoleCtrlHandler { mut stop: Stop, handler: ?extern fn{ kind: u32 } -> i32, add: i32 } -> i32
+    #c_symbol{ name = "CreateEventW" }
+    extern fn stop_make_event { mut stop: Stop, security: ?*u8, manual: i32, initial: i32, name: ?*u16 } -> u64
+    #c_symbol{ name = "SetEvent" }
+    extern fn stop_set_event { mut stop: Stop, event: u64 } -> i32
+    #c_symbol{ name = "CloseHandle" }
+    extern fn stop_close_handle { mut stop: Stop, handle: u64 } -> i32
+    #c_symbol{ name = "WaitForMultipleObjects" }
+    extern fn stop_wait_any { mut stop: Stop, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
+    #c_symbol{ name = "GetLastError" }
+    extern fn stop_last_error { mut stop: Stop } -> u32
+    #c_symbol{ name = "Sleep" }
+    extern fn stop_sleep { mut stop: Stop, ms: u32 }
+
+    // The handler's events.
+    const CTRL_C_EVENT: u32 = 0
+    const CTRL_BREAK_EVENT: u32 = 1
+    const CTRL_CLOSE_EVENT: u32 = 2
+    const CTRL_SHUTDOWN_EVENT: u32 = 6
+
+    // Waits until the program is asked to stop, for at most `nanoseconds`, rounded up to
+    // milliseconds (stop::FOREVER for as long as it takes): what it was asked, or 0 if it wasn't
+    // by then. In a task, the task's cancel object is waited on too.
+    fn stop_wait { mut stop: Stop, mut cancel: task::Cancel, nanoseconds: u64 } -> stop::Error!u32 {
+        try begin_stop{ &stop }
+        try task::check{ &cancel }
+        let object = task::get_cancel_object{ &cancel }
+        let handles: [2]u64 = [@atomic_load_acquire(&stop.event), object]
+        let mut ms = millis{ nanoseconds }
+        while true {
+            let now: u32 = if ms >= @as(u64, INFINITE) { INFINITE - 1 } else { @as(u32, ms) }
+            let r = stop_wait_any{ &stop, count = if object != 0 { 2 } else { 1 }, handles = &handles[0], all = 0, ms = now }
+            if r == WAIT_OBJECT_0 { return @atomic_load_acquire(&stop.asked) }
+            if r == WAIT_OBJECT_0 + 1 { return task::cancelled }
+            if r == WAIT_FAILED { return stop::other{ code = @as(i64, stop_last_error{ &stop }) } }
+            ms = ms - @as(u64, now)
+            if ms == 0 { return 0 }
+        }
+    }
+
+    // Asks the program to stop, as the handler does for an event: the first request is kept.
+    fn stop_ask { mut stop: Stop, code: u32 } -> stop::Error! {
+        try begin_stop{ &stop }
+        _ = record_stop{ &stop, code }
+    }
+
+    // Makes the event and installs the handler, once in the program's life: the first caller
+    // does it while the others wait, and one that fails leaves it to the next.
+    fn begin_stop { mut stop: Stop } -> stop::Error! {
+        while true {
+            let state = @atomic_load_acquire(&stop.ready)
+            if state == 2 { return }
+            if state == 0 and @atomic_compare_exchange_acquire_release(&stop.ready, 0, 1) == null {
+                let code = install_stop{ &stop }
+                if code != 0 {
+                    @atomic_store_release(&stop.ready, 0)
+                    return stop::other{ code = @as(i64, code) }
+                }
+                @atomic_store_release(&stop.ready, 2)
+                return
+            }
+        }
+    }
+
+    // The event, then the handler, which signals it: 0, or GetLastError's code.
+    fn install_stop { mut stop: Stop } -> u32 {
+        let event = stop_make_event{ &stop, security = null, manual = 1, initial = 0, name = null }
+        if event == 0 { return stop_last_error{ &stop } }
+        @atomic_store_release(&stop.event, event)
+        if SetConsoleCtrlHandler{ &stop, handler = on_console, add = 1 } == 0 {
+            let code = stop_last_error{ &stop }
+            @atomic_store_release(&stop.event, 0)
+            _ = stop_close_handle{ &stop, handle = event }
+            return code
+        }
+        return 0
+    }
+
+    // Keeps `code` as what the program was asked, if it hasn't been asked yet, and signals the
+    // event: whether it was the first request.
+    fn record_stop { mut stop: Stop, code: u32 } -> bool {
+        if @atomic_compare_exchange_acquire_release(&stop.asked, 0, code) != null { return false }
+        _ = stop_set_event{ &stop, event = @atomic_load_acquire(&stop.event) }
+        return true
+    }
+
+    // The console control handler, on a thread of Windows' (above). C passes no capability to a
+    // callback that any thread calls (spec §18, Callbacks, rule 6), but this one is the layer's
+    // own, which only install_stop, holding a Stop, hands to Windows: so it makes one, as
+    // task::begin does, since a capability without fields is no bytes (spec §15, rule 4). It
+    // only sets atomics and signals an event, which any thread may.
+    #c_callback{ any_thread = true }
+    fn on_console { kind: u32 } -> i32 {
+        let mut code: u32 = 0
+        if kind == CTRL_C_EVENT or kind == CTRL_BREAK_EVENT { code = stop::INTERRUPT }
+        if kind == CTRL_CLOSE_EVENT or kind == CTRL_SHUTDOWN_EVENT { code = stop::TERMINATE }
+        if code == 0 { return 0 }
+        let none: u8 = 0
+        let mut stop = @cast(*Stop, &none).*
+        if not record_stop{ &stop, code } { return 0 }
+        if code == stop::TERMINATE { stop_sleep{ &stop, ms = INFINITE } }
+        return 1
+    }
+
     // ---- threads (std/task.ctx, std/thread.ctx): kernel32's
 
     // Permission to start threads, which std's Threads includes.

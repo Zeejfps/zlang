@@ -1062,6 +1062,171 @@ namespace os {
         return net::other{ code = @as(i64, code) }
     }
 
+    // ---- the console's and the system's requests to stop, for std's stop: SIGINT and SIGTERM,
+    // caught with sigaction the first time a program waits or asks, unless they were ignored.
+    //
+    // A signal handler may run on any thread of the program, between any two instructions, so
+    // it does only what is async-signal-safe: it keeps the first request with a compare and
+    // exchange, puts both signals back to their default action with sigaction, and signals an
+    // object the waits poll, as a task's cancel object is (sys::stop_make: an eventfd on Linux,
+    // a pipe on macOS), with write; errno is kept around it. The object is never read, so once
+    // signalled it stays readable, and every later wait returns at once. A request after the
+    // first gets the default action, which ends the program at once: one that reaches the
+    // handler while the first is being kept puts the defaults back itself and raises its signal
+    // again, which the handler's mask holds until it returns. SA_RESTART lets the program's
+    // other calls go on through a handler that interrupted them; poll, which never restarts,
+    // is called again after EINTR. Linux and macOS give both signals the same numbers.
+
+    // What std's Stop holds on Linux and macOS: whether the handler is installed (0, 1 while it
+    // is being, 2), what the program was asked (stop::INTERRUPT or TERMINATE, 0 until then), the
+    // object signalled once it has been, and the signals the handler was installed for, as bits
+    // (1 << SIGINT, 1 << SIGTERM), which a request puts back to their default action.
+    capability Stop {
+        static ready: u32,
+        static asked: u32,
+        static object: u64,
+        static caught: u32,
+    }
+
+    #c_symbol{ name = "poll" }
+    extern fn poll_stop { mut stop: Stop, fds: *mut PollFd, count: u64, ms: i32 } -> i32
+    #c_symbol{ name = "clock_gettime" }
+    extern fn stop_clock_gettime { mut stop: Stop, clock: i32, mut now: Timespec } -> i32
+    #c_symbol{ name = "raise" }
+    extern fn stop_raise { mut stop: Stop, signal: i32 } -> i32
+
+    const SIGINT: i32 = 2
+    const SIGTERM: i32 = 15
+
+    // sigaction's handler for a signal that is ignored, SIG_IGN, as the bits sys::OldAction reads.
+    const SIG_IGN: u64 = 1
+
+    // Waits until the program is asked to stop, for at most `nanoseconds` (stop::FOREVER for as
+    // long as it takes): what it was asked, or 0 if it wasn't by then. In a task, the task's
+    // cancel object is polled too.
+    fn stop_wait { mut stop: Stop, mut cancel: task::Cancel, nanoseconds: u64 } -> stop::Error!u32 {
+        try begin_stop{ &stop }
+        try task::check{ &cancel }
+        let object = task::get_cancel_object{ &cancel }
+        let mine = @as(i32, event_waitable{ event = @atomic_load_acquire(&stop.object) })
+        let mut fds: [2]PollFd = [PollFd{ fd = mine, events = POLLIN, revents = 0 }, PollFd{ fd = if object != 0 { @as(i32, object) } else { -1 }, events = POLLIN, revents = 0 }]
+        let start = stop_now{ &stop }
+        while true {
+            let mut ms: i32 = -1
+            if nanoseconds != stop::FOREVER {
+                let spent = stop_now{ &stop } - start
+                ms = if spent >= nanoseconds { 0 } else { poll_millis{ nanoseconds = nanoseconds - spent } }
+            }
+            let r = poll_stop{ &stop, fds = &fds[0], count = 2, ms }
+            if r > 0 {
+                if fds[0].revents != 0 { return @atomic_load_acquire(&stop.asked) }
+                return task::cancelled
+            }
+            if r == 0 and ms == 0 { return 0 }
+            if r < 0 {
+                let e = sys::stop_errno{ &stop }.*
+                if e != EINTR { return stop::other{ code = @as(i64, e) } }
+            }
+        }
+    }
+
+    // Asks the program to stop, as the handler does for a signal: the first request is kept.
+    fn stop_ask { mut stop: Stop, code: u32 } -> stop::Error! {
+        try begin_stop{ &stop }
+        _ = record_stop{ &stop, code }
+    }
+
+    // Makes the object and installs the handler, once in the program's life: the first caller
+    // does it while the others wait, and one that fails leaves it to the next.
+    fn begin_stop { mut stop: Stop } -> stop::Error! {
+        while true {
+            let state = @atomic_load_acquire(&stop.ready)
+            if state == 2 { return }
+            if state == 0 and @atomic_compare_exchange_acquire_release(&stop.ready, 0, 1) == null {
+                let code = install_stop{ &stop }
+                if code != 0 {
+                    @atomic_store_release(&stop.ready, 0)
+                    return stop::other{ code = @as(i64, code) }
+                }
+                @atomic_store_release(&stop.ready, 2)
+                return
+            }
+        }
+    }
+
+    // The object, then the handler for each signal that isn't ignored: 0, or errno. A signal's
+    // bit in `caught` is set before its handler is, so that a request that comes at once puts
+    // it back too. After a failure, the next try keeps what this one made and installed.
+    fn install_stop { mut stop: Stop } -> i32 {
+        if @atomic_load_acquire(&stop.object) == 0 {
+            let object = sys::stop_make{ &stop }
+            if object == 0 { return sys::stop_errno{ &stop }.* }
+            @atomic_store_release(&stop.object, object)
+        }
+        let signals: [2]i32 = [SIGINT, SIGTERM]
+        let mut caught = @atomic_load_acquire(&stop.caught)
+        let mut i: usize = 0
+        while i < 2 {
+            let s = signals[i]
+            let mut old: sys::OldAction
+            if sys::read_action{ &stop, signal = s, old = &old } != 0 { return sys::stop_errno{ &stop }.* }
+            if old.handler != SIG_IGN {
+                @atomic_store_release(&stop.caught, caught | (@as(u32, 1) << @as(u32, s)))
+                let action = sys::make_action{ handler = on_signal }
+                if sys::set_action{ &stop, signal = s, action = &action, old = null } != 0 {
+                    let e = sys::stop_errno{ &stop }.*
+                    @atomic_store_release(&stop.caught, caught)
+                    return e
+                }
+                caught = @atomic_load_acquire(&stop.caught)
+            }
+            i = i + 1
+        }
+        return 0
+    }
+
+    // Keeps `code` as what the program was asked, if it hasn't been asked yet, puts the signals
+    // the handler catches back to their default action, and signals the object: whether it was
+    // the first request. Async-signal-safe, for the handler.
+    fn record_stop { mut stop: Stop, code: u32 } -> bool {
+        if @atomic_compare_exchange_acquire_release(&stop.asked, 0, code) != null { return false }
+        release_signals{ &stop }
+        sys::stop_signal{ &stop, object = @atomic_load_acquire(&stop.object) }
+        return true
+    }
+
+    // Puts each signal the handler catches back to its default action.
+    fn release_signals { mut stop: Stop } {
+        let caught = @atomic_load_acquire(&stop.caught)
+        let none = sys::make_action{ handler = null }
+        if caught & (@as(u32, 1) << @as(u32, SIGINT)) != 0 { _ = sys::set_action{ &stop, signal = SIGINT, action = &none, old = null } }
+        if caught & (@as(u32, 1) << @as(u32, SIGTERM)) != 0 { _ = sys::set_action{ &stop, signal = SIGTERM, action = &none, old = null } }
+    }
+
+    // The signal handler (above). C passes no capability to a callback that any thread calls
+    // (spec §18, Callbacks, rule 6), but this one is the layer's own, which only install_stop,
+    // holding a Stop, hands to the system: so it makes one, as task::begin does, since a
+    // capability without fields is no bytes (spec §15, rule 4).
+    #c_callback{ any_thread = true }
+    fn on_signal { signal: i32 } {
+        let none: u8 = 0
+        let mut stop = @cast(*Stop, &none).*
+        let saved = sys::stop_errno{ &stop }.*
+        let code = if signal == SIGINT { stop::INTERRUPT } else { stop::TERMINATE }
+        if not record_stop{ &stop, code } {
+            release_signals{ &stop }
+            _ = stop_raise{ &stop, signal }
+        }
+        sys::stop_errno{ &stop }.* = saved
+    }
+
+    // Now, on the monotonic clock, in nanoseconds.
+    fn stop_now { mut stop: Stop } -> u64 {
+        let mut t = Timespec{ sec = 0, nsec = 0 }
+        _ = stop_clock_gettime{ &stop, clock = sys::CLOCK_MONOTONIC, now = &t }
+        return @as(u64, t.sec) * 1000000000 + @as(u64, t.nsec)
+    }
+
     // ---- threads (std/task.ctx, std/thread.ctx): pthreads
 
     // Permission to start threads, which std's Threads includes.

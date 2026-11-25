@@ -361,6 +361,55 @@ namespace sys {
         _ = event_read{ &threads, fd = @as(i32, event - 1), buf = &n, count = 8 }
     }
 
+    // ---- for os's stop (std's stop): the object a signal handler signals, an eventfd as a
+    // task's cancel object is, numbered from 1; and sigaction, with glibc's and musl's struct
+    // sigaction, the same on x86_64 and aarch64
+
+    #c_symbol{ name = "__errno_location" }
+    extern fn stop_errno { mut stop: os::Stop } -> *mut i32
+    #c_symbol{ name = "eventfd" }
+    extern fn stop_eventfd { mut stop: os::Stop, initval: u32, flags: i32 } -> i32
+    #c_symbol{ name = "write" }
+    extern fn stop_write { mut stop: os::Stop, fd: i32, buf: *u64, count: usize } -> i64
+    #c_symbol{ name = "sigaction" }
+    extern fn set_action { mut stop: os::Stop, signal: i32, action: *SigAction, old: ?*mut OldAction } -> i32
+    #c_symbol{ name = "sigaction" }
+    extern fn c_read_action { mut stop: os::Stop, signal: i32, action: ?*SigAction, old: *mut OldAction } -> i32
+
+    // struct sigaction: the handler, the signals blocked while it runs (sigset_t, 1024 bits,
+    // signal N's at bit N - 1), the flags, and sa_restorer, which glibc's sigaction sets itself.
+    // OldAction is the same, with the handler as bits, to tell SIG_IGN (1) apart.
+    struct SigAction { handler: ?extern fn{ signal: i32 }, mask: [16]u64, flags: i32, restorer: u64 }
+    struct OldAction { handler: u64, mask: [16]u64, flags: i32, restorer: u64 }
+
+    // sigaction's flag that restarts a call the handler interrupted.
+    const SA_RESTART: i32 = 0x10000000
+
+    // The handler `handler`, or the default action for null, with SIGINT and SIGTERM blocked
+    // while it runs.
+    fn make_action { handler: ?extern fn{ signal: i32 } } -> SigAction {
+        let mut mask: [16]u64 = [0; 16]
+        mask[0] = (@as(u64, 1) << @as(u64, os::SIGINT - 1)) | (@as(u64, 1) << @as(u64, os::SIGTERM - 1))
+        return SigAction{ handler, mask, flags = SA_RESTART, restorer = 0 }
+    }
+
+    // What `signal` does now, into old: 0, or -1 and errno.
+    fn read_action { mut stop: os::Stop, signal: i32, mut old: OldAction } -> i32 {
+        return c_read_action{ &stop, signal, action = null, old = &old }
+    }
+
+    fn stop_make { mut stop: os::Stop } -> u64 {
+        let fd = stop_eventfd{ &stop, initval = 0, flags = EFD_CLOEXEC | EFD_NONBLOCK }
+        if fd < 0 { return 0 }
+        return @as(u64, fd) + 1
+    }
+
+    // Signals the object: write, which is async-signal-safe.
+    fn stop_signal { mut stop: os::Stop, object: u64 } {
+        let one: u64 = 1
+        _ = stop_write{ &stop, fd = @as(i32, object - 1), buf = &one, count = 8 }
+    }
+
     // ---- for os's sockets (std's net)
 
     #c_symbol{ name = "__errno_location" }
