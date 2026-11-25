@@ -25,7 +25,7 @@ The checker, lowering and runtime should never name a std declaration. Still nam
 - [x] Tasks: the checker followed a task handle through std's `task::start` and its kin, `wait`,
   `wait_for`, `cancel`, `end`, `wait_all` and `cancel_all`, and lowering ended a `task::Task` with
   `task::end` and a `task::Group` with `task::cancel_all`. Loan holders are a language feature now
-  (loan-holders.md): std writes `into`, `ends` and `#scope_end`, and the compiler reads them.
+  (spec §15, Tasks): std writes `into`, `ends` and `#scope_end`, and the compiler reads them.
 - [x] A program was threaded when main or the start fn took std's `Threads`. It is threaded when it
   has a callback C may call from any thread, as std's thread entry is.
 - [x] `list::List`: a `for` over a List said, in its error, to go over `list::items` instead. It

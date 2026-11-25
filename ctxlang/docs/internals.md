@@ -313,7 +313,7 @@ still hold a task.
    entry and a library fn needs no task fn of the program's around it. The entries are still a closed
    set, each start's bind names its fn, so stack bounds per task stay possible. This was `#task` on
    the fn, and `#starts_task` on std's starts, until loans and lent function values were general
-   (todo/loan-holders.md).
+   (spec §15, Tasks).
 8. **`start` returns no error**, and runs the task at once when it can't run it concurrently; only
    `start_concurrent` and `start_blocking` promise concurrency, and may fail. So most code runs on any
    backend and in the interpreter, and code that needs concurrency says so.
