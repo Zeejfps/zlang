@@ -239,11 +239,12 @@ namespace tree {
         attr_list{ &d, xs = x.attrs }
         match x.k {
             error => { line{ &d, at, s = "invalid" } }
-            func{ name = n, tparams, params, ret, body, external, declared } => {
+            func{ name = n, tparams, params, ret, from, body, external, declared } => {
                 named{ &d, at, kind = if external { "extern fn" } else if declared { "declared fn" } else { "fn" }, n, tparams }
                 d.depth = d.depth + 1
                 param_list{ &d, xs = params }
                 opt_type{ &d, t = ret }
+                contract_list{ &d, word = "from", xs = from }
                 if not external and not declared { block{ &d, b = body } }
                 d.depth = d.depth - 1
             }
@@ -383,8 +384,23 @@ namespace tree {
             name{ &d, n = f.name }
             end{ &d }
             sub_type{ &d, t = f.ty }
+            d.depth = d.depth + 1
+            contract_list{ &d, word = "into", xs = f.into }
+            d.depth = d.depth - 1
             i = i + 1
         }
+    }
+
+    // `from a b` or `into a b`, on a line of its own, if there are any.
+    fn contract_list { mut d: Dumper, word: []u8, xs: []syntax::Name } {
+        if xs.len == 0 { return }
+        start{ &d, at = xs[0].span.start }
+        raw{ &d, s = word }
+        for n in xs {
+            put{ &d, s = " " }
+            name{ &d, n }
+        }
+        end{ &d }
     }
 
     fn field_list { mut d: Dumper, xs: []syntax::Field } {
@@ -439,11 +455,12 @@ namespace tree {
                 type_expr{ &d, t = elem.* }
                 d.depth = d.depth - 1
             }
-            func{ bound, params, ret, external } => {
+            func{ bound, params, ret, from, external } => {
                 line{ &d, at, s = if bound { "tfn bound" } else if external { "tfn extern" } else { "tfn" } }
                 d.depth = d.depth + 1
                 param_list{ &d, xs = params }
                 if ret == null { none{ &d } } else { type_expr{ &d, t = ret.* } }
+                contract_list{ &d, word = "from", xs = from }
                 d.depth = d.depth - 1
             }
         }

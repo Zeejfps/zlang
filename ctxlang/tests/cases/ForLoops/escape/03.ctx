@@ -4,7 +4,7 @@
 fn f {} -> *i32 {
     let v = 1
     let a = [&v, &v]
-    for p in a { return p }  //~ error at 18: returned value holds the address of local `a` //~ note at -1:5: `a` is declared here
+    for p in a { return p }  //~ error at 18: returned value holds the address of local `v` //~ note at -2:5: `v` is declared here
     @panic()
 }
 fn main {} { _ = f{} }

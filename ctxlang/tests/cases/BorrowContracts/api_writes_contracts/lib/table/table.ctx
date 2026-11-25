@@ -1,0 +1,11 @@
+namespace table {
+    struct Table { names: [][]u8 }
+    struct Last { name: []u8 }
+    // The name at i.
+    fn at { t: Table, i: usize } -> []u8 { return t.names[i] }
+    // Remembers a name.
+    fn note { mut last: Last, name: []u8 } { last.name = name }
+    fn count { t: Table } -> usize { return t.names.len }
+    // Already says so.
+    fn whole { t: Table } -> Table from t { return t }
+}

@@ -1,0 +1,7 @@
+fn main {} -> i32 {
+    let mut buf: [4]u8 = "abcd"
+    let row: [1][]u8 = ["row"]
+    let t = names::Table{ items = row[..] }
+    let s = names::at{ t, i = 0 }
+    return @as(i32, s.len + names::same{ s = buf[..] }.len)
+}

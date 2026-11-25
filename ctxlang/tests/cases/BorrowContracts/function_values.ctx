@@ -1,0 +1,39 @@
+// Borrowing contracts (spec §14, Escape check, rule 7, and §5): a function type's contract is
+// part of the type, and a function made a value keeps no more than its type says it may.
+
+struct Model { n: u32 }
+struct World { last: []u8 }
+
+fn echo { name: []u8 } -> []u8 { return name }
+fn fresh { name: []u8 } -> []u8 { return "fresh" }
+fn set { mut w: World, name: []u8 } { w.last = name }
+fn store { w: *mut World, name: []u8 } { w.*.last = name }
+
+fn main {} {
+    let a: fn{ name: []u8 } -> []u8 = fresh
+    let b: fn{ name: []u8 } -> []u8 from name = echo
+    let c: fn{ name: []u8 } -> []u8 from name = fresh
+    let d: fn{ name: []u8 } -> []u8 = echo
+    let e: fn{ name: []u8 } -> []u8 = b
+    let f: fn{ name: []u8 } -> []u8 from name = a
+    let g = echo
+    let h: fn{ w: *mut World, name: []u8 } = store
+    let i: fn{ w: *mut World, name: []u8 into w } = store
+    let mut world = World{ last = "" }
+    let j: &fn{ name: []u8 } = set{ w = &world, _ }
+    _ = c
+    _ = d
+    _ = e
+    _ = f
+    _ = g
+    _ = h
+    _ = i
+    _ = j
+}
+
+//# errors:
+//| function_values.ctx:17:39: error: expected fn{ name: []u8 } -> []u8, got fn{ name: []u8 } -> []u8 from name: by its type its result may point into `name`, which the type expected doesn't say, and a call through it goes by that type
+//| function_values.ctx:16:39: error: `echo`: its result may point into `name`, which its type here, fn{ name: []u8 } -> []u8, doesn't say; a call through it goes by the type, so write `from name` in the type
+//| function_values.ctx:19:13: error: `echo`: its result may point into `name`, and a function value's type says what it keeps: give it one that says so, fn{ name: []u8 } -> []u8 from name
+//| function_values.ctx:20:46: error: `store`: it keeps `name` in `w`, which its type here, fn{ w: *mut World, name: []u8 }, doesn't say; a call through it goes by the type, so write `name into w` in the type
+//| function_values.ctx:23:35: error: `set` keeps `name` in `w`, which the bind holds, and no function type's contract can say that: give `w` when calling it instead

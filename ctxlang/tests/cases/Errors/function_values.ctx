@@ -52,7 +52,9 @@ fn report { mut io: Io, r: !u64 } {
     }
 }
 
-struct Parser { run: fn{ s: []u8 } -> !u64, name: []u8 }
+// `other`'s error holds part of `s`, so the types it is a value of say so, `from s` (§14,
+// Escape check, rule 7); `number` keeps nothing, which they allow.
+struct Parser { run: fn{ s: []u8 } -> !u64 from s, name: []u8 }
 
 fn apply { f: &fn{ s: []u8 } -> !u64, s: []u8 } -> !u64 {
     let n = try f{ s }
@@ -70,7 +72,7 @@ fn main { mut io: Io } {
         report{ &io, r = ps[i].run{ s = "abcd" } }
         i = i + 1
     }
-    let o: ?fn{ s: []u8 } -> !u64 = other
+    let o: ?fn{ s: []u8 } -> !u64 from s = other
     if o != null { report{ &io, r = o{ s = "wxyz" } } }
     report{ &io, r = apply{ f = number, s = "9" } }
     report{ &io, r = apply{ f = number, s = "9q" } }
@@ -78,7 +80,7 @@ fn main { mut io: Io } {
     report{ &io, r = apply{ f = g, s = "19" } }
     let wide: fn{ s: []u8, extra: i32 } -> !u64 = number
     report{ &io, r = wide{ s = "5", extra = 3 } }
-    let table: [3]fn{ s: []u8 } -> !u64 = [other; 3]
+    let table: [3]fn{ s: []u8 } -> !u64 from s = [other; 3]
     report{ &io, r = table[2]{ s = "12345" } }
     let mut mem: [1024]u8 = [0; 1024]
     let mut heap = arena::new{ buf = mem[..] }

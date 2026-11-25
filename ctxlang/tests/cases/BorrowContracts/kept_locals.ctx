@@ -1,0 +1,44 @@
+// Borrowing contracts (spec §14, Escape check, rule 3): a call can't keep a local's address
+// where it outlives the local, by what the callee keeps, inferred or written.
+
+struct World { last: []u8 }
+fn remember { mut names: list::List([]u8, arena::Arena) } -> ! {
+    let mut buf: [16]u8
+    try list::push{ list = &names, item = buf[..8] }  //~ error at 36: `list::push` keeps `item` in `names`, which belongs to the caller and outlives local `buf` whose address it holds //~ note at -1:5: `buf` is declared here //~ note at -2:15: `names` is a context field, declared here
+}
+fn set { mut w: World, name: []u8 } { w.last = name }
+fn into_caller { mut w: World } {
+    let mut buf: [4]u8
+    set{ &w, name = buf[..] }  //~ error at 14: `set` keeps `name` in `w`, which belongs to the caller and outlives local `buf` whose address it holds //~ note at -1:5: `buf` is declared here //~ note at -2:18: `w` is a context field, declared here
+}
+fn same_scope { mut heap: arena::Arena } -> usize {
+    let mut buf: [16]u8
+    let mut xs = list::new([]u8){ realloc = arena::alloc, &heap }
+    try! list::push{ list = &xs, item = buf[..8] }
+    return xs.len
+}
+fn outer_scope { mut heap: arena::Arena } -> usize {
+    let mut xs = list::new([]u8){ realloc = arena::alloc, &heap }
+    if xs.len == 0 {
+        let mut buf: [16]u8
+        try! list::push{ list = &xs, item = buf[..8] }  //~ error at 38: `list::push` keeps `item` in `xs`, which outlives local `buf` whose address it would hold //~ note at -1:9: `buf` is declared here //~ note at -3:5: `xs` is declared here
+    }
+    return xs.len
+}
+fn back { mut heap: arena::Arena } -> list::List([]u8, arena::Arena) {
+    let mut buf: [16]u8
+    let mut xs = list::new([]u8){ realloc = arena::alloc, &heap }
+    try! list::push{ list = &xs, item = buf[..8] }
+    return xs  //~ error at 5: returned value holds the address of local `buf` //~ note at -3:5: `buf` is declared here
+}
+fn keep_all { mut w: World, xs: [][]u8, i: usize } {
+    if i >= xs.len { return }
+    w.last = xs[i]
+    keep_all{ &w, xs, i = i + 1 }
+}
+fn recursive { mut w: World } {
+    let mut buf: [8]u8
+    let one: [1][]u8 = [buf[..]]
+    keep_all{ &w, xs = one[..], i = 0 }  //~ error at 19: `keep_all` keeps `xs` in `w`, which belongs to the caller and outlives local `buf` whose address it holds //~ note at -2:5: `buf` is declared here //~ note at -3:16: `w` is a context field, declared here
+}
+fn main {} {}

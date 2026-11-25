@@ -1,0 +1,44 @@
+// A fn in an api.ctx says what it keeps (spec §14, Escape check, rule 6): nothing, unless it
+// says `from` or `into`, and exactly what its body keeps, so that callers can go by it. `at`'s
+// and `same`'s say so; `first`'s, `put`'s and `twice`'s say nothing, and `pick`'s names the
+// wrong field. A definition may leave its contract to its api.ctx, or write the same one:
+// `twice`'s writes another.
+//# $ ctxc check .
+//# exit: 1
+//# stderr:
+//| lib/names/names.ctx:7:8: error: `names::twice` keeps nothing by its api.ctx and `from s` by its definition: write the api's, or nothing, here
+//| lib/names/api.ctx:5:8: error: `names::first`: by its body its result may point into `xs`, and its api.ctx says nothing: a contract says exactly what the body keeps, so that callers can go by it; write `from xs`
+//| lib/names/api.ctx:6:8: error: `names::put`: by its body it keeps `name` in `w`, and its api.ctx says nothing: a contract says exactly what the body keeps, so that callers can go by it; write `name into w`
+//| lib/names/api.ctx:7:8: error: `names::pick`: by its body its result may point into `a`, and its api.ctx says `from b`: a contract says exactly what the body keeps, so that callers can go by it; write `from a`
+//| lib/names/api.ctx:9:8: error: `names::twice`: by its body its result may point into `s`, and its api.ctx says nothing: a contract says exactly what the body keeps, so that callers can go by it; write `from s`
+//| check: 5 errors; not checked until the program has no other error: the order of a call's fields, what tasks borrow, consts computed by running code; 4 of them have a fix that `ctxc check --fix` applies
+
+// `--fix` writes what each body keeps, and the definition's contract is then the api's.
+//# $ ctxc check --fix .
+//# stderr:
+//| lib/names/api.ctx:5:36: fixed: write what it keeps
+//| -     fn first { xs: [][]u8 } -> []u8
+//| +     fn first { xs: [][]u8 } -> []u8 from xs
+//| lib/names/api.ctx:6:38: fixed: write what it keeps
+//| -     fn put { mut w: World, name: []u8 }
+//| +     fn put { mut w: World, name: []u8 into w }
+//| lib/names/api.ctx:7:41: fixed: write what it keeps
+//| -     fn pick { a: []u8, b: []u8 } -> []u8 from b
+//| +     fn pick { a: []u8, b: []u8 } -> []u8 from a
+//| lib/names/api.ctx:9:33: fixed: write what it keeps
+//| -     fn twice { s: []u8 } -> []u8
+//| +     fn twice { s: []u8 } -> []u8 from s
+//| check: no errors
+//# file lib/names/api.ctx:
+//| namespace names {
+//|     struct Table { items: [][]u8 }
+//|     struct World { last: []u8 }
+//|     fn at { t: Table, i: usize } -> []u8 from t
+//|     fn first { xs: [][]u8 } -> []u8 from xs
+//|     fn put { mut w: World, name: []u8 into w }
+//|     fn pick { a: []u8, b: []u8 } -> []u8 from a
+//|     fn same { s: []u8 } -> []u8 from s
+//|     fn twice { s: []u8 } -> []u8 from s
+//| }
+//# $ ctxc run .
+//# exit: 7

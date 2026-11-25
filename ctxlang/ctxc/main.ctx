@@ -199,8 +199,13 @@ enum Mode: u8 { decls, ir, build, interp, units, check, where, api }
 // `ctxc build OUT.c ...` writes it as C.
 fn declarations { mut io: Io, mut fs: Fs, mut mem: Mem, mut proc: Proc, args: Args, mode: Mode } -> i32 {
     let first: usize = if mode == Mode::build { 2 } else { 1 }
-    let mut buf: [65536]u8
-    let mut heap = arena::new{ buf = buf[..] }
+    // The lists of what the arguments name are on pages, not the stack: the program's files
+    // and modules keep their paths (spec §14, Escape check, `into`).
+    let listed = mem::reserve{ &mem, size = 1048576 } ifnull {
+        io::eprintln{ &io, s = "out of memory" }
+        return 1
+    }
+    let mut heap = arena::new{ buf = listed }
     let mut paths = list::new([]u8){ realloc = arena::alloc, &heap }
     // Which of paths are denied the unchecked operations: those after a `--deny-unchecked`, up
     // to the next `--allow-unchecked`, as the suite's runner passes what `ctxc graph` listed.

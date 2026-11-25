@@ -36,8 +36,10 @@ namespace syntax {
         error,
         // An extern fn has no tparams and an empty body, where its declaration ends, as has a
         // declared one, a fn of a module's api.ctx, which a file of the module defines (spec §10,
-        // Modules). tsets: which of tparams are error sets, `E: error` (§9).
-        func{ name: Name, tparams: []Name, tsets: []bool, params: []Param, ret: ?TypeExpr, body: Block, external: bool, declared: bool },
+        // Modules). tsets: which of tparams are error sets, `E: error` (§9). from: the fields
+        // named after `from` (`-> T from a and b`), which its result may point into (§14,
+        // Escape check).
+        func{ name: Name, tparams: []Name, tsets: []bool, params: []Param, ret: ?TypeExpr, from: []Name, body: Block, external: bool, declared: bool },
         record{ name: Name, tparams: []Name, fields: []Field, untagged: bool },   // struct; extern union if untagged
         sum{ name: Name, tparams: []Name, variants: []Variant },         // union
         enumeration{ name: Name, base: TypeExpr, variants: []EnumVariant },
@@ -59,8 +61,10 @@ namespace syntax {
     struct Include { span: Span, ty: TypeExpr, at: usize }
 
     // A context field, of a function or a function type. A function's may have attributes, on
-    // the lines before its span, as a declaration does; a function type's never do.
-    struct Param { span: Span, attrs: []Attr, mutable: bool, name: Name, ty: TypeExpr }
+    // the lines before its span, as a declaration does; a function type's never do. into: the
+    // fields named after `into` (`item: T into list`), which the function may keep it in (§14,
+    // Escape check).
+    struct Param { span: Span, attrs: []Attr, mutable: bool, name: Name, ty: TypeExpr, into: []Name }
 
     // A field of a struct, an extern union, a union variant's payload, an error or a capability,
     // with its attributes, on the lines before its span, as a declaration has. In a capability's
@@ -85,7 +89,8 @@ namespace syntax {
         opt{ elem: *TypeExpr },
         slice{ mutable: bool, elem: *TypeExpr },
         array{ n: *Expr, elem: *TypeExpr },
-        func{ bound: bool, params: []Param, ret: ?*TypeExpr, external: bool },   // external: `extern fn{...}`
+        // external: `extern fn{...}`; from: as a function declaration's.
+        func{ bound: bool, params: []Param, ret: ?*TypeExpr, from: []Name, external: bool },
         // `!T`, or `!` alone (no elem): a result or an error; `E!T` or `E!` with set E, the errors
         // it may fail with (§8, Errors, rule 14).
         fail{ elem: ?*TypeExpr, set: ?*TypeExpr },

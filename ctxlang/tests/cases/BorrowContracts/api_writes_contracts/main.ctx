@@ -1,0 +1,7 @@
+fn main {} -> i32 {
+    let names: [2][]u8 = ["one", "three"]
+    let t = table::Table{ names = names[..] }
+    let mut last = table::Last{ name = "" }
+    table::note{ &last, name = table::at{ t, i = 1 } }
+    return @as(i32, last.name.len + table::count{ t = table::whole{ t } })
+}

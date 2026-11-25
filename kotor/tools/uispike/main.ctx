@@ -329,12 +329,14 @@ fn check_host_slot { mut io: Io, mut dev: gpu::Device, mut frame: render::Frame,
     ui::draw::add_host{ &list, slot = 1, rect = ui::Rect{ x = 100, y = 50, w = 200, h = 100 } }
     ui::draw::add_rect{ &list, rect = ui::Rect{ x = 250, y = 120, w = 100, h = 100 }, style = ui::RectStyle{ fill = ui::Color{ b = 255, .. }, .. }, clip = 0 }
     let cap = ui_stage::Capacity{ rects = 8, glyphs = 8, images = 8, shapes = 8, draws = 8, passes = 4, atlas_width = 8, atlas_height = 8, atlas_max_height = 8, glyph_cache = 8, raster_bytes = 64 }
-    let mut st = ui_stage::make{ realloc = arena::alloc, &heap, cap } iferr { return false }
-    ui_stage::stage{ out = &st, list = &list, provider = null }
+    // On the heap, not the stack: the frame keeps its passes after this returns.
+    let made = ui_stage::make{ realloc = arena::alloc, &heap, cap } iferr { return false }
+    let st = alloc::new(ui_stage::Staged, arena::Arena){ realloc = arena::alloc, &heap, value = made } iferr { return false }
+    ui_stage::stage{ out = st, list = &list, provider = null }
     render::begin_frame{ &frame, time = 0.0 }
     for pass in 0..st.pass_count {
-        ui_kotor::add_pass{ &frame, staged = &st, pass, target = null }
-        if let slot = ui_kotor::get_slot{ staged = &st, pass } {
+        ui_kotor::add_pass{ &frame, staged = st, pass, target = null }
+        if let slot = ui_kotor::get_slot{ staged = st, pass } {
             let camera = render::Camera{ view = math::mat4::identity{}, proj = math::mat4::identity{}, eye = math::vec3::zero{} }
             let mut view = render::make_view{ camera }
             view.viewport = slot.viewport

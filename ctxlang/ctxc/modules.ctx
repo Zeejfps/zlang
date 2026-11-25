@@ -391,21 +391,32 @@ namespace modules {
             if is_hook{ c, a, ns = x.ns } { lines{ &out, text = text[a.span.start..a.span.end], drop, depth } }
         }
         match x.syn.k {
-            func{ ret, body } => {
-                let mut sig = trimmed{ s = text[x.syn.span.start..body.span.start] }
+            func{ params, ret, from, body } => {
+                let sig = trimmed{ s = text[x.syn.span.start..body.span.start] }
+                // What the signature gains, in order: the errors it fails with, and what it
+                // keeps (spec §14, Escape check), where it doesn't say so itself.
+                let mut adds = list::new(Insert){ realloc = arena::alloc, heap = c.heap }
+                let keeps = check::kept_of{ c, d }
+                let start = x.syn.span.start
+                for p in params {
+                    if p.into.len > 0 { continue }
+                    let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
+                    try! check::write_into{ keeps, arg = p.name.text, &b }
+                    if b.bytes.len > 0 { try! list::push{ list = &adds, item = Insert{ at = @as(usize, p.ty.span.end - start), text = utf8::view{ b }.bytes } } }
+                }
                 if let te = ret {
                     if te.k is fail{ set } and set == null and not writer{ c, d } {
                         if let written = error_set{ c, d } {
-                            let at = @as(usize, te.span.start - x.syn.span.start)
-                            let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
-                            try! utf8::push_bytes{ &b, s = sig[..at] }
-                            try! utf8::push_bytes{ &b, s = written }
-                            try! utf8::push_bytes{ &b, s = sig[at..] }
-                            sig = utf8::view{ b }.bytes
+                            try! list::push{ list = &adds, item = Insert{ at = @as(usize, te.span.start - start), text = written } }
                         }
                     }
+                    if from.len == 0 {
+                        let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
+                        try! check::write_from{ keeps, &b }
+                        if b.bytes.len > 0 { try! list::push{ list = &adds, item = Insert{ at = @as(usize, te.span.end - start), text = utf8::view{ b }.bytes } } }
+                    }
                 }
-                lines{ &out, text = sig, drop, depth }
+                lines{ &out, text = inserted{ c, s = sig, adds = list::items{ list = adds } }, drop, depth }
             }
             cap{ name, fields, includes } => {
                 let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
@@ -427,6 +438,32 @@ namespace modules {
             }
             else => {}
         }
+    }
+
+    // Text to put into a signature, at offset `at` of it.
+    struct Insert { at: usize, text: []u8 }
+
+    // s with each of adds put in, in the order of their offsets, those within s.
+    fn inserted { c: check::Checker, s: []u8, adds: []Insert } -> []u8 {
+        if adds.len == 0 { return s }
+        let mut b = utf8::builder{ realloc = arena::alloc, heap = c.heap }
+        let mut at: usize = 0
+        let mut done = list::new(bool){ realloc = arena::alloc, heap = c.heap }
+        for _ in adds { try! list::push{ list = &done, item = false } }
+        while true {
+            let mut next = adds.len
+            for a at i in adds {
+                if list::items{ list = done }[i] or a.at > s.len { continue }
+                if next == adds.len or a.at < adds[next].at { next = i }
+            }
+            if next == adds.len { break }
+            list::items{ list = done }[next] = true
+            try! utf8::push_bytes{ &b, s = s[at..adds[next].at] }
+            try! utf8::push_bytes{ &b, s = adds[next].text }
+            at = adds[next].at
+        }
+        try! utf8::push_bytes{ &b, s = s[at..] }
+        return utf8::view{ b }.bytes
     }
 
     // Where declaration d is in its file as whole lines: from the comment lines just above it

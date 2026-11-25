@@ -393,13 +393,16 @@ and why they are as they are.
   error that writes its set (`result_set`); and the names in each api declaration's types are
   looked up in the side table of uses for any that is hidden where the declaration is visible
   (`leaks`). Opaque types are checked where code looks inside one (`opaque_here`): a field, a
-  literal, a variant, a match or `is`, `@as` on an enum.
+  literal, a variant, a match or `is`, `@as` on an enum. What a fn keeps (spec §14, Escape
+  check) is its half's `from` and `into`, which `resolve_sig` gives the definition as its
+  contract before the bodies are checked, and `check_contracts` compares with the summary once
+  it is inferred.
 - **After the checker** nothing changes: the IR names functions by declaration, and C names are
   made unique already (emit_c.ctx, `unique`), so two hidden `gff::put_row` are two functions.
 - **Tooling.** `ctxc where` lists a name's declarations with their modules and scopes
   (modules.ctx, `where`). `ctxc api` takes what files outside the folder name of it, from the
   side table of uses, and what those declarations' types name in turn, then writes fns'
-  signatures with their inferred sets and moves what is complete without a body out of its file
+  signatures with their inferred sets and contracts (`kept_of`) and moves what is complete without a body out of its file
   (`first_api`), since such a declaration is the api's alone.
 
 ### Decisions
@@ -484,10 +487,24 @@ and why they are as they are.
   of 48 gained nothing; gcc's `-flto` was as fast at run time but made every link of KOTOR take
   54 s, and `-flto=auto` runs its jobs one after another on Windows.
 - **Direct borrowing summaries.** A checked-AST pass infers whole-parameter success/error
-  origins plus pointer-store effects, then bodies are checked again for escapes. Recursion and
-  indirect calls are conservative; effects carry stored types through generic substitution so
-  byte-copy helpers stay precise. Outputs conservatively include possible stored origins; this
-  does not model memory aliases or allocation lifetimes.
+  origins plus pointer-store effects, then bodies are checked again for escapes. Each store
+  says which fields' places, or what they point to, it goes into, and a call keeps what its
+  callee's stores say (`check_keeps`): the `into` of a contract. An origin is a field as it
+  is, or what its pointees hold (`PRIME`), so a value read through `&doc` holds what `doc`
+  holds, not `doc`; a local's origins put there by a call that stores through `&local` are
+  marked `DEEP`, what its pointees hold, so that they don't say where a store through it goes.
+  Cycles of calls are found as the summaries are made, Tarjan's way (`borrow_fn`): a call
+  into a cycle still being made sees what it has, empty at first, and when the walk is back at
+  the cycle's first fn the fns that saw too little are made again, and those calling one that
+  grew, from where their locals' origins ended, until none grows (`borrow_settle`). Then no fn
+  outside the cycle has seen it yet. Checking ctxc's ~2,700 fns makes about 3,400 summaries;
+  the inference takes about three times what it did before contracts (about 400 ms of 2.8 s),
+  most of it the cycles of the parser and checker and the `mut` fields' origins. Calls through function values go by their
+  types' contracts, which `check_fn_values` holds each fn made a value to. Effects carry
+  stored types through generic substitution so byte-copy helpers stay precise. Outputs
+  conservatively include possible stored origins; this does not model memory aliases,
+  allocation lifetimes or struct fields apart: a list that holds a pointer to a local arena is
+  derived from it whole.
 - **Not planned: generating declarations inside the running compile** (Zig's `inline for` over
   fields with types as values, or Jai's `#insert`). It needs lazy analysis or a fixed-point loop
   in the checker, and generics would become compile-time values. Generated code is written out

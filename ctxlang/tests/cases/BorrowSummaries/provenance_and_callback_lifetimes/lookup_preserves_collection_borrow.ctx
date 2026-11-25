@@ -1,6 +1,7 @@
 // Borrowing summaries and callback records (provenance and callback lifetimes):
 // lookup preserves collection borrow: rejected. It is never run: it would use a dangling pointer.
+// The element returned is read through `items`, so it points where `buf` is, not into `items`.
 
 fn get { items: [][]u8, key: []u8 } -> []u8 { if key.len == 0 { return "none" }; return items[0] }
-fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; let items: [1][]u8 = [buf[..]]; return get{ items = items[..], key = "key" } }  //~ error at 80: returned value holds the address of local `items` //~ note at 48: `items` is declared here
+fn load {} -> []u8 { let buf: [3]u8 = [1,2,3]; let items: [1][]u8 = [buf[..]]; return get{ items = items[..], key = "key" } }  //~ error at 80: returned value holds the address of local `buf` //~ note at 22: `buf` is declared here
 fn main {} { _ = load{} }

@@ -233,7 +233,8 @@ panic.
 
 A fallible function is a value of a function type whose `!T` has the same T (§5):
 `let run: fn{ s: []u8 } -> !u64 = parse_number`, in a struct field, an array, a `?fn`, or an
-argument. Calling through it fails with any error, so a `match` on the error needs `else`; its
+argument; its type says what it keeps (`-> !T from s`, §14), or it keeps nothing. Calling
+through it fails with any error, so a `match` on the error needs `else`; its
 errors keep their payloads (`parse::bad_digit{ at } => ...`). A local inferred from a function
 (`let f = parse_number`) keeps the function's own set and takes no other function. A table of
 them replaces a chain of calls:
@@ -288,8 +289,12 @@ let p = try alloc::new(Point, arena::Arena){ realloc = arena::alloc, &heap, valu
 - New memory is zero: every allocator hands out zeros past what a resize keeps, an arena after a
   `reset` or `restore` too.
 - **Escape check** (§14, Escape check): you can't return or store the address of a local (or
-  anything derived from it) where it outlives the local. Put long-lived data in heap memory and
-  keep pointers to it.
+  anything derived from it) where it outlives the local, nor pass it to a function that keeps
+  it there. Put long-lived data in heap memory and keep pointers to it.
+- What a function keeps is its contract: `-> T from a` (its result may point into `a`), and
+  `item: T into list` (it may store `item` in `list`). Inferred from the body; written in an
+  api.ctx (`ctxc check --fix` writes it), and in a function type, where unwritten means it
+  keeps nothing: `lookup: &fn{ name: []u8 } -> ?*Model` takes a key in a local buffer.
 - Arenas (`arena::new{ buf }`) for scratch, with `let m = arena::mark{ heap }` and
   `arena::restore{ &heap, to = m }` around each item; a heap for everything with a lifetime of
   its own. For a big arena's buffer, `mem::reserve{ &mem, size }` commits only what the arena

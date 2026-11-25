@@ -1,0 +1,7 @@
+// Borrowing contracts' words (spec §14, Escape check, rule 5): the fields after `from` or
+// `into` are joined with `and`, and a list as other languages write one is told so, with a fix.
+// `from` and `into` are names everywhere else.
+
+fn two { a: []u8, b: []u8 } -> []u8 from a, b { return if a.len > 0 { a } else { b } }  //~ error at 43: the fields after `from` are joined with `and`: `from a and b`
+fn from { into: []u8 } -> []u8 from into { return into }
+fn main {} { _ = from{ into = "x" } }

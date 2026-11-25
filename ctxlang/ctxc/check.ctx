@@ -105,6 +105,12 @@ namespace check {
         next:     u32 = NONE,
         api:      u32 = NONE,
         half:     bool = false,
+        // A fn's borrowing contract (§14, Escape check): keeps, what `-> T from a` and
+        // `x: T into y` say, its api.ctx half's for a definition; contract, whether it is held
+        // to one: written, or an extern fn's or a definition's of an api.ctx fn, where nothing
+        // written says it keeps nothing.
+        keeps:    []types::Keep,
+        contract: bool = false,
     }
 
     // A capability's C variable (§15): `extern name: T` reads the C symbol `name`, or the one
@@ -331,9 +337,23 @@ namespace check {
         borrow_ready: bool = false,
         borrows: map::Map(u32, Borrow, Heap),
         borrow_busy: map::Map(u32, bool, Heap),
+        // The cycles of calls among fns, found as their summaries are made (borrow_fn, Tarjan's
+        // way): the fns whose summaries are being made, innermost last; each fn's number in the
+        // order reached and the lowest number it reaches; those reached whose cycle isn't done,
+        // in order, by decl too; and those that call themselves.
+        borrow_stack: list::List(u32, Heap),
+        borrow_index: map::Map(u32, u32, Heap),
+        borrow_low: map::Map(u32, u32, Heap),
+        borrow_open: list::List(u32, Heap),
+        borrow_on: map::Map(u32, bool, Heap),
+        borrow_self: map::Map(u32, bool, Heap),
+        borrow_callers: map::Map(u32, []u32, Heap),     // in a cycle, by fn: those of it that call it
+        borrow_saw: map::Map(u32, bool, Heap),          // the fns given a summary still being made
+        borrow_envs: map::Map(u32, map::Map(u32, []u32, Heap), Heap),  // by fn in a cycle: its locals' origins, made last
         borrow_error: bool = false,
         borrow_success: bool = false,
         escapes:   list::List(Escape, Heap),          // escape errors that wait on the sets
+        fn_values: list::List(FnValue, Heap),         // fns made values, checked against their types' contracts
         sites:     list::List(Site, Heap),            // every @fmt, whose set is owned by SITE + its index
         fault_writers: map::Map(u64, []Writer, Heap), // an error hole's field writers, by fault_key
         exit_sites: map::Map(u32, u32, Heap),         // by fn: the site that writes the error its `!` result holds (exit_site)
@@ -412,6 +432,12 @@ namespace check {
     // while the bodies are checked, can make real: reported once the sets are inferred if t then
     // holds a pointer, and if flow errors were reported in its body when it was found.
     struct Escape { t: Id, at: source::Span, msg: utf8::String, report: bool, notes: []diag::Note }
+
+    // A function made a value (§14, Escape check), whose type's contract must allow what it
+    // keeps (check_fn_values): fn d named as a value, or a bind, `f{ x = a, _ }`, of fn d or of
+    // a value of function type callee, whose fields bound are given. key: the expression.
+    // typed: whether a function type it is to be gave it its contract.
+    struct FnValue { key: u64, d: u32, at: source::Span, bound: [][]u8, callee: Id, typed: bool }
 
     // An array literal that is a view where a slice is expected (§11, Literals): the [N]T array
     // it views, and the hidden local of its block that holds it, or NONE if every element is
@@ -611,7 +637,17 @@ namespace check {
             pat_errs = map::new(u64, u32){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             borrows = map::new(u32, Borrow){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             borrow_busy = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            borrow_stack = list::new(u32){ realloc = arena::alloc, &heap },
+            borrow_index = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            borrow_low = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            borrow_open = list::new(u32){ realloc = arena::alloc, &heap },
+            borrow_on = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            borrow_self = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            borrow_callers = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            borrow_saw = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            borrow_envs = map::new(u32, map::Map(u32, []u32, Heap)){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             escapes = list::new(Escape){ realloc = arena::alloc, &heap },
+            fn_values = list::new(FnValue){ realloc = arena::alloc, &heap },
             sites = list::new(Site){ realloc = arena::alloc, &heap },
             fault_writers = map::new(u64, []Writer){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             exit_sites = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
@@ -698,6 +734,8 @@ namespace check {
         each{ &c, xs = c.fns, what = Phase::bodies }
         infer_sets{ &c }
         check_apis{ &c }
+        check_contracts{ &c }
+        check_fn_values{ &c }
         finish_matches{ &c }
         derived_needs{ &c }
         check_declared{ &c }
@@ -1027,7 +1065,7 @@ namespace check {
             fields = slice::empty(types::Field){}, variants = slice::empty(Variant){},
             values = slice::empty(i64){},
             includes = slice::empty(u32){}, vars = slice::empty(CVar){},
-            defaults = slice::empty(u32){},
+            defaults = slice::empty(u32){}, keeps = slice::empty(types::Keep){},
             module = c.files[file].module, scope = c.files[file].module, open = c.files[file].module,
             ..
         }
@@ -1681,13 +1719,34 @@ namespace check {
     fn resolve_sig { mut c: Checker, d: u32 } {
         let x = get_decl{ c, d }
         let sc = own_scope{ &c, d }
-        if x.syn.k is func{ params, ret, external } {
+        if x.syn.k is func{ params, ret, from, external } {
             let fields = context{ &c, params, sc }
             let mut r = types::VOID
             if ret != null { r = ret_type{ &c, te = ret, sc, owner = d } }
+            let own = keeps_of{ &c, params, from, fields }
+            let mut keeps = own
+            let mut contract = external or keeps.len > 0
+            // A definition is held to its api.ctx half's contract, whose fields are its own
+            // (compare_half).
+            if x.api != NONE {
+                if get_decl{ c, d = x.api }.syn.k is func{ params = hp, from = hf } {
+                    keeps = keeps_of{ &c, params = hp, from = hf, fields }
+                    contract = true
+                }
+            }
+            // A definition that writes a contract writes its api.ctx half's.
+            if x.api != NONE and from.len + written_into{ params } > 0 {
+                let mine = types::sorted_keeps{ s = c.ty, xs = own }
+                let theirs = types::sorted_keeps{ s = c.ty, xs = keeps }
+                if not types::same_keeps{ a = mine, b = theirs } {
+                    errorf{ &c, at = x.name.span, msg = @fmt("`{}` keeps {} by its api.ctx and {} by its definition: write the api's, or nothing, here", str{ s = x.qual }, keeps_text{ c, keeps = theirs }, keeps_text{ c, keeps = mine }) }
+                }
+            }
             let at = list::at{ list = c.decls, i = d }
             at.fields = fields
             at.ret = r
+            at.keeps = types::sorted_keeps{ s = c.ty, xs = keeps }
+            at.contract = contract
             if external { extern_sig{ &c, x, params, ret, fields, r } }
         }
     }
@@ -1726,6 +1785,53 @@ namespace check {
             func{ external } => { return external }
             else => { return false }
         }
+    }
+
+    fn written_into { params: []syntax::Param } -> usize {
+        let mut n: usize = 0
+        for p in params { n = n + p.into.len }
+        return n
+    }
+
+    // The contract written on a function or a function type (§14, Escape check): `from` after
+    // its result, and `into` after its fields, whose types are fields.
+    fn keeps_of { mut c: Checker, params: []syntax::Param, from: []syntax::Name, fields: []types::Field } -> []types::Keep {
+        let mut out = list::new(types::Keep){ realloc = arena::alloc, heap = c.heap }
+        for n in from {
+            if n.text.len == 0 { continue }
+            let f = types::find_field{ fields, name = n.text } ifnull {
+                errorf{ &c, at = n.span, msg = @fmt("`from {}`: the function has no field `{}`", str{ s = n.text }, str{ s = n.text }) }
+                continue
+            }
+            if f.mutable {
+                errorf{ &c, at = n.span, msg = @fmt("`from {}`: `{}` is a `mut` field, whose argument is a place of the caller's; `from` names the read-only fields whose arguments the result may point into", str{ s = n.text }, str{ s = n.text }) }
+                continue
+            }
+            try! list::push{ list = &out, item = types::Keep{ arg = n.text, into = "" } }
+        }
+        for p in params {
+            for n in p.into {
+                if n.text.len == 0 or p.name.text.len == 0 { continue }
+                if p.mutable {
+                    errorf{ &c, at = n.span, msg = @fmt("`{} into {}`: `{}` is a `mut` field, a place of the caller's, which the function can't keep; `into` follows a read-only field whose argument it keeps", str{ s = p.name.text }, str{ s = n.text }, str{ s = p.name.text }) }
+                    continue
+                }
+                let g = types::find_field{ fields, name = n.text } ifnull {
+                    errorf{ &c, at = n.span, msg = @fmt("`into {}`: the function has no field `{}`", str{ s = n.text }, str{ s = n.text }) }
+                    continue
+                }
+                if slice::eq_bytes{ a = n.text, b = p.name.text } {
+                    errorf{ &c, at = n.span, msg = @fmt("`{} into {}`: a field isn't kept in itself", str{ s = p.name.text }, str{ s = n.text }) }
+                    continue
+                }
+                if not g.mutable and not reaches_ptr_place{ &c, t = g.ty, seen = no_vars{} } {
+                    errorf{ &c, at = n.span, msg = @fmt("`into {}`: `{}` is read-only, of type {}, which reaches no `*mut` or `[]mut` that can hold a pointer, so nothing can be kept in it", str{ s = n.text }, str{ s = n.text }, tstr{ c, t = g.ty }) }
+                    continue
+                }
+                try! list::push{ list = &out, item = types::Keep{ arg = p.name.text, into = n.text } }
+            }
+        }
+        return list::items{ list = out }
     }
 
     // The fields of a context, `{ mut name: T, ... }`, of a function or a function type.
@@ -2475,7 +2581,7 @@ namespace check {
         add_field{ xs = &fs, f = fields[0] }
         add_field{ xs = &fs, f = fields[1] }
         _ = rt
-        return types::func{ s = &c.ty, fields = list::items{ list = fs }, ret = types::VOID, bound = false, external = false }
+        return types::func{ s = &c.ty, fields = list::items{ list = fs }, ret = types::VOID, bound = false, external = false, keeps = slice::empty(types::Keep){} }
     }
 
     // The fn a call's callee path names, or NONE.
@@ -3315,10 +3421,11 @@ namespace check {
                 if len == null or not ok { return types::ERROR }
                 return types::array{ s = &c.ty, n = @as(u64, len), elem = t }
             }
-            func{ bound, params, ret, external } => {
+            func{ bound, params, ret, from, external } => {
                 let fields = context{ &c, params, sc }
                 let mut r = types::VOID
                 if ret != null { r = ret_type{ &c, te = ret.*, sc, owner = NONE } }
+                let keeps = keeps_of{ &c, params, from, fields }
                 if bound and not allow_bound {
                     error{ &c, at = te.span, msg = "`&fn` can only be the type of a local or a read-only context field" }
                     return types::ERROR
@@ -3327,7 +3434,7 @@ namespace check {
                     let ret_at: ?source::Span = if ret == null { null } else { ret.span }
                     c_signature{ &c, what = "an extern fn type", params, ret_at, fields, r }
                 }
-                return types::func{ s = &c.ty, fields, ret = r, bound, external }
+                return types::func{ s = &c.ty, fields, ret = r, bound, external, keeps }
             }
             // `!T` anywhere but a function's own result, where there is no body to infer a set
             // from, fails with any error; `E!T`, with set E's.
@@ -4696,6 +4803,28 @@ namespace check {
         return utf8::view{ b }
     }
 
+    // ` from a and b`, what contract keeps says a function's result keeps, if anything.
+    fn write_from { keeps: []types::Keep, mut b: utf8::Builder(Heap) } -> ! {
+        let mut n: usize = 0
+        for k in keeps {
+            if k.into.len > 0 { continue }
+            try utf8::push{ &b, s = if n == 0 { " from " } else { " and " } }
+            try utf8::push{ &b, s = str{ s = k.arg } }
+            n = n + 1
+        }
+    }
+
+    // ` into a and b`, where contract keeps says field arg is kept, if anywhere.
+    fn write_into { keeps: []types::Keep, arg: []u8, mut b: utf8::Builder(Heap) } -> ! {
+        let mut n: usize = 0
+        for k in keeps {
+            if k.into.len == 0 or not slice::eq_bytes{ a = k.arg, b = arg } { continue }
+            try utf8::push{ &b, s = if n == 0 { " into " } else { " and " } }
+            try utf8::push{ &b, s = str{ s = k.into } }
+            n = n + 1
+        }
+    }
+
     fn write_type { c: Checker, t: Id, mut b: utf8::Builder(Heap) } -> ! {
         match types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } {
             var{ n } => {
@@ -4731,7 +4860,7 @@ namespace check {
             record{ decl, args } => { return generic{ c, decl, args, &b } }
             sum{ decl, args } => { return generic{ c, decl, args, &b } }
             distinct{ decl, args } => { return generic{ c, decl, args, &b } }
-            func{ fields, ret, bound, external } => {
+            func{ fields, ret, bound, external, keeps } => {
                 try utf8::push{ &b, s = if bound { "&fn{" } else if external { "extern fn{" } else { "fn{" } }
                 let mut i: usize = 0
                 while i < fields.len {
@@ -4740,6 +4869,7 @@ namespace check {
                     try utf8::push{ &b, s = if f.mutable { "mut " } else { "" } }
                     try @fmt(&b, "{}: ", str{ s = f.name })
                     try write_type{ c, t = f.ty, &b }
+                    try write_into{ keeps, arg = f.name, &b }
                     i = i + 1
                 }
                 if fields.len > 0 { try utf8::push{ &b, s = " " } }
@@ -4748,6 +4878,7 @@ namespace check {
                     try utf8::push{ &b, s = " -> " }
                     try write_type{ c, t = ret, &b }
                 }
+                try write_from{ keeps, &b }
             }
             param{ decl, index } => { return utf8::push{ &b, s = str{ s = get_decl{ c, d = decl }.tparams[index].text } } }
             errs{ owner, one } => {
@@ -6396,14 +6527,11 @@ namespace check {
                 error{ &c, at = item.span, msg = "a `for` can't go over tasks' handles, which are never copied or renamed: count the indexes, `for i in 0..tasks.len`, and write `tasks[i]`" }
                 elem = types::ERROR
             }
-            // An element's copy holds what the array's elements hold; `&x` points into what was
-            // gone over, as `&s[i]` does.
-            let mut origins = no_vars{}
-            if by_ref or iter.k is array | repeat {
-                origins = derives{ &c, e = iter }
-            } else if iter.k is range{ base } {
-                if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = base.* } } } is array { origins = derives{ &c, e = base.* } }
-            }
+            // `&x` points into what is gone over, as `&s[i]` does; an element's copy holds what
+            // the elements hold, the locals what is gone over points to hold (contents), not
+            // their addresses.
+            let mut origins = derives{ &c, e = iter }
+            if not by_ref { origins = contents{ c, xs = origins } }
             push{ xs = &vars, n = each_var{ &c, name = item, t = elem, by_ref, mutable = by_ref and mutable, origins } }
             if let ix = index { push{ xs = &vars, n = each_var{ &c, name = ix, t = types::USIZE, by_ref = false, mutable = false, origins = no_vars{} } } }
         }
@@ -8048,21 +8176,28 @@ namespace check {
         }
     }
 
-    // Direct-call summaries use parameter indexes, never stack-local indexes. Pointer stores
-    // are a deliberately broad effect: their origins taint every pointer-bearing output and
-    // every later caller output, without trying to model aliases or heap lifetimes. A `via`
-    // write is one an opaque callee may make through a value of type ty (borrow_opaque), still
-    // pending on a generic parameter: it taints nothing until a call decides it (borrow_via).
-    struct BorrowWrite { ty: Id, origins: []u32, via: bool }
+    // Direct-call summaries use parameter indexes, never stack-local indexes: every field's,
+    // a `mut` one's too, so that a store says which field's place it goes into, though only
+    // read-only ones are what a result or a store holds (borrow_keeps). Pointer stores are a
+    // deliberately broad effect: their origins taint every pointer-bearing output and every
+    // later caller output, without trying to model aliases or heap lifetimes. A store's into
+    // is where it goes (§14, Escape check, `into`): the fields whose places or pointees it is
+    // in, WILD for a static's, or none for memory that no field reaches.
+    struct BorrowWrite { ty: Id, origins: []u32, into: []u32 }
     struct Borrow { ok: []u32, err: []u32, writes: []BorrowWrite }
+    const WILD: u32 = 4294967294
     struct BorrowValue { ok: []u32, err: []u32 }
+    // first: the fn's first local, its first field's, of n.
     struct BorrowBody {
         env: map::Map(u32, []u32, Heap),
         ok: []u32, err: []u32,
         writes: list::List(BorrowWrite, Heap),
         changed: bool,
+        first: u32 = NONE,
+        n: u32 = 0,
     }
 
+    // Every read-only field, and what each one's pointees hold.
     fn borrow_all { c: Checker, fields: []types::Field } -> []u32 {
         let mut out = no_vars{}
         let mut i: usize = 0
@@ -8070,32 +8205,61 @@ namespace check {
             if not fields[i].mutable { out = set_add{ c, xs = out, n = @as(u32, i) } }
             i = i + 1
         }
+        return set_union{ c, a = out, b = primed{ c, xs = out } }
+    }
+
+    // A summary's origin i is field i: a value may point where its argument points, or hold
+    // its pointers. i | PRIME is what field i's pointees hold, which a value read through it
+    // may (§14, Escape check): a call maps it to what the locals its argument points to hold
+    // (contents), not to those locals.
+    const PRIME: u32 = 1073741824
+
+    fn primed { c: Checker, xs: []u32 } -> []u32 {
+        let mut out = no_vars{}
+        for x in xs { out = set_add{ c, xs = out, n = if x == WILD { x } else { x | PRIME } } }
         return out
+    }
+
+    fn unprime { x: u32 } -> u32 {
+        if x == WILD or x < PRIME { return x }
+        return x - PRIME
+    }
+
+    fn is_primed { x: u32 } -> bool {
+        return x != WILD and x >= PRIME
     }
 
     // STRLIT is a sentinel for an unknown pointer-bearing store type.
     fn borrow_unknown { c: Checker, fields: []types::Field } -> Borrow {
         let all = borrow_all{ c, fields }
         let mut writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }
-        try! list::push{ list = &writes, item = BorrowWrite{ ty = types::STRLIT, origins = all, via = false } }
+        try! list::push{ list = &writes, item = BorrowWrite{ ty = types::STRLIT, origins = all, into = no_vars{} } }
         return Borrow{ ok = all, err = all, writes = list::items{ list = writes } }
     }
 
-    // A callee without a body ctxc can see, an extern fn or an unbound fn value: its result may
-    // hold any read-only argument (§14), but it can store one only into a mutable place it
-    // reaches, through its `mut` fields or a `*mut` or `[]mut` in an argument. Each field is a
-    // write through its type, made only if that type reaches such a place (borrow_via).
-    fn borrow_opaque { mut c: Checker, fields: []types::Field } -> Borrow {
-        let all = borrow_all{ c, fields }
+    fn borrow_none {} -> Borrow {
+        return Borrow{ ok = no_vars{}, err = no_vars{}, writes = slice::empty(BorrowWrite){} }
+    }
+
+    // What a callee with contract keeps does (§14, Escape check): an extern fn, taken on its
+    // word, or a function value, held to its type's contract where it is made
+    // (check_fn_values). Its result holds the fields `from` names, and it stores each field
+    // `into` the field it names.
+    fn borrow_contract { mut c: Checker, fields: []types::Field, keeps: []types::Keep } -> Borrow {
+        let mut ok = no_vars{}
         let mut writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }
-        let mut i: usize = 0
-        while all.len > 0 and i < fields.len {
-            let f = fields[i]
-            let ty = if f.mutable { types::ptr{ s = &c.ty, elem = f.ty, mutable = true } } else { f.ty }
-            try! list::push{ list = &writes, item = BorrowWrite{ ty, origins = all, via = true } }
-            i = i + 1
+        for k in keeps {
+            let a = types::field_index{ fields, name = k.arg } ifnull { continue }
+            let both = set_add{ c, xs = one_id{ c, n = @as(u32, a) }, n = @as(u32, a) | PRIME }
+            if k.into.len == 0 {
+                ok = set_union{ c, a = ok, b = both }
+                continue
+            }
+            let t = types::field_index{ fields, name = k.into } ifnull { continue }
+            let to = set_add{ c, xs = one_id{ c, n = @as(u32, t) }, n = @as(u32, t) | PRIME }
+            try! list::push{ list = &writes, item = BorrowWrite{ ty = fields[a].ty, origins = both, into = to } }
         }
-        return Borrow{ ok = all, err = all, writes = list::items{ list = writes } }
+        return Borrow{ ok, err = ok, writes = list::items{ list = writes } }
     }
 
     // Whether a value of type t reaches a mutable place that can hold a pointer: through a `*mut`
@@ -8149,66 +8313,127 @@ namespace check {
         }
     }
 
-    // A write an opaque callee may make through a value of type t: none if t reaches no mutable
-    // place that can hold a pointer, pending while t mentions a generic parameter, and otherwise
-    // made, as a pointer store is. Returns whether it is made.
-    fn borrow_via { mut c: Checker, mut b: BorrowBody, t: Id, xs: []u32 } -> bool {
-        if xs.len == 0 { return false }
-        if types::has_params{ s = c.ty, t } {
-            // Without its variables, so that a caller's subst reaches the parameters under them.
-            borrow_record{ &c, &b, t = types::zonk{ s = &c.ty, t }, xs, via = true }
-            return false
-        }
-        if not reaches_ptr_place{ &c, t, seen = no_vars{} } { return false }
-        borrow_write{ &c, &b, t = types::STRLIT, xs }
-        return true
-    }
-
-    // A summary as one call sees it: its pending writes, decided with the call's type
-    // arguments, taint its outputs as made writes do. One still pending in a generic caller
-    // counts as made.
-    fn borrow_resolve { mut c: Checker, s: Borrow, decl: u32, targs: []Id } -> Borrow {
-        let mut made = no_vars{}
-        let mut i: usize = 0
-        while i < s.writes.len {
-            let w = s.writes[i]
-            if w.via {
-                let t = types::subst{ s = &c.ty, t = w.ty, decl, args = targs }
-                if types::has_params{ s = c.ty, t } or reaches_ptr_place{ &c, t, seen = no_vars{} } { made = set_union{ c, a = made, b = w.origins } }
-            }
-            i = i + 1
-        }
-        if made.len == 0 { return s }
-        return Borrow{ ok = set_union{ c, a = s.ok, b = made }, err = set_union{ c, a = s.err, b = made }, writes = s.writes }
-    }
-
+    // Every fn's summary. A call to a fn whose summary is being made, in a cycle of calls, sees
+    // what it has so far, empty at first; once the walk is back at the cycle's first fn, its
+    // fns are made again until none grows, before any fn outside it sees them (borrow_fn).
     fn infer_borrows { mut c: Checker } {
         let fs = list::items{ list = c.fns }
-        let mut i: usize = 0
-        while i < fs.len {
-            _ = borrow_fn{ &c, d = fs[i] }
-            i = i + 1
-        }
+        for d in fs { _ = borrow_fn{ &c, d } }
+    }
+
+    // How much a summary holds: one made again from summaries that only grew holds what it
+    // held, and more if this is more.
+    fn borrow_size { s: Borrow } -> usize {
+        let mut n = s.ok.len + s.err.len
+        for w in s.writes { n = n + 1 + w.origins.len + w.into.len }
+        return n
+    }
+
+    // The fn whose body calls d, in a cycle with it, reaches number n: its lowest goes down to
+    // it, and it is one of d's callers.
+    fn borrow_reach { mut c: Checker, d: u32, n: u32 } {
+        let st = list::items{ list = c.borrow_stack }
+        if st.len == 0 { return }
+        let v = st[st.len - 1]
+        let had = map::get{ m = c.borrow_callers, key = d } ifnull { no_vars{} }
+        if not has_id{ xs = had, n = v } { try! map::put{ m = &c.borrow_callers, key = d, value = set_add{ c, xs = had, n = v } } }
+        let low = map::get{ m = c.borrow_low, key = v } ifnull { return }
+        if n < low { try! map::put{ m = &c.borrow_low, key = v, value = n } }
     }
 
     fn borrow_fn { mut c: Checker, d: u32 } -> Borrow {
         let known = map::get{ m = c.borrows, key = d }
-        if known != null { return known }
+        if known != null {
+            // Made, in a cycle the walk isn't done with.
+            if map::has{ m = c.borrow_on, key = d } { borrow_reach{ &c, d, n = map::get{ m = c.borrow_index, key = d } ifnull { 0 } } }
+            return known
+        }
         let x = get_decl{ c, d }
-        if x.kind == Kind::external { return borrow_opaque{ &c, fields = x.fields } }
-        if x.kind != Kind::func or map::has{ m = c.borrow_busy, key = d } { return borrow_unknown{ c, fields = x.fields } }
-        let func{ body } = x.syn.k else { return borrow_unknown{ c, fields = x.fields } }
+        if x.kind == Kind::external { return borrow_contract{ &c, fields = x.fields, keeps = x.keeps } }
+        if x.kind != Kind::func { return borrow_unknown{ c, fields = x.fields } }
+        if map::has{ m = c.borrow_busy, key = d } {
+            let st = list::items{ list = c.borrow_stack }
+            if st.len > 0 and st[st.len - 1] == d { try! map::put{ m = &c.borrow_self, key = d, value = true } }
+            if st.len > 0 { try! map::put{ m = &c.borrow_saw, key = st[st.len - 1], value = true } }
+            borrow_reach{ &c, d, n = map::get{ m = c.borrow_index, key = d } ifnull { 0 } }
+            return borrow_none{}
+        }
+        let n = @as(u32, c.borrow_index.len)
+        try! map::put{ m = &c.borrow_index, key = d, value = n }
+        try! map::put{ m = &c.borrow_low, key = d, value = n }
+        try! list::push{ list = &c.borrow_open, item = d }
+        try! map::put{ m = &c.borrow_on, key = d, value = true }
         try! map::put{ m = &c.borrow_busy, key = d, value = true }
+        try! list::push{ list = &c.borrow_stack, item = d }
+        let out = borrow_body{ &c, d }
+        _ = list::pop{ list = &c.borrow_stack }
+        _ = map::remove{ m = &c.borrow_busy, key = d }
+        try! map::put{ m = &c.borrows, key = d, value = out }
+        let low = map::get{ m = c.borrow_low, key = d } ifnull { n }
+        if low < n { borrow_reach{ &c, d, n = low } }
+        if low == n { borrow_settle{ &c, d } }
+        return map::get{ m = c.borrows, key = d } ifnull { out }
+    }
+
+    // The walk is back at d, the first fn of a cycle, or a fn in none: the fns reached since
+    // are d's cycle, whose summaries are made again until none grows.
+    fn borrow_settle { mut c: Checker, d: u32 } {
+        let mut cycle = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        while true {
+            let m = list::pop{ list = &c.borrow_open } ifnull { break }
+            _ = map::remove{ m = &c.borrow_on, key = m }
+            try! list::push{ list = &cycle, item = m }
+            if m == d { break }
+        }
+        let fs = list::items{ list = cycle }
+        if fs.len == 1 and not map::has{ m = c.borrow_self, key = d } { return }
+        // Each fn that was given a summary still being made is made again, and then those that
+        // call one whose summary grew, until none does: the others saw what is there now.
+        let mut todo = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut queued = map::new(u32, bool){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 }
+        for f in fs {
+            if not map::has{ m = c.borrow_saw, key = f } { continue }
+            try! list::push{ list = &todo, item = f }
+            try! map::put{ m = &queued, key = f, value = true }
+        }
+        let mut at: usize = 0
+        while at < todo.len {
+            let f = list::items{ list = todo }[at]
+            at = at + 1
+            _ = map::remove{ m = &queued, key = f }
+            try! list::push{ list = &c.borrow_stack, item = f }
+            let now = borrow_body{ &c, d = f }
+            _ = list::pop{ list = &c.borrow_stack }
+            let old = map::get{ m = c.borrows, key = f } ifnull { borrow_none{} }
+            if borrow_size{ s = now } <= borrow_size{ s = old } { continue }
+            try! map::put{ m = &c.borrows, key = f, value = now }
+            for g in map::get{ m = c.borrow_callers, key = f } ifnull { no_vars{} } {
+                if not map::has{ m = queued, key = g } {
+                    try! list::push{ list = &todo, item = g }
+                    try! map::put{ m = &queued, key = g, value = true }
+                }
+            }
+        }
+    }
+
+    // Fn d's summary, from its body and the summaries of the fns it calls as they are now.
+    fn borrow_body { mut c: Checker, d: u32 } -> Borrow {
+        let x = get_decl{ c, d }
+        let func{ body } = x.syn.k else { return borrow_unknown{ c, fields = x.fields } }
+        // Made again, in a cycle, from summaries that only grew: its locals' origins start where
+        // they ended last time, which they hold still, and grow from there.
+        let env = map::get{ m = c.borrow_envs, key = d } ifnull { map::new(u32, []u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 } }
         let mut b = BorrowBody{
-            env = map::new(u32, []u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 },
-            ok = no_vars{}, err = no_vars{},
-            writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }, changed = false,
+            env, ok = no_vars{}, err = no_vars{},
+            writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }, changed = false, ..
         }
         let first = map::get{ m = c.first_var, key = d }
         if first == null { return borrow_unknown{ c, fields = x.fields } }
+        b.first = first
+        b.n = @as(u32, x.fields.len)
         let mut i: usize = 0
         while i < x.fields.len {
-            if not x.fields[i].mutable { borrow_put{ &c, &b, v = first + @as(u32, i), xs = one_id{ c, n = @as(u32, i) } } }
+            borrow_put{ &c, &b, v = first + @as(u32, i), xs = one_id{ c, n = @as(u32, i) } }
             i = i + 1
         }
         // Monotone local sets also cover values carried around loops. Control dependencies
@@ -8222,10 +8447,10 @@ namespace check {
         let ws = list::items{ list = b.writes }
         i = 0
         while i < ws.len {
-            if not ws[i].via { taint = set_union{ c, a = taint, b = ws[i].origins } }
+            taint = set_union{ c, a = taint, b = ws[i].origins }
             i = i + 1
         }
-        let mut out = Borrow{ ok = b.ok, err = b.err, writes = ws }
+        let mut out = Borrow{ ok = undeeped{ c, xs = b.ok }, err = undeeped{ c, xs = b.err }, writes = ws }
         let ret = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ret } }
         match ret {
             res{ ok, errs } => {
@@ -8234,7 +8459,7 @@ namespace check {
             }
             else => { if contains_ptr{ &c, t = x.ret, seen = no_vars{} } { out.ok = set_union{ c, a = out.ok, b = taint } } }
         }
-        try! map::put{ m = &c.borrows, key = d, value = out }
+        if map::has{ m = c.borrow_on, key = d } or map::has{ m = c.borrow_envs, key = d } { try! map::put{ m = &c.borrow_envs, key = d, value = b.env } }
         return out
     }
 
@@ -8246,23 +8471,106 @@ namespace check {
         try! map::put{ m = &b.env, key = v, value = now }
     }
 
+    // A store of a value of type t, holding what fields xs hold, into memory no field reaches.
     fn borrow_write { mut c: Checker, mut b: BorrowBody, t: Id, xs: []u32 } {
-        if xs.len == 0 or not contains_ptr{ &c, t, seen = no_vars{} } { return }
-        borrow_record{ &c, &b, t, xs, via = false }
+        borrow_store{ &c, &b, t, xs, into = no_vars{} }
     }
 
-    fn borrow_record { mut c: Checker, mut b: BorrowBody, t: Id, xs: []u32, via: bool } {
+    // A store of a value of type t, holding what fields xs hold, into the places or pointees
+    // of fields into (WILD: a static).
+    fn borrow_store { mut c: Checker, mut b: BorrowBody, t: Id, xs: []u32, into: []u32 } {
+        if xs.len == 0 or not contains_ptr{ &c, t, seen = no_vars{} } { return }
+        let xs = undeeped{ c, xs }
         let ws = list::items{ list = b.writes }
         let mut i: usize = 0
         while i < ws.len {
-            if ws[i].ty == t and ws[i].via == via {
+            if ws[i].ty == t and same_set{ a = ws[i].into, b = into } {
                 let now = set_union{ c, a = ws[i].origins, b = xs }
                 list::at{ list = b.writes, i }.origins = now
                 return
             }
             i = i + 1
         }
-        try! list::push{ list = &b.writes, item = BorrowWrite{ ty = t, origins = xs, via } }
+        try! list::push{ list = &b.writes, item = BorrowWrite{ ty = t, origins = xs, into } }
+    }
+
+    // Whether sets a and b have the same members.
+    fn same_set { a: []u32, b: []u32 } -> bool {
+        if a.len != b.len { return false }
+        for x in a { if not has_id{ xs = b, n = x } { return false } }
+        return true
+    }
+
+    // Where a store into place e goes (§14, Escape check): the fields whose places or pointees
+    // it is in, WILD for a static's, or none for memory that none reaches.
+    // A target j is field j's place, a `mut` field's; j | PRIME, memory its argument reaches
+    // through a pointer. A store through a pointer value goes where the value points, which
+    // what its pointees hold (DEEP) doesn't say.
+    fn borrow_target { mut c: Checker, mut b: BorrowBody, e: syntax::Expr } -> []u32 {
+        match e.k {
+            path => {
+                if map::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                    let v = root_var{ c, v = var }
+                    if b.first != NONE and v >= b.first and v < b.first + b.n { return one_id{ c, n = v - b.first } }
+                    // A `&x` binding points where the value it was made from does.
+                    let held = map::get{ m = b.env, key = v } ifnull { no_vars{} }
+                    return pointee_of{ c, xs = held }
+                }
+            }
+            field{ base } | deref{ base } => {
+                if access_of{ c, e } is stat { return one_id{ c, n = WILD } }
+                if e.k is deref or access_of{ c, e } is pfield | cvar {
+                    return pointee_of{ c, xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = base.* } } }
+                }
+                return borrow_target{ &c, &b, e = base.* }
+            }
+            index{ base } => {
+                if access_of{ c, e } is arr { return borrow_target{ &c, &b, e = base.* } }
+                return pointee_of{ c, xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = base.* } } }
+            }
+            else => { return pointee_of{ c, xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e } } } }
+        }
+        return no_vars{}
+    }
+
+    // Where a pointer value that holds what xs say points: the memory its origins reach.
+    fn pointee_of { c: Checker, xs: []u32 } -> []u32 {
+        return primed{ c, xs = top_of{ c, xs } }
+    }
+
+    // A local's origin x | DEEP: its pointees hold what origin x is, put there by a call it was
+    // given to, `&x`, which stores through it (borrow_call). A value read through the local
+    // holds x; where the local points, it doesn't say.
+    const DEEP: u32 = 536870912
+
+    fn is_deep { x: u32 } -> bool {
+        return x != WILD and (x & DEEP) != 0
+    }
+
+    fn deepened { c: Checker, xs: []u32 } -> []u32 {
+        let mut out = no_vars{}
+        for x in xs { if x != WILD { out = set_add{ c, xs = out, n = x | DEEP } } }
+        return out
+    }
+
+    fn undeeped { c: Checker, xs: []u32 } -> []u32 {
+        let mut out = no_vars{}
+        for x in xs { out = set_add{ c, xs = out, n = if is_deep{ x } { x - DEEP } else { x } } }
+        return out
+    }
+
+    fn top_of { c: Checker, xs: []u32 } -> []u32 {
+        let mut out = no_vars{}
+        for x in xs { if not is_deep{ x } { out = set_add{ c, xs = out, n = x } } }
+        return out
+    }
+
+    // What a value read through a pointer that holds what xs say may hold: what the pointees of
+    // its origins hold, and what was put there.
+    fn through_set { c: Checker, xs: []u32 } -> []u32 {
+        let mut out = primed{ c, xs = top_of{ c, xs } }
+        for x in xs { if is_deep{ x } { out = set_add{ c, xs = out, n = x - DEEP } } }
+        return out
     }
 
     fn borrow_origins { c: Checker, v: BorrowValue } -> []u32 { return set_union{ c, a = v.ok, b = v.err } }
@@ -8322,7 +8630,7 @@ namespace check {
                     let p = place_path{ c, e = place }
                     if p != null and not get_var{ c, v = p.root }.indirect {
                         borrow_put{ &c, &b, v = p.root, xs }
-                    } else { borrow_write{ &c, &b, t = value_ty{ c, k = expr_key{ e = value } }, xs } }
+                    } else { borrow_store{ &c, &b, t = value_ty{ c, k = expr_key{ e = value } }, xs, into = borrow_target{ &c, &b, e = place } } }
                 }
                 eval{ e } | discard{ e } => { _ = borrow_expr{ &c, &b, e } }
                 ret{ value } => {
@@ -8338,9 +8646,12 @@ namespace check {
                     _ = borrow_expr{ &c, &b, e = test }
                     borrow_block{ &c, &b, block = body }
                 }
-                each{ item, iter, hi, body } => {
-                    // An element, or its place, comes from what is gone over, as `let x = s[i]`.
-                    let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = iter } }
+                each{ item, by_ref, iter, hi, body } => {
+                    // An element, or its place, comes from what is gone over, as `let x = s[i]`:
+                    // an element of a slice is read through it, and holds what it points to.
+                    let mut xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = iter } }
+                    let over_array = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = iter } } } is array
+                    if not by_ref and not over_array { xs = through_set{ c, xs } }
                     if let e = hi {
                         _ = borrow_expr{ &c, &b, e }
                     } else {
@@ -8393,12 +8704,14 @@ namespace check {
         return out
     }
 
+    // A callee's origins xs as the caller's: field i is what its argument holds, actual[i], and
+    // what field i's pointees hold is what those of actual[i] hold.
     fn borrow_map_args { mut c: Checker, xs: []u32, actual: [][]u32 } -> []u32 {
         let mut out = no_vars{}
-        let mut i: usize = 0
-        while i < xs.len {
-            if xs[i] < actual.len { out = set_union{ c, a = out, b = actual[xs[i]] } }
-            i = i + 1
+        for x in xs {
+            let i = unprime{ x }
+            if i == WILD or @as(usize, i) >= actual.len { continue }
+            out = set_union{ c, a = out, b = if is_primed{ x } { through_set{ c, xs = actual[i] } } else { actual[i] } }
         }
         return out
     }
@@ -8406,21 +8719,45 @@ namespace check {
     fn borrow_call { mut c: Checker, mut b: BorrowBody, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, bind: bool } -> BorrowValue {
         let captured = borrow_origins{ c, v = borrow_expr{ &c, &b, e = callee } }
         let fields = callee_fields{ c, e }
+        // By field: what a read-only argument holds, and where a store goes that the callee
+        // makes into the field's place (place) or through it (pointee), as this fn's targets,
+        // or into this fn's local `local`, given as `&local`.
         let mut actual = list::new([]u32){ realloc = arena::alloc, heap = c.heap }
+        let mut place = list::new([]u32){ realloc = arena::alloc, heap = c.heap }
+        let mut pointee = list::new([]u32){ realloc = arena::alloc, heap = c.heap }
+        let mut local = list::new(u32){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
         while i < fields.len {
             try! list::push{ list = &actual, item = no_vars{} }
+            try! list::push{ list = &place, item = no_vars{} }
+            try! list::push{ list = &pointee, item = no_vars{} }
+            try! list::push{ list = &local, item = NONE }
             i = i + 1
         }
         let mut aggregate = captured
         i = 0
         while i < items.len {
-            let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = items[i].value } }
+            let v = items[i].value
+            let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = v } }
             if not field_is_mut{ fields, name = items[i].name.text } { aggregate = set_union{ c, a = aggregate, b = xs } }
             let mut j: usize = 0
             while j < fields.len {
-                if slice::eq_bytes{ a = fields[j].name, b = items[i].name.text } and not fields[j].mutable {
-                    list::items{ list = actual }[j] = xs
+                if slice::eq_bytes{ a = fields[j].name, b = items[i].name.text } {
+                    if not fields[j].mutable { list::items{ list = actual }[j] = xs }
+                    let mut done = false
+                    if v.k is addr{ e = x } {
+                        let p = place_path{ c, e = x.* }
+                        if p != null and not get_var{ c, v = p.root }.indirect and not (b.first != NONE and p.root >= b.first and p.root < b.first + b.n) {
+                            list::items{ list = local }[j] = p.root
+                            done = true
+                        } else if fields[j].mutable {
+                            let to = borrow_target{ &c, &b, e = x.* }
+                            list::items{ list = place }[j] = to
+                            list::items{ list = pointee }[j] = primed{ c, xs = to }
+                            done = true
+                        }
+                    }
+                    if not done { list::items{ list = pointee }[j] = pointee_of{ c, xs } }
                 }
                 j = j + 1
             }
@@ -8431,12 +8768,24 @@ namespace check {
             i = 0
             while i < fw.len {
                 let f = fw[i]
-                let xs = map::get{ m = b.env, key = root_var{ c, v = f.var } } ifnull { no_vars{} }
+                let rv = root_var{ c, v = f.var }
+                let xs = map::get{ m = b.env, key = rv } ifnull { no_vars{} }
                 if not f.mutable { aggregate = set_union{ c, a = aggregate, b = xs } }
                 let mut j: usize = 0
                 while j < fields.len {
-                    if slice::eq_bytes{ a = fields[j].name, b = f.name } and not f.mutable {
-                        list::items{ list = actual }[j] = xs
+                    if slice::eq_bytes{ a = fields[j].name, b = f.name } {
+                        if not f.mutable {
+                            list::items{ list = actual }[j] = xs
+                            list::items{ list = pointee }[j] = pointee_of{ c, xs }
+                        } else if b.first != NONE and rv >= b.first and rv < b.first + b.n {
+                            list::items{ list = place }[j] = one_id{ c, n = rv - b.first }
+                            list::items{ list = pointee }[j] = one_id{ c, n = (rv - b.first) | PRIME }
+                        } else if get_var{ c, v = rv }.indirect {
+                            list::items{ list = pointee }[j] = pointee_of{ c, xs }
+                            list::items{ list = place }[j] = pointee_of{ c, xs }
+                        } else {
+                            list::items{ list = local }[j] = rv
+                        }
                     }
                     j = j + 1
                 }
@@ -8454,24 +8803,45 @@ namespace check {
             summary = borrow_fn{ &c, d }
         }
         if d == NONE {
-            // A bound function stores into the places it holds (§6), which its type doesn't show.
-            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = callee } } } is func{ bound } {
-                if not bound { summary = borrow_opaque{ &c, fields } }
+            // A function value does what its type's contract says (§14, Escape check), and may
+            // store what it holds into the places it holds (§6), which its type doesn't show.
+            if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = callee } } } is func{ keeps } {
+                summary = borrow_contract{ &c, fields, keeps }
             }
             borrow_write{ &c, &b, t = types::STRLIT, xs = captured }
         }
         let args = list::items{ list = actual }
-        // A pending write made here taints the call's outputs, as the callee's made ones do.
-        let mut made = captured
+        let made = captured
         i = 0
         while i < summary.writes.len {
             let w = summary.writes[i]
             let t = if d == NONE { w.ty } else { types::subst{ s = &c.ty, t = w.ty, decl = d, args = targs } }
             let xs = borrow_map_args{ &c, xs = w.origins, actual = args }
-            if not w.via {
+            if w.into.len == 0 {
                 borrow_write{ &c, &b, t, xs }
-            } else if borrow_via{ &c, &b, t, xs } {
-                made = set_union{ c, a = made, b = xs }
+            } else {
+                let mut to = no_vars{}
+                for y in w.into {
+                    if y == WILD {
+                        to = set_add{ c, xs = to, n = WILD }
+                        continue
+                    }
+                    let j = unprime{ x = y }
+                    if @as(usize, j) >= fields.len { continue }
+                    let v = list::items{ list = local }[j]
+                    if v != NONE {
+                        // Into the local given as `&v`: its place, or what it points to.
+                        if xs.len > 0 and contains_ptr{ &c, t, seen = no_vars{} } {
+                            let deep = fields[j].mutable and is_primed{ x = y }
+                            borrow_put{ &c, &b, v, xs = if deep { deepened{ c, xs } } else { xs } }
+                        }
+                    } else if is_primed{ x = y } {
+                        to = set_union{ c, a = to, b = list::items{ list = pointee }[j] }
+                    } else {
+                        to = set_union{ c, a = to, b = list::items{ list = place }[j] }
+                    }
+                }
+                if to.len == 0 { borrow_write{ &c, &b, t, xs } } else { borrow_store{ &c, &b, t, xs, into = to } }
             }
             i = i + 1
         }
@@ -8493,6 +8863,14 @@ namespace check {
     // summaries cannot tell its two payload channels apart, so retain both conservatively.
     fn borrow_project { c: Checker, value: BorrowValue } -> BorrowValue {
         let origins = borrow_origins{ c, v = value }
+        return BorrowValue{ ok = origins, err = origins }
+    }
+
+    // e, a value read through a pointer that value is: what its pointees hold. Nothing, if e
+    // can't hold a pointer, as borrow_expr would have it.
+    fn borrow_through { mut c: Checker, value: BorrowValue, e: syntax::Expr } -> BorrowValue {
+        if not contains_ptr{ &c, t = type_of_expr{ c, e }, seen = no_vars{} } { return borrow_empty{} }
+        let origins = through_set{ c, xs = borrow_origins{ c, v = value } }
         return BorrowValue{ ok = origins, err = origins }
     }
 
@@ -8534,12 +8912,15 @@ namespace check {
                 // holds points to a frame (the escape check keeps those out).
                 if access_of{ c, e } is stat {
                     _ = borrow_expr{ &c, &b, e = base.* }
+                } else if e.k is deref or access_of{ c, e } is pfield | cvar {
+                    out = borrow_through{ &c, value = borrow_expr{ &c, &b, e = base.* }, e }
                 } else {
                     out = borrow_project{ c, value = borrow_expr{ &c, &b, e = base.* } }
                 }
             }
             index{ base, i } => {
-                out = borrow_project{ c, value = borrow_expr{ &c, &b, e = base.* } }
+                let v = borrow_expr{ &c, &b, e = base.* }
+                out = if access_of{ c, e } is arr { borrow_project{ c, value = v } } else { borrow_through{ &c, value = v, e } }
                 _ = borrow_expr{ &c, &b, e = i.* }
             }
             range{ base, lo, hi } => {
@@ -8616,23 +8997,375 @@ namespace check {
         return out
     }
 
+    // What the call of callee in call e keeps (§14, Escape check): a fn's summary, or a function
+    // value's type's contract. Null if it isn't known.
     fn direct_borrow { mut c: Checker, callee: syntax::Expr } -> ?Borrow {
-        if map::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl, targs } {
-            let s = map::get{ m = c.borrows, key = decl } ifnull { return null }
-            return borrow_resolve{ &c, s, decl, targs }
+        if map::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl } {
+            if get_decl{ c, d = decl }.kind == Kind::external { return borrow_fn{ &c, d = decl } }
+            return map::get{ m = c.borrows, key = decl }
         }
+        let ft = types::prune{ s = c.ty, t = type_of_expr{ c, e = callee } }
+        if types::get{ s = c.ty, id = ft } is func{ fields, keeps } { return borrow_contract{ &c, fields, keeps } }
         return null
     }
-    fn borrow_field { fields: []types::Field, summary: ?Borrow, name: []u8, err: bool, success: bool } -> bool {
-        if summary == null { return true }
+    // What fn d keeps of its read-only fields, by its summary, as a contract would say it (§14,
+    // Escape check): what its result may point into, and where it stores each. A store into a
+    // static is in no contract: wild is the first field so stored, or "".
+    struct Kept { keeps: []types::Keep, wild: []u8 }
+
+    fn borrow_keeps { mut c: Checker, d: u32 } -> Kept {
+        let x = get_decl{ c, d }
+        if x.kind == Kind::external { return Kept{ keeps = x.keeps, wild = "" } }
+        return summary_keeps{ c, fields = x.fields, s = borrow_fn{ &c, d } }
+    }
+
+    // What fn d keeps once the program is checked: its contract if it is held to one, and
+    // otherwise what its body does (for `ctxc api`).
+    fn kept_of { c: Checker, d: u32 } -> []types::Keep {
+        let x = get_decl{ c, d }
+        if x.kind == Kind::external or x.contract { return x.keeps }
+        let s = map::get{ m = c.borrows, key = d } ifnull { return slice::empty(types::Keep){} }
+        return summary_keeps{ c, fields = x.fields, s }.keeps
+    }
+
+    fn summary_keeps { c: Checker, fields: []types::Field, s: Borrow } -> Kept {
+        let mut out = list::new(types::Keep){ realloc = arena::alloc, heap = c.heap }
+        let mut wild: []u8 = ""
+        for x in set_union{ c, a = s.ok, b = s.err } {
+            let i = unprime{ x }
+            if @as(usize, i) < fields.len and not fields[i].mutable { try! list::push{ list = &out, item = types::Keep{ arg = fields[i].name, into = "" } } }
+        }
+        for w in s.writes {
+            for x in w.origins {
+                let o = unprime{ x }
+                if @as(usize, o) >= fields.len or fields[o].mutable { continue }
+                for y in w.into {
+                    if y == WILD {
+                        if wild.len == 0 { wild = fields[o].name }
+                        continue
+                    }
+                    let j = unprime{ x = y }
+                    if @as(usize, j) >= fields.len or j == o { continue }
+                    try! list::push{ list = &out, item = types::Keep{ arg = fields[o].name, into = fields[j].name } }
+                }
+            }
+        }
+        return Kept{ keeps = types::sorted_keeps{ s = c.ty, xs = list::items{ list = out } }, wild }
+    }
+
+    // Contract keeps as it is written: `from a and b`, `k into m`, or `nothing`.
+    fn keeps_text { c: Checker, keeps: []types::Keep } -> utf8::String {
+        let mut b = message{ c }
+        let mut n: usize = 0
+        let mut from = message{ c }
+        try! write_from{ keeps, b = &from }
+        let f = utf8::view{ b = from }.bytes
+        if f.len > 0 {
+            try! @fmt(&b, "`{}`", str{ s = f[1..] })
+            n = n + 1
+        }
+        for k in keeps {
+            if k.into.len == 0 { continue }
+            if n > 0 { try! utf8::push{ &b, s = ", " } }
+            try! @fmt(&b, "`{} into {}`", str{ s = k.arg }, str{ s = k.into })
+            n = n + 1
+        }
+        if n == 0 { try! utf8::push{ &b, s = "nothing" } }
+        return utf8::view{ b }
+    }
+
+    // What contract keeps says a function does, in words: its result may point into `a` and
+    // `b`, it keeps `k` in `m`; or it keeps nothing.
+    fn keeps_effects { c: Checker, keeps: []types::Keep } -> utf8::String {
+        let mut b = message{ c }
+        let mut n: usize = 0
+        for k in keeps {
+            if k.into.len > 0 { continue }
+            try! utf8::push{ &b, s = if n == 0 { "its result may point into " } else { " and " } }
+            try! @fmt(&b, "`{}`", str{ s = k.arg })
+            n = n + 1
+        }
+        let mut m: usize = 0
+        for k in keeps {
+            if k.into.len == 0 { continue }
+            if n + m > 0 { try! utf8::push{ &b, s = ", and " } }
+            try! @fmt(&b, "it keeps `{}` in `{}`", str{ s = k.arg }, str{ s = k.into })
+            m = m + 1
+        }
+        if n + m == 0 { try! utf8::push{ &b, s = "it keeps nothing" } }
+        return utf8::view{ b }
+    }
+
+    // A fn held to a contract keeps what it says, no more and no less (§14, Escape check): its
+    // own, written, or its api.ctx half's. An extern fn's is taken on its word.
+    fn check_contracts { mut c: Checker } {
+        for d in list::items{ list = c.fns } {
+            let x = get_decl{ c, d }
+            if not x.contract or x.kind != Kind::func or x.half { continue }
+            let k = borrow_keeps{ &c, d }
+            let w = if x.api != NONE { get_decl{ c, d = x.api } } else { x }
+            if k.wild.len > 0 {
+                errorf{ &c, at = w.name.span, msg = @fmt("`{}` stores `{}` in a static, which outlives every caller's locals: no contract says that, so it can't keep it there; store a copy", str{ s = x.qual }, str{ s = k.wild }) }
+                continue
+            }
+            if types::same_keeps{ a = k.keeps, b = x.keeps } { continue }
+            contract_fix{ &c, syn = w.syn, keeps = k.keeps }
+            let where: utf8::String = if x.api != NONE { "its api.ctx" } else { "its contract" }
+            errorf{ &c, at = w.name.span, msg = @fmt("`{}`: by its body {}, and {} says {}: a contract says exactly what the body keeps, so that callers can go by it; write {}", str{ s = x.qual }, keeps_effects{ c, keeps = k.keeps }, where, keeps_text{ c, keeps = x.keeps }, keeps_text{ c, keeps = k.keeps }) }
+        }
+    }
+
+    // The fix that writes contract keeps on fn declaration syn: `from` after its result, and
+    // `into` after its fields' types, replacing what is written.
+    fn contract_fix { mut c: Checker, syn: syntax::Decl, keeps: []types::Keep } {
+        let func{ params, ret, from } = syn.k else { return }
+        let mut edits = list::new(diag::Edit){ realloc = arena::alloc, heap = c.heap }
+        if let te = ret {
+            let end = if from.len > 0 { from[from.len - 1].span.end } else { te.span.end }
+            let mut b = message{ c }
+            try! write_from{ keeps, &b }
+            contract_edit{ &c, edits = &edits, at = source::Span{ file = te.span.file, start = te.span.end, end }, text = utf8::view{ b }.bytes }
+        }
+        for p in params {
+            let end = if p.into.len > 0 { p.into[p.into.len - 1].span.end } else { p.ty.span.end }
+            let mut b = message{ c }
+            try! write_into{ keeps, arg = p.name.text, &b }
+            contract_edit{ &c, edits = &edits, at = source::Span{ file = p.ty.span.file, start = p.ty.span.end, end }, text = utf8::view{ b }.bytes }
+        }
+        if edits.len > 0 { fix_edits{ &c, edits = list::items{ list = edits }, safe = true, msg = "write what it keeps" } }
+    }
+
+    fn contract_edit { mut c: Checker, mut edits: list::List(diag::Edit, Heap), at: source::Span, text: []u8 } {
+        if slice::eq_bytes{ a = source_text{ c, span = at }, b = text } { return }
+        try! list::push{ list = &edits, item = diag::Edit{ span = at, text } }
+    }
+
+    // Each function made a value keeps no more than the type it has says it may (§14, Escape
+    // check): a call through the value goes by the type.
+    fn check_fn_values { mut c: Checker } {
+        for v in list::items{ list = c.fn_values } {
+            let mut t = types::prune{ s = c.ty, t = value_ty{ c, k = v.key } }
+            if types::get{ s = c.ty, id = t } is opt{ elem } { t = types::prune{ s = c.ty, t = elem } }
+            let func{ keeps = want, fields = tf, ret } = types::get{ s = c.ty, id = t } else { continue }
+            // What its result keeps matters only if the result can hold a pointer, as this type has it.
+            let result_holds = contains_ptr{ &c, t = ret, seen = no_vars{} }
+            let mut kept = Kept{ keeps = slice::empty(types::Keep){}, wild = "" }
+            let mut name: []u8 = "the function"
+            if v.d != NONE {
+                kept = borrow_keeps{ &c, d = v.d }
+                name = get_decl{ c, d = v.d }.qual
+            } else if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = v.callee } } is func{ keeps } {
+                kept = Kept{ keeps, wild = "" }
+            } else {
+                continue
+            }
+            if kept.wild.len > 0 and not has_name{ xs = v.bound, name = kept.wild } {
+                errorf{ &c, at = v.at, msg = @fmt("`{}` stores `{}` in a static, which no function type's contract says: it can't be a value of {}", str{ s = name }, str{ s = kept.wild }, tstr{ c, t }) }
+                continue
+            }
+            let mut extra = list::new(types::Keep){ realloc = arena::alloc, heap = c.heap }
+            let mut held = false
+            for k in kept.keeps {
+                // A bound argument is the bind's, which holds what it holds (§6).
+                if has_name{ xs = v.bound, name = k.arg } { continue }
+                let f = types::find_field{ fields = tf, name = k.arg } ifnull { continue }
+                if not contains_ptr{ &c, t = f.ty, seen = no_vars{} } { continue }
+                if k.into.len == 0 and not result_holds { continue }
+                if k.into.len > 0 and has_name{ xs = v.bound, name = k.into } {
+                    errorf{ &c, at = v.at, msg = @fmt("`{}` keeps `{}` in `{}`, which the bind holds, and no function type's contract can say that: give `{}` when calling it instead", str{ s = name }, str{ s = k.arg }, str{ s = k.into }, str{ s = k.into }) }
+                    held = true
+                    continue
+                }
+                if not types::has_keep{ xs = want, k } { try! list::push{ list = &extra, item = k } }
+            }
+            if held or extra.len == 0 { continue }
+            let more = types::sorted_keeps{ s = c.ty, xs = list::items{ list = extra } }
+            if not v.typed {
+                // Its type is its own, which says what a contract written on it says: give it
+                // one that says the rest.
+                let func{ fields, ret, bound, external } = types::get{ s = c.ty, id = t } else { continue }
+                let mut all = list::new(types::Keep){ realloc = arena::alloc, heap = c.heap }
+                for k in want { try! list::push{ list = &all, item = k } }
+                for k in more { try! list::push{ list = &all, item = k } }
+                let full = types::func{ s = &c.ty, fields, ret, bound, external, keeps = list::items{ list = all } }
+                errorf{ &c, at = v.at, msg = @fmt("`{}`: {}, and a function value's type says what it keeps: give it one that says so, {}", str{ s = name }, keeps_effects{ c, keeps = more }, tstr{ c, t = full }) }
+                continue
+            }
+            errorf{ &c, at = v.at, msg = @fmt("`{}`: {}, which its type here, {}, doesn't say; a call through it goes by the type, so write {} in the type", str{ s = name }, keeps_effects{ c, keeps = more }, tstr{ c, t }, keeps_text{ c, keeps = more }) }
+        }
+    }
+
+    fn has_name { xs: [][]u8, name: []u8 } -> bool {
+        for x in xs { if slice::eq_bytes{ a = x, b = name } { return true } }
+        return false
+    }
+
+    // A call keeps what its callee says it does (§14, Escape check, `into`): an argument that
+    // holds a local's address can't be kept where it outlives the local.
+    fn check_keeps { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, fields: []types::Field, name: utf8::String } {
+        let s = direct_borrow{ &c, callee } ifnull { return }
+        let mut d = NONE
+        let mut targs: []Id = slice::empty(Id){}
+        if map::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl, targs = ts } {
+            d = decl
+            targs = ts
+        }
+        for w in s.writes {
+            if w.into.len == 0 { continue }
+            let t = if d == NONE { w.ty } else { types::subst{ s = &c.ty, t = w.ty, decl = d, args = targs } }
+            if not contains_ptr{ &c, t, seen = no_vars{} } { continue }
+            for x in w.origins {
+                let o = unprime{ x }
+                if @as(usize, o) >= fields.len or fields[o].mutable { continue }
+                let arg = fields[o].name
+                let mut found = arg_derives{ &c, e, items, name = arg }
+                if is_primed{ x } { found = contents{ c, xs = found } }
+                if found.len == 0 { continue }
+                for y in w.into {
+                    let j = unprime{ x = y }
+                    // A store back into what the argument itself points to keeps nothing new.
+                    if j == o { continue }
+                    if keep_into{ &c, e, items, fields, arg, j, found, callee = name } { return }
+                }
+            }
+        }
+    }
+
+    // What the argument of call e's field name holds the addresses of.
+    fn arg_derives { mut c: Checker, e: syntax::Expr, items: []syntax::Item, name: []u8 } -> []u32 {
+        for it in items {
+            if slice::eq_bytes{ a = it.name.text, b = name } and not it.spread { return derives_input{ &c, e = it.value } }
+        }
+        if let fw = map::get{ m = c.forwards, key = expr_key{ e } } {
+            for f in fw {
+                if slice::eq_bytes{ a = f.name, b = name } and not f.mutable {
+                    let conv_to = if f.conv == null { f.ty } else { conv_target{ conv = f.conv } }
+                    if contains_ptr{ &c, t = conv_to, seen = no_vars{} } { return derived_of{ c, v = f.var } }
+                }
+            }
+        }
+        return no_vars{}
+    }
+
+    // Field arg of call e, holding the addresses of locals found, kept in field j's place or
+    // pointee (WILD: a static): an error if that outlives one of them. Whether it reported one.
+    fn keep_into { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, arg: []u8, j: u32, found: []u32, callee: utf8::String } -> bool {
+        let ds = vars_in_order{ c, xs = found }
+        let local = describe_local{ c, v = ds[0] }
+        let mut at = expr_at{ e }
+        let mut t = types::ERROR
+        for it in items {
+            if slice::eq_bytes{ a = it.name.text, b = arg } {
+                at = it.span
+                t = value_ty{ c, k = expr_key{ e = it.value } }
+            }
+        }
+        if t == types::ERROR {
+            let f = types::find_field{ fields, name = arg }
+            if f != null { t = f.ty }
+        }
+        let mut b = message{ c }
+        if j == WILD {
+            try! @fmt(&b, "`{}` keeps `{}` in a static, which outlives {} whose address it holds", callee, str{ s = arg }, local)
+            note_local{ &c, v = ds[0] }
+            escape_error{ &c, t, at, msg = utf8::view{ b } }
+            return true
+        }
+        let f = fields[j]
+        let mut root = NONE
+        let mut through = true
+        if f.mutable {
+            for it in items {
+                if slice::eq_bytes{ a = it.name.text, b = f.name } and not it.spread {
+                    if it.value.k is addr{ e = x } {
+                        if let p = place_path{ c, e = x.* } {
+                            root = p.root
+                            through = false
+                        }
+                    }
+                }
+            }
+            if let fw = map::get{ m = c.forwards, key = expr_key{ e } } {
+                for g in fw {
+                    if slice::eq_bytes{ a = g.name, b = f.name } and g.mutable {
+                        root = root_var{ c, v = g.var }
+                        through = false
+                    }
+                }
+            }
+        }
+        if through {
+            try! @fmt(&b, "`{}` keeps `{}` where `{}` points, which may outlive {} whose address it holds", callee, str{ s = arg }, str{ s = f.name }, local)
+            note_local{ &c, v = ds[0] }
+            escape_error{ &c, t, at, msg = utf8::view{ b } }
+            return true
+        }
+        let r = get_var{ c, v = root }
+        if r.indirect {
+            try! @fmt(&b, "`{}` keeps `{}` in `{}`, which belongs to the caller and outlives {} whose address it holds", callee, str{ s = arg }, str{ s = r.name }, local)
+            note_local{ &c, v = ds[0] }
+            note_local{ &c, v = root }
+            escape_error{ &c, t, at, msg = utf8::view{ b } }
+            return true
+        }
+        for l in ds {
+            if r.depth < get_var{ c, v = l }.depth {
+                try! @fmt(&b, "`{}` keeps `{}` in `{}`, which outlives {} whose address it would hold", callee, str{ s = arg }, str{ s = r.name }, describe_local{ c, v = l })
+                note_local{ &c, v = l }
+                note_local{ &c, v = root }
+                escape_error{ &c, t, at, msg = utf8::view{ b } }
+                return true
+            }
+        }
+        add_derived{ &c, v = root, xs = ds }
+        return false
+    }
+
+    // The locals whose addresses the locals xs hold, at any depth: what a value read through a
+    // pointer to one of xs may hold (§14, Escape check).
+    fn contents { c: Checker, xs: []u32 } -> []u32 {
+        let mut out = no_vars{}
+        let mut todo = xs
+        while todo.len > 0 {
+            let mut next = no_vars{}
+            for v in todo {
+                for w in derived_of{ c, v } {
+                    if not has_id{ xs = out, n = w } {
+                        out = set_add{ c, xs = out, n = w }
+                        next = set_add{ c, xs = next, n = w }
+                    }
+                }
+            }
+            todo = next
+        }
+        return out
+    }
+
+    // How a call's result holds field name's argument, by the callee's summary: as it is
+    // (direct), and what its pointees hold (through). Both, without a summary.
+    struct Held { direct: bool, through: bool }
+
+    fn borrow_field { fields: []types::Field, summary: ?Borrow, name: []u8, err: bool, success: bool } -> Held {
+        if summary == null { return Held{ direct = true, through = true } }
         let mut i: usize = 0
         while i < fields.len {
             if slice::eq_bytes{ a = fields[i].name, b = name } {
-                return (not success and has_id{ xs = summary.err, n = @as(u32, i) }) or (not err and has_id{ xs = summary.ok, n = @as(u32, i) })
+                let n = @as(u32, i)
+                let direct = (not success and has_id{ xs = summary.err, n }) or (not err and has_id{ xs = summary.ok, n })
+                let through = (not success and has_id{ xs = summary.err, n = n | PRIME }) or (not err and has_id{ xs = summary.ok, n = n | PRIME })
+                return Held{ direct, through }
             }
             i = i + 1
         }
-        return true
+        return Held{ direct = true, through = true }
+    }
+
+    // What an argument whose value holds the addresses of locals xs gives a call's result held
+    // as h says.
+    fn held_derives { c: Checker, xs: []u32, h: Held } -> []u32 {
+        let mut out = if h.direct { xs } else { no_vars{} }
+        if h.through { out = set_union{ c, a = out, b = contents{ c, xs } } }
+        return out
     }
 
 
@@ -8878,8 +9611,11 @@ namespace check {
                 let mut out = if is_lit { no_vars{} } else { derives_input{ &c, e = callee.* } }
                 let mut i: usize = 0
                 while i < items.len {
-                    if is_lit or (not field_is_mut{ fields, name = items[i].name.text } and borrow_field{ fields, summary, name = items[i].name.text, err, success }) {
+                    if is_lit {
                         out = set_union{ c, a = out, b = derives_input{ &c, e = items[i].value } }
+                    } else if not field_is_mut{ fields, name = items[i].name.text } {
+                        let h = borrow_field{ fields, summary, name = items[i].name.text, err, success }
+                        if h.direct or h.through { out = set_union{ c, a = out, b = held_derives{ c, xs = derives_input{ &c, e = items[i].value }, h } } }
                     }
                     i = i + 1
                 }
@@ -8888,9 +9624,10 @@ namespace check {
                     i = 0
                     while i < fw.len {
                         let f = fw[i]
-                        if not f.mutable and borrow_field{ fields, summary, name = f.name, err, success } {
+                        if not f.mutable {
+                            let h = borrow_field{ fields, summary, name = f.name, err, success }
                             let conv_to = if f.conv == null { f.ty } else { conv_target{ conv = f.conv } }
-                            if contains_ptr{ &c, t = conv_to, seen = no_vars{} } { out = set_union{ c, a = out, b = derived_of{ c, v = f.var } } }
+                            if (h.direct or h.through) and contains_ptr{ &c, t = conv_to, seen = no_vars{} } { out = set_union{ c, a = out, b = held_derives{ c, xs = derived_of{ c, v = f.var }, h } } }
                         }
                         i = i + 1
                     }
@@ -11672,6 +12409,12 @@ namespace check {
                             if h == null or (f.mutable != h.mutable and (f.mutable or not thunk)) or not types::unify{ s = &c.ty, a = f.ty, b = h.ty } { return false }
                             i = i + 1
                         }
+                        // What it keeps, the type it becomes must say it may (§14, Escape check).
+                        if types::get{ s = c.ty, id = g } is func{ keeps = gk } {
+                            if types::get{ s = c.ty, id = s } is func{ keeps = sk } {
+                                if not types::keeps_within{ a = gk, b = sk } { return false }
+                            }
+                        }
                         return types::unify{ s = &c.ty, a = gr, b = sr } or widens_result{ &c, from = gr, into = sr }
                     }
                     else => { return false }
@@ -11729,6 +12472,21 @@ namespace check {
                             return @fmt(&b, " doesn't provide")
                         }
                         i = i + 1
+                    }
+                }
+                // What it keeps, which the type it is to be doesn't say it may (§14, Escape check).
+                if types::get{ s = c.ty, id = x } is func{ keeps = ak } {
+                    if types::get{ s = c.ty, id = y } is func{ keeps = ek } {
+                        if not types::keeps_within{ a = ak, b = ek } {
+                            let mut more = list::new(types::Keep){ realloc = arena::alloc, heap = c.heap }
+                            for k in ak { if not types::has_keep{ xs = ek, k } { try list::push{ list = &more, item = k } } }
+                            let extra = list::items{ list = more }
+                            try @fmt(&b, "expected ")
+                            try write_type{ c, t = y, &b }
+                            try @fmt(&b, ", got ")
+                            try write_type{ c, t = x, &b }
+                            return @fmt(&b, ": by its type {}, which the type expected doesn't say, and a call through it goes by that type", keeps_effects{ c, keeps = extra })
+                        }
                     }
                 }
             }
@@ -12442,7 +13200,7 @@ namespace check {
                 }
                 let ct = c_fn_value{ &c, d = decl, exp, at = expr_at{ e } }
                 if ct != types::NO_TYPE { return ct }
-                return fn_type{ &c, d = decl, targs }
+                return fn_value_type{ &c, d = decl, targs, exp, at = expr_at{ e }, key = expr_key{ e } }
             }
             constant{ decl } => { return get_decl{ c, d = decl }.ty }
             variant{ ty, index } => {
@@ -12503,19 +13261,51 @@ namespace check {
                     errorf{ &c, at, msg = @fmt("callback `{}` can't have type {}: its field `{}` is capability {}, which {}", str{ s = x.name.text }, tstr{ c, t = want }, str{ s = lf.name }, tstr{ c, t = lf.ty }, str{ s = NO_THUNK }) }
                     return types::ERROR
                 }
-                let own = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = false }
+                let own = types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = false, keeps = x.keeps }
                 if fn_accepts{ &c, g = own, s = want, thunk = false } { return want }
             }
-            if external { return types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true } }
+            if external { return types::func{ s = &c.ty, fields = x.fields, ret = x.ret, bound = false, external = true, keeps = x.keeps } }
         }
         return types::NO_TYPE
     }
 
     fn fn_type { mut c: Checker, d: u32, targs: []Id } -> Id {
         let x = get_decl{ c, d }
+        return fn_type_keeping{ &c, d, targs, keeps = x.keeps }
+    }
+
+    // Whether exp is a function type, or a `?` of one.
+    fn exp_func { c: Checker, exp: Id } -> bool {
+        if exp == types::NO_TYPE { return false }
+        let mut want = types::prune{ s = c.ty, t = exp }
+        if types::get{ s = c.ty, id = want } is opt{ elem } { want = types::prune{ s = c.ty, t = elem } }
+        return types::get{ s = c.ty, id = want } is func
+    }
+
+    // fn_type with contract keeps.
+    fn fn_type_keeping { mut c: Checker, d: u32, targs: []Id, keeps: []types::Keep } -> Id {
+        let x = get_decl{ c, d }
         let fields = subst_fields{ &c, fields = x.fields, decl = d, args = targs }
         let ret = if targs.len == 0 { x.ret } else { types::subst{ s = &c.ty, t = x.ret, decl = d, args = targs } }
-        return types::func{ s = &c.ty, fields, ret, bound = false, external = false }
+        return types::func{ s = &c.ty, fields, ret, bound = false, external = false, keeps }
+    }
+
+    // The type of fn d as a value (§14, Escape check): with its contract if it is held to one,
+    // and otherwise with the contract of the function type exp, the type it is to have, if it
+    // is one, or none; what its body keeps is checked against it once it is known
+    // (check_fn_values).
+    fn fn_value_type { mut c: Checker, d: u32, targs: []Id, exp: Id, at: source::Span, key: u64 } -> Id {
+        let x = get_decl{ c, d }
+        let mut keeps = x.keeps
+        let typed = exp_func{ c, exp }
+        if not x.contract and typed {
+            let mut want = types::prune{ s = c.ty, t = exp }
+            if types::get{ s = c.ty, id = want } is opt{ elem } { want = types::prune{ s = c.ty, t = elem } }
+            if types::get{ s = c.ty, id = want } is func{ keeps = ks } { keeps = ks }
+        }
+        // One that starts a task is only called, which is reported (path_expr).
+        if c.borrow_ready and not x.starts_task { try! list::push{ list = &c.fn_values, item = FnValue{ key, d, at, bound = slice::empty([]u8){}, callee = types::NO_TYPE, typed = typed or x.contract } } }
+        return fn_type_keeping{ &c, d, targs, keeps }
     }
 
     fn targs_of { mut c: Checker, seg: syntax::Seg } -> ?[]Id {
@@ -12797,7 +13587,7 @@ namespace check {
         }
         c.starting = starting
         c.call_decl = if callee.k is path { call_fn{ c, e = callee } } else { NONE }
-        return call_args{ &c, e, ft, name, items, forward, bind }
+        return call_args{ &c, e, ft, name, items, forward, bind, exp }
     }
 
     // The fix for braces e that should not be there and hold nothing: they go.
@@ -12976,7 +13766,7 @@ namespace check {
     }
 
     // A call or a bind of function type ft (ctxi's call_args).
-    fn call_args { mut c: Checker, e: syntax::Expr, ft: Id, name: utf8::String, items: []syntax::Item, forward: bool, bind: bool } -> Id {
+    fn call_args { mut c: Checker, e: syntax::Expr, ft: Id, name: utf8::String, items: []syntax::Item, forward: bool, bind: bool, exp: Id } -> Id {
         let starting = c.starting
         c.starting = false
         let call_decl = c.call_decl
@@ -13083,11 +13873,34 @@ namespace check {
         c.cap_shared = starting
         let refs = check_exclusive{ &c, e, items, fields, callee = call_decl, name }
         c.cap_shared = false
+        if c.borrow_ready and not bind and not starting { if e.k is braced{ callee } { check_keeps{ &c, e, callee = callee.*, items, fields, name } } }
         if bind {
             try! map::put{ m = &c.holds, key = expr_key{ e }, value = refs }
-            return types::func{ s = &c.ty, fields = gone, ret, bound = true, external = false }
+            let mut given = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
+            for f in fields { if types::find_field{ fields = gone, name = f.name } == null { try! list::push{ list = &given, item = f.name } } }
+            if c.borrow_ready and not starting { try! list::push{ list = &c.fn_values, item = FnValue{ key = expr_key{ e }, d = call_decl, at = expr_at{ e }, bound = list::items{ list = given }, callee = ft, typed = exp_func{ c, exp } } } }
+            return types::func{ s = &c.ty, fields = gone, ret, bound = true, external = false, keeps = bind_keeps{ c, ft, gone, exp } }
         }
         return ret
+    }
+
+    // The contract of a bind of a function of type ft, whose fields gone aren't given (§14,
+    // Escape check): the one of exp, the type it is to have, if that is a function type, which
+    // check_fn_values holds it to, and otherwise ft's, of its fields gone.
+    fn bind_keeps { c: Checker, ft: Id, gone: []types::Field, exp: Id } -> []types::Keep {
+        if exp != types::NO_TYPE {
+            let mut want = types::prune{ s = c.ty, t = exp }
+            if types::get{ s = c.ty, id = want } is opt{ elem } { want = types::prune{ s = c.ty, t = elem } }
+            if types::get{ s = c.ty, id = want } is func{ keeps } { return keeps }
+        }
+        let func{ keeps } = types::get{ s = c.ty, id = ft } else { return slice::empty(types::Keep){} }
+        let mut out = list::new(types::Keep){ realloc = arena::alloc, heap = c.heap }
+        for k in keeps {
+            if types::find_field{ fields = gone, name = k.arg } == null { continue }
+            if k.into.len > 0 and types::find_field{ fields = gone, name = k.into } == null { continue }
+            try! list::push{ list = &out, item = k }
+        }
+        return list::items{ list = out }
     }
 
     // A `mut` field's argument, of type at where t is wanted: the types match, or at points to a
@@ -14497,7 +15310,7 @@ namespace check {
             if fd != null {
                 bt = types::ptr{ s = &c.ty, elem = fd.ty, mutable = true }
                 let ret = result_of{ c, t = exp }
-                ty = types::func{ s = &c.ty, fields = one_field{ c, f = fd }, ret, bound = true, external = false }
+                ty = types::func{ s = &c.ty, fields = one_field{ c, f = fd }, ret, bound = true, external = false, keeps = slice::empty(types::Keep){} }
             } else if exp == types::NO_TYPE {
                 error{ &c, at = expr_at{ e }, msg = "an @fmt without a sink needs a type to be: a writer, a function of its sink such as `utf8::Fmt(S)`" }
                 ok = false

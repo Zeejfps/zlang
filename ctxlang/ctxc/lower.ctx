@@ -591,7 +591,7 @@ namespace lower {
                     add_field{ xs = &fs, f = types::Field{ name = f.name, mutable = f.mutable, ty = norm{ &l, t = f.ty } } }
                     i = i + 1
                 }
-                return types::func{ s = &l.c.ty, fields = list::items{ list = fs }, ret = norm{ &l, t = ret }, bound, external }
+                return types::func{ s = &l.c.ty, fields = list::items{ list = fs }, ret = norm{ &l, t = ret }, bound, external, keeps = slice::empty(types::Keep){} }
             }
             else => { return x }
         }
@@ -1756,7 +1756,7 @@ namespace lower {
         try! list::push{ list = &params, item = ir::Param{ name = "result", mutable = false, ty = pt } }
         try! list::push{ list = &l.locals, item = ir::Local{ name = "record", ty = pt } }
         try! list::push{ list = &l.locals, item = ir::Local{ name = "result", ty = pt } }
-        let ft = tid{ &l, t = types::func{ s = &l.c.ty, fields = slice::empty(types::Field){}, ret = r, bound = true, external = false } }
+        let ft = tid{ &l, t = types::func{ s = &l.c.ty, fields = slice::empty(types::Field){}, ret = r, bound = true, external = false, keeps = slice::empty(types::Keep){} } }
         let rt = tid{ &l, t = r }
         let run = mk{ ty = ft, k = ir::ExprKind::cast{ e = box{ l, e = mk{ ty = pt, k = ir::ExprKind::local{ slot = 0 } } } } }
         let call = mk{ ty = rt, k = ir::ExprKind::dcall{ callee = box{ l, e = run }, args = slice::empty(ir::Arg){}, pos = nowhere{} } }

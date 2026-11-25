@@ -33,6 +33,12 @@ namespace types {
     // A context field of a function type, in declaration order.
     struct Field { name: []u8, mutable: bool, ty: Id }
 
+    // One part of a function's borrowing contract (§14, Escape check): read-only field arg may
+    // be kept by the result, if into is empty (`-> T from arg`), or in field into
+    // (`arg: T into into`). A function type's are sorted (sorted_keeps), so equal contracts are
+    // equal.
+    struct Keep { arg: []u8, into: []u8 }
+
     // decl indexes the checker's table of declarations (check::Decl).
     union Type {
         error,
@@ -49,8 +55,9 @@ namespace types {
         enumeration{ decl: u32 },
         // A function type. An external one, `extern fn{...}`, is a C function pointer: its
         // fields are C's parameters in order, so order is part of its identity, and it is never
-        // bound.
-        func{ fields: []Field, ret: Id, bound: bool, external: bool },
+        // bound. keeps: its contract, what its result and its fields may keep of its read-only
+        // fields, sorted (§14, Escape check).
+        func{ fields: []Field, ret: Id, bound: bool, external: bool, keeps: []Keep },
         param{ decl: u32, index: u32 },         // generic parameter `index` of decl, opaque
         var{ n: u32 },                          // inference variable n (Store.vars)
         // An error (§8, Errors): one of function owner's, whose set is inferred from its body,
@@ -145,9 +152,76 @@ namespace types {
         return intern{ &s, t = Type::array{ n, elem } }
     }
 
-    // The type of a function with fields and ret, a copy of which the store keeps.
-    fn func { mut s: Store, fields: []Field, ret: Id, bound: bool, external: bool } -> Id {
-        return intern{ &s, t = Type::func{ fields = copy(Field){ s, xs = fields }, ret, bound, external } }
+    // The type of a function with fields, ret and contract keeps, copies of which the store
+    // keeps, the contract sorted and without repeats.
+    fn func { mut s: Store, fields: []Field, ret: Id, bound: bool, external: bool, keeps: []Keep } -> Id {
+        return intern{ &s, t = Type::func{ fields = copy(Field){ s, xs = fields }, ret, bound, external, keeps = sorted_keeps{ s, xs = keeps } } }
+    }
+
+    // xs sorted, by arg and then into, without repeats: a new slice in s's heap.
+    fn sorted_keeps { s: Store, xs: []Keep } -> []Keep {
+        if xs.len == 0 { return xs }
+        let mut out = list::new(Keep){ realloc = arena::alloc, heap = s.heap }
+        for k in xs {
+            let mut at: usize = 0
+            let mut have = false
+            let ys = list::items{ list = out }
+            while at < ys.len {
+                let c = keep_order{ a = ys[at], b = k }
+                if c == 0 { have = true }
+                if c >= 0 { break }
+                at = at + 1
+            }
+            if have { continue }
+            try! list::push{ list = &out, item = k }
+            let zs = list::items{ list = out }
+            let mut j = zs.len - 1
+            while j > at {
+                zs[j] = zs[j - 1]
+                j = j - 1
+            }
+            zs[at] = k
+        }
+        return list::items{ list = out }
+    }
+
+    // -1, 0 or 1 as a comes before, with or after b: by arg, then by into.
+    fn keep_order { a: Keep, b: Keep } -> i32 {
+        let c = bytes_order{ a = a.arg, b = b.arg }
+        if c != 0 { return c }
+        return bytes_order{ a = a.into, b = b.into }
+    }
+
+    fn bytes_order { a: []u8, b: []u8 } -> i32 {
+        let n = @min(a.len, b.len)
+        for i in 0..n {
+            if a[i] < b[i] { return -1 }
+            if a[i] > b[i] { return 1 }
+        }
+        if a.len < b.len { return -1 }
+        if a.len > b.len { return 1 }
+        return 0
+    }
+
+    // Whether two sorted contracts are the same.
+    fn same_keeps { a: []Keep, b: []Keep } -> bool {
+        if a.len != b.len { return false }
+        for i in 0..a.len {
+            if keep_order{ a = a[i], b = b[i] } != 0 { return false }
+        }
+        return true
+    }
+
+    // Whether contract xs has part k.
+    fn has_keep { xs: []Keep, k: Keep } -> bool {
+        for h in xs { if keep_order{ a = k, b = h } == 0 { return true } }
+        return false
+    }
+
+    // Whether every part of contract a is in contract b.
+    fn keeps_within { a: []Keep, b: []Keep } -> bool {
+        for k in a { if not has_keep{ xs = b, k } { return false } }
+        return true
     }
 
     fn record { mut s: Store, decl: u32, args: []Id } -> Id {
@@ -204,13 +278,13 @@ namespace types {
                 let now = subst_all{ &s, ts = xs, decl, args }
                 return distinct{ &s, decl = d, args = now, base = subst{ &s, t = base, decl, args } }
             }
-            func{ fields, ret, bound, external } => {
+            func{ fields, ret, bound, external, keeps } => {
                 let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
                 for i in 0..fields.len {
                     let f = fields[i]
                     try! list::push{ list = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = subst{ &s, t = f.ty, decl, args } } }
                 }
-                return func{ &s, fields = list::items{ list = fs }, ret = subst{ &s, t = ret, decl, args }, bound, external }
+                return func{ &s, fields = list::items{ list = fs }, ret = subst{ &s, t = ret, decl, args }, bound, external, keeps }
             }
             // A set may be a generic parameter (`E: error`, §9): an instance's is its argument.
             res{ ok, errs } => {
@@ -319,13 +393,13 @@ namespace types {
                 let now = zonk_all{ &s, ts = args }
                 return distinct{ &s, decl, args = now, base = zonk{ &s, t = base } }
             }
-            func{ fields, ret, bound, external } => {
+            func{ fields, ret, bound, external, keeps } => {
                 let mut fs = list::new(Field){ realloc = arena::alloc, heap = s.heap }
                 for i in 0..fields.len {
                     let f = fields[i]
                     try! list::push{ list = &fs, item = Field{ name = f.name, mutable = f.mutable, ty = zonk{ &s, t = f.ty } } }
                 }
-                return func{ &s, fields = list::items{ list = fs }, ret = zonk{ &s, t = ret }, bound, external }
+                return func{ &s, fields = list::items{ list = fs }, ret = zonk{ &s, t = ret }, bound, external, keeps }
             }
             res{ ok, errs } => {
                 let now = zonk{ &s, t = ok }
@@ -425,8 +499,9 @@ namespace types {
             // Two results are the same type only with the same errors: an error set flows into
             // another only where the checker allows it (check::coerce).
             res{ ok, errs } => { return tb is res{ ok = o, errs = e } and (errs == e or unify{ &s, a = errs, b = e }) and unify{ &s, a = ok, b = o } }
-            func{ fields, ret, bound, external } => {
-                if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex }) or bound != bd or external != ex or fields.len != fs.len { return false }
+            func{ fields, ret, bound, external, keeps } => {
+                if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex, keeps = ks }) or bound != bd or external != ex or fields.len != fs.len { return false }
+                if not same_keeps{ a = keeps, b = ks } { return false }
                 for i in 0..fields.len {
                     let f = fields[i]
                     // A C function's fields pair up in order; a ctxlang function's by name.
@@ -464,8 +539,9 @@ namespace types {
             sum{ decl = r, args = ps } => { return tb is sum{ decl = d, args = ts } and r == d and instances{ s, ps, ts, decl, args } }
             distinct{ decl = r, args = ps } => { return tb is distinct{ decl = d, args = ts } and r == d and instances{ s, ps, ts, decl, args } }
             res{ ok, errs } => { return tb is res{ ok = o, errs = e } and (errs == e or instance{ s, p = errs, t = e, decl, args }) and instance{ s, p = ok, t = o, decl, args } }
-            func{ fields, ret, bound, external } => {
-                if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex }) or bound != bd or external != ex or fields.len != fs.len { return false }
+            func{ fields, ret, bound, external, keeps } => {
+                if not (tb is func{ fields = fs, ret = r, bound = bd, external = ex, keeps = ks }) or bound != bd or external != ex or fields.len != fs.len { return false }
+                if not same_keeps{ a = keeps, b = ks } { return false }
                 for i in 0..fields.len {
                     let f = fields[i]
                     let g: ?Field = if external { fs[i] } else { find_field{ fields = fs, name = f.name } }

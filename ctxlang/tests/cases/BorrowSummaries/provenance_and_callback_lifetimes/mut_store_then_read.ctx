@@ -3,5 +3,5 @@
 
 struct Holder { s: []u8 }
 fn store { mut h: Holder, s: []u8 } -> []u8 { h.s = s; return h.s }
-fn load { mut h: Holder } -> []u8 { let buf: [3]u8 = [1,2,3]; return store{ &h, s = buf[..] } }  //~ error at 63: returned value holds the address of local `buf` //~ note at 37: `buf` is declared here
+fn load { mut h: Holder } -> []u8 { let buf: [3]u8 = [1,2,3]; return store{ &h, s = buf[..] } }  //~ error at 81: `store` keeps `s` in `h`, which belongs to the caller and outlives local `buf` whose address it holds //~ note at 37: `buf` is declared here //~ note at 11: `h` is a context field, declared here //~ error at 63: returned value holds the address of local `buf` //~ note at 37: `buf` is declared here
 fn main {} { let mut h: Holder; _ = load{ &h } }

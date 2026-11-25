@@ -1,0 +1,8 @@
+namespace names {
+    fn at { t: Table, i: usize } -> []u8 { return t.items[i] }
+    fn first { xs: [][]u8 } -> []u8 { return xs[0] }
+    fn put { mut w: World, name: []u8 } { w.last = name }
+    fn pick { a: []u8, b: []u8 } -> []u8 { return a }
+    fn same { s: []u8 } -> []u8 { return s }
+    fn twice { s: []u8 } -> []u8 from s { return s }
+}

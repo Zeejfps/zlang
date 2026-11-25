@@ -27,27 +27,6 @@ as the write-ups gave them.
    (about 25), hud (about 40), chargen (4), minigames (about 46), rules (about 40), screens (about
    15), script (8), video (8).
 
-2. **The escape check ties a lookup's or a read's result to a local key or path.** A call's
-   result counts as derived from its read-only arguments: `map::at{ m, key = k[..] }` with `k` a
-   local array, `fs::read_all{ path = buf[..n] }`, `font::load{ name = buf[..] }`,
-   `twoda::get_string{ column = buf[..] }` and a bound lookup by a name copied to a local all
-   return values "holding the address of local" the key, though they point into the map, the
-   heap or the cache. So do a by-pointer argument (`build{ doc = &doc, bytes }`) and an
-   out-pointer (`numkeys = &n`). Written: keys and paths copied to the heap first and freed with
-   a `defer`, maps holding an index into a list of pointers, const tables of column names,
-   `mut` fields (which don't count). *Partly:* the flow summaries fixed fresh allocations and
-   literal-only errors, and map lookups and reads by path borrow nothing since an extern fn or
-   an unbound fn value (`map`'s `hash` and `eq`, the OS's file calls) is taken to store an
-   argument only where it reaches a mutable place that holds a pointer (`712e40a`; KOTOR's
-   copies went in `40e80d0`). An out-pointer to a number borrows nothing. Still tied: a lookup
-   through a fn value or `&fn` whose result holds a pointer, an extern's pointer result, and a
-   value read through a pointer to a local (`read_info{ doc = &info_doc }` in lib/save, which
-   copies the module name). A `#noescape` field attribute, checked on a body and part of a fn
-   type, was weighed and put off: only KOTOR's model lookup (`&fn{ name: []u8 } ->
-   ?*mdl::Model`, 7 declarations) and two std externs would use it. *Hit by 8:* glspike,
-   engine (about 5), data (5), dialog (7), gui (3), hud, minigames (7), models (2).
-
-
 3. **A sink of the program's own needs a writer per exact type** (a `u16` hole had none), and
    every `@fmt` onto the console needs `_ =` though its writers can't fail (35 in the spike).
    (The rest of this entry is fixed: a hole takes a spec, `{:<16}`, `{:08x}`, `{:.3}`, so the

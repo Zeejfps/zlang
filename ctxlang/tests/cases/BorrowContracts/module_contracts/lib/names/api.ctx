@@ -1,0 +1,10 @@
+namespace names {
+    struct Table { items: [][]u8 }
+    struct World { last: []u8 }
+    fn at { t: Table, i: usize } -> []u8 from t
+    fn first { xs: [][]u8 } -> []u8
+    fn put { mut w: World, name: []u8 }
+    fn pick { a: []u8, b: []u8 } -> []u8 from b
+    fn same { s: []u8 } -> []u8 from s
+    fn twice { s: []u8 } -> []u8
+}

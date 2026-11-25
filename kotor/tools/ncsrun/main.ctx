@@ -239,7 +239,10 @@ fn load_situation {
     let code_path = copy{ heap = &work, b = path } ifnull { return alloc::out_of_memory }
     slice::copy(u8){ dst = code_path[code_path.len - 3..], src = "ncs" }
     let bytes = try fs::read_all{ &fs, heap = &work, realloc = arena::alloc, path = code_path }
-    let program = try nwvm::load(arena::Arena){ realloc = arena::alloc, heap = &work, name, bytes }
+    // On the work arena, not the stack: the situation points to it, and the VM keeps the
+    // situation after this returns.
+    let loaded = try nwvm::load(arena::Arena){ realloc = arena::alloc, heap = &work, name, bytes }
+    let program = try alloc::new(nwvm::Program, arena::Arena){ realloc = arena::alloc, heap = &work, value = loaded }
     let mut r = le::reader{ data }
     let ip = try le::read_u32{ &r }
     let bp = try le::read_u32{ &r }
@@ -264,7 +267,7 @@ fn load_situation {
         k = k + 1
     }
     let s = try nwvm::make_situation(arena::Arena){
-        realloc = arena::alloc, heap = &work, program = &program, instruction_ptr = ip, base_pointer = bp, stack_size, cells,
+        realloc = arena::alloc, heap = &work, program, instruction_ptr = ip, base_pointer = bp, stack_size, cells,
     }
     // It must give back what it was made from, as a save would write it again.
     if nwvm::instruction_ptr{ situation = s } != ip or s.bp != bp or s.stack_size != stack_size or s.types.len != n {
@@ -391,8 +394,14 @@ fn run_script {
     mut io: Io, mut sdl: sdl::Sdl, mut vm: nwvm::Vm, mut work: arena::Arena, mut report: Report,
     mut stub: nwstub::Stub, opts: Options, name: []u8, bytes: []u8,
 } {
-    let program = nwvm::load(arena::Arena){ realloc = arena::alloc, heap = &work, name, bytes } iferr err{ error } {
+    let loaded = nwvm::load(arena::Arena){ realloc = arena::alloc, heap = &work, name, bytes } iferr err{ error } {
         _ = @fmt(&io, "{}: {}\n", name, error)
+        report.failed = report.failed + 1
+        return
+    }
+    // On the work arena, not the stack: the VM keeps the program after this returns.
+    let program = alloc::new(nwvm::Program, arena::Arena){ realloc = arena::alloc, heap = &work, value = loaded } iferr {
+        _ = @fmt(&io, "{}: out of memory\n", name)
         report.failed = report.failed + 1
         return
     }
@@ -404,7 +413,7 @@ fn run_script {
         nwstub::clear{ &stub }
         if opts.verbose { _ = @fmt(&io, "{}:\n", name) }
         let t0 = sdl::counter{ &sdl }
-        let ran = nwvm::run{ &vm, program = &program, self = nwstub::SELF, engine = nwstub::call{ &stub, _ } }
+        let ran = nwvm::run{ &vm, program, self = nwstub::SELF, engine = nwstub::call{ &stub, _ } }
         report.ticks = report.ticks + (sdl::counter{ &sdl } - t0)
         flush_log{ &io, &stub }
         let ok = ran is ok

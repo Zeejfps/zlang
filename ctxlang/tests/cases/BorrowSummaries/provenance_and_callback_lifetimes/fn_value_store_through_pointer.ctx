@@ -2,6 +2,6 @@
 // fn value store through pointer: rejected. It is never run: it would use a dangling pointer.
 
 fn keep { slot: *mut []u8, s: []u8 } { slot.* = s }
-fn stored { f: fn{ slot: *mut []u8, s: []u8 }, slot: *mut []u8, s: []u8 } -> []u8 { f{ slot, s }; return slot.* }
-fn leak { slot: *mut []u8 } -> []u8 { let buf: [3]u8 = [1,2,3]; return stored{ f = keep, slot, s = buf[..] } }  //~ error at 65: returned value holds the address of local `buf` //~ note at 39: `buf` is declared here
+fn stored { f: fn{ slot: *mut []u8, s: []u8 into slot }, slot: *mut []u8, s: []u8 } -> []u8 { f{ slot, s }; return slot.* }
+fn leak { slot: *mut []u8 } -> []u8 { let buf: [3]u8 = [1,2,3]; return stored{ f = keep, slot, s = buf[..] } }  //~ error at 96: `stored` keeps `s` where `slot` points, which may outlive local `buf` whose address it holds //~ note at 39: `buf` is declared here //~ error at 65: returned value holds the address of local `buf` //~ note at 39: `buf` is declared here
 fn main {} { let mut x: []u8 = "a"; _ = leak{ slot = &x } }

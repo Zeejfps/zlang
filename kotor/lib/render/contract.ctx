@@ -6,12 +6,12 @@
 // a `!T` fails with any error in the type, and the function's own errors convert to it (spec §5).
 namespace render_contract {
     fn check {} {
-        let open: fn{ mut sdl: sdl::Sdl, realloc: alloc::Fn(arena::Arena), mut heap: arena::Arena, config: render::Config } -> !gpu::Device = gpu::open
-        let describe: fn{ dev: gpu::Device } -> render::Info = gpu::describe
+        let open: fn{ mut sdl: sdl::Sdl, realloc: alloc::Fn(arena::Arena), mut heap: arena::Arena, config: render::Config } -> !gpu::Device from config = gpu::open
+        let describe: fn{ dev: gpu::Device } -> render::Info from dev = gpu::describe
         let get_stats: fn{ dev: gpu::Device } -> render::Stats = gpu::get_stats
         let shadow_info: fn{ dev: gpu::Device } -> render::ShadowInfo = gpu::shadow_info
         let screen_size: fn{ dev: gpu::Device } -> render::Size = gpu::screen_size
-        let messages: fn{ dev: gpu::Device } -> []u8 = gpu::messages
+        let messages: fn{ dev: gpu::Device } -> []u8 from dev = gpu::messages
         let clear_messages: fn{ mut dev: gpu::Device } = gpu::clear_messages
         let resize: fn{ mut dev: gpu::Device, width: u32, height: u32 } -> ! = gpu::resize
 
@@ -38,7 +38,7 @@ namespace render_contract {
         let shade_pixels: fn{ dev: gpu::Device, pixels: []mut u8 } = gpu::shade_pixels
         // The enhanced renderer (docs/design/enhanced-render.md).
         let set_enhance: fn{ mut dev: gpu::Device, enhance: render::Enhance } = gpu::set_enhance
-        let get_timings: fn{ dev: gpu::Device } -> render::Timings = gpu::get_timings
+        let get_timings: fn{ dev: gpu::Device } -> render::Timings from dev = gpu::get_timings
         let present_rect: fn{ mut sdl: sdl::Sdl, dev: gpu::Device } -> render::Rect = gpu::present_rect
 
         let create_texture: fn{ mut dev: gpu::Device, desc: render::TextureDesc, data: []u8 } -> !render::Texture = gpu::create_texture

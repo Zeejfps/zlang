@@ -23,19 +23,12 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../../.
   - Details: F#5; [spec §19](../spec.md#19-build-programs).
   - *Done when:* a build can add one file.
 
-- **2. Borrow contracts in signatures.**
-  The escape check infers what a call borrows from the callee's body, so an error at a call
-  depends on code the model doesn't see, and false positives push code to heap copies. A written
-  contract (the `#noescape` field attribute that was put off) keeps reasoning local.
-  - Details: F#2; [spec §14, Escape check](../spec.md#escape-check), [§16](../spec.md#16-open-questions).
-  - *Done when:* decided: either the attribute, or a reason it isn't needed, recorded in the spec.
-
-- **3. A formatter.**
+- **2. A formatter.**
   `ctxc fmt`: one canonical layout, so a model's edits (exact-string matching) and diffs stay
   reliable.
   - *Done when:* `ctxc fmt` is idempotent over std, ctxc and kotor.
 
-- **4. `ctxc api` for a library several programs share.**
+- **3. `ctxc api` for a library several programs share.**
   `ctxc api PATH FOLDER` writes a folder's first api.ctx from what one program's first executable
   uses of it. lib/video is added by eight programs, and what binkcheck calls (`bink::split`, the
   decoders' `new` and `decode`) was added by hand, found by checking each program.
@@ -43,7 +36,7 @@ entries are cited by number, e.g. F#24) and [kotor/docs/tooling-gaps.md](../../.
   - *Done when:* `ctxc api` writes what every program it is given uses of the folder, and
     `ctxc check` of each then has no error from the boundary.
 
-- **5. Remaining friction.** Enum ordering and counts (F#10), `&fn` as a struct field
+- **4. Remaining friction.** Enum ordering and counts (F#10), `&fn` as a struct field
   (F#13), slices staying `[]mut` until freed (F#22, F#25), a `mut` argument that is a temporary
   (F#27), locking through a read-only pointer (F#28), tuples (F#29), scoped lock (F#23), array
   lengths from any folded const (F#37). Take them as they come up; each has its entry in

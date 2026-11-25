@@ -135,17 +135,20 @@ f{ a = expr, _ }
 ```text
 fn{ field: T, mut field: T, ... } -> R      // unbound: a plain function
 &fn{ field: T, mut field: T, ... } -> R     // bound: may hold addresses of places (§6)
+fn{ a: T, b: U into m, mut m: M } -> R from a   // with a contract: what it keeps (§14)
 ```
 
 1. A top-level `fn` has type `fn{C} -> R`. A bind (§4) has type `&fn{C} -> R`.
 2. A value of type `fn{C} -> R` converts implicitly to `&fn{C} -> R`. There is no conversion the other way.
 3. Both types are called the same way.
+4. A function type's contract, what its result points into (`from`) and where it keeps a field (`into`), is part of the type (§14, Escape check, rule 7): unwritten, the function keeps nothing.
 
 A function `g` of type `fn{Cg} -> Rg` (or `&fn`) is accepted where `fn{Cs} -> Rs` (or `&fn`, per rule 2) is expected iff:
 
 1. `Rg` is identical to `Rs`, or `Rg` is a `!T` that fails with an error set (a function's, §8, Errors, rules 5 and 14) and `Rs` is a `!T` of an identical `T` that may fail with any error, or that declares a set holding `Rg`'s errors (§8, Errors, rule 14), and
 2. for every field `n: T` in `Cg`, `Cs` has a field `n` with an identical type `T`, and
-3. if the field `n` is `mut` in `Cg`, it is `mut` in `Cs`.
+3. if the field `n` is `mut` in `Cg`, it is `mut` in `Cs`, and
+4. every part of `g`'s contract is in the expected type's: it keeps no more than that type says (§14, Escape check, rule 7).
 
 `Cs` may have fields that `Cg` lacks. Those fields are dropped when the value is called. A field read-only in `Cg` may be `mut` in `Cs`: a call through the converted value passes a `*mut T` for it (§2, rule 6), and the value reads the field through that pointer when it is called and passes `g` the value it read, as any read-only argument is passed (§14, rule 6): `g` sees that value, whatever the call's other arguments point to. A result of the second kind in rule 1 is **widened**: when `g` fails, the value's error is the same error, with its payload, in the numbering of `Rs`'s set: any error's, or the declared set's (§8, Errors, rule 13). All of these happen in one step: calling the converted value calls `g` once with the fields it takes, read through their pointers where they are `mut` in `Cs`, and widens what it returns. It is implicit wherever widening is (§11, Widening, rule 1), the `T` of an implicit `T` to `?T` conversion included.
 
@@ -556,6 +559,7 @@ namespace gff {
 10. Namespaces and folders are separate. A module may declare several namespaces in `api.ctx`, and several modules may add to one namespace. `ctxc where` says which module and file declare a name (§19, rule 10).
 11. Naming what a module hides is an error that names the boundary: ``gff::parse_header` is inside module `lib/formats/gff`, whose api.ctx doesn't declare it``. A `#convert` or `#write` fn is a name too: a literal or an `@fmt` sees only those its code could name (§18, Literal conversions, rule 4; §13, Formatting, rule 4).
 12. Privacy is of names, not values. A function value the inside hands out (§5) is called by whoever holds it.
+13. **A fn in `api.ctx` says what it keeps**: its contract, `from` after its result and `into` after a field's type (§14, Escape check, rules 5 and 6), where nothing written says it keeps nothing. It is held to exactly what its body keeps, so a caller can go by it, and the inside can't keep more without changing the contract; its definition writes the same contract or none.
 
 <!-- context:
 // file: build.ctx
@@ -1528,7 +1532,7 @@ An operation is checked, while compiling or by a panic when it runs, unless it i
 
 ### Escape check
 
-The compiler checks that the address of a local does not outlive it. Direct calls use inferred borrowing summaries; indirect calls remain conservative. This checks stack-local origins, not allocator ownership, arena resets or explicit frees.
+The compiler checks that the address of a local does not outlive it. A call goes by what its callee keeps of its arguments: a direct call by the callee's inferred summary, which a written contract holds it to (rule 6), and a call through a function value by its type's contract (rule 7). This checks stack-local origins, not allocator ownership, arena resets or explicit frees.
 
 1. A **stack pointer** to `L` is `&p` where `p` doesn't go through a deref and its root is `L`, a local or a read-only context field. `&x` for a `mut` context field `x` is not a stack pointer, because it points into the caller.
 2. A value is **derived from** `L` if it is a stack pointer to `L`, or is produced from a value derived from `L` by:
@@ -1536,11 +1540,11 @@ The compiler checks that the address of a local does not outlive it. Direct call
    - a struct, union or array literal, or an error with a payload (`name{ field = e }`)
    - pointer arithmetic, `@cast` or `@slice`
    - converting a `*[N]T` to a slice, slicing (`s[lo..hi]`), or `s.ptr`
-   - a `for` (§11, For): the address of its `&x`, from what the loop goes over, as `&s[i]` is; and an element's copy `x`, from what the elements of an array it goes over are
-   - a direct call, whose result is derived from the read-only parameters that may flow into that output. Success and error outputs have separate summaries: `try` propagates only error origins and yields only success origins. A fresh copy or static error need not borrow an input that only controls its contents or selection.
-   - an indirect call, whose outputs conservatively derive from all read-only arguments and the callee's captured origins; a bind (§4) copies all read-only arguments and the callee's captured origins. Arguments passed to `mut` fields do not count.
+   - a `for` (§11, For): the address of its `&x`, from what the loop goes over, as `&s[i]` is; and an element's copy `x`, from what the elements it goes over are: what the locals the array or slice points into hold, not those locals
+   - a direct call, whose result is derived from the read-only arguments that may flow into that output, by the callee's summary: an argument itself, or what the locals it points to hold, if the callee reads through it (below). Success and error outputs have separate summaries: `try` propagates only error origins and yields only success origins. A fresh copy or static error need not borrow an input that only controls its contents or selection.
+   - a call through a function value, whose result is derived from the arguments its type's contract names with `from` (rule 7), as they are and through them, and from what the value holds (§6); a bind (§4) copies all read-only arguments and the callee's captured origins. Arguments passed to `mut` fields do not count.
 
-   Summaries track parameters as whole values, not individual fields. Reads through pointers and slices preserve their input origins. Pointer-bearing stores through mutable caller storage or dereferences conservatively taint pointer-bearing outputs and propagate through calls, even if a call's result is discarded. Generic store types are substituted at direct calls, so copying bytes does not count as storing pointers. Unknown calls conservatively may store their read-only inputs and captured origins, except that an extern fn or an unbound fn value can store them only into a mutable place it reaches: through a `mut` field, or a `*mut` or `[]mut` in an argument, to a type that can hold a pointer. A lookup through a function-valued `hash` or `eq`, or a C call taking a path, so stores nothing. A generic argument decides at each call whether its type reaches one. Calls inside recursion retain conservative dependencies. Only a declared top-level `!T` result has separate output channels; generic results and projections or aggregates containing errors conservatively merge their origins. Local `!T` values and pattern payloads may also combine success and error origins; no written function type carries a borrowing contract.
+   Summaries track parameters as whole values, not individual fields. A value read through a pointer or a slice holds what its pointees hold, not where they are: what a summary says a result holds of a parameter's pointees, a call maps to what the locals its argument points to hold, at any depth, not to those locals. So a name read through `&doc`, a pointer to a local `Doc` whose bytes are on the heap, holds no address of `doc`. Pointer-bearing stores through mutable caller storage or dereferences conservatively taint pointer-bearing outputs and propagate through calls, even if a call's result is discarded; a summary also says which fields' places, or what they point to, each store goes into: what the callee keeps (rule 5). Generic store types are substituted at direct calls, so copying bytes does not count as storing pointers. A call inside recursion sees what the summary of the fn it calls says so far; the summaries of a cycle of calls are made again until none of them changes. Only a declared top-level `!T` result has separate output channels; generic results and projections or aggregates containing errors conservatively merge their origins. Local `!T` values and pattern payloads may also combine success and error origins.
 
    Only values whose type contains a pointer carry this. An error type (§8, Errors) contains one if an error of its set has a payload that does, and a `!T` if its `T` or its error type does. A `&fn` contains one; the places it holds follow §6. A string literal view, a view into const array storage, or an array literal's static view is derived from nothing. An array literal's other views are derived from its hidden local, and from what its elements are derived from (§11, Literals, rule 4).
 3. It is a compile error to:
@@ -1549,10 +1553,43 @@ The compiler checks that the address of a local does not outlive it. Direct call
    - assign a value derived from `L` to a local declared in a scope outside `L`'s
    - assign a value derived from `L` to a `mut` context field or any part of one
    - assign a value derived from `L` to a place that goes through a deref
+   - pass a value derived from `L` to a field that the callee keeps (rule 5) in a place that outlives `L`, as the rules above have it: the place given for a `mut` field that is a local declared in a scope outside `L`'s, a `mut` context field or part of one, or a place through a deref; the place a read-only field points to; or a static. Kept in a local, the local is derived from `L` after the call.
 
    While the bodies are checked a function's error set isn't known yet, so a value of its error type is taken to contain a pointer if any error of the program has a payload that does. An error above that only such a set could cause is reported once the sets are inferred, and only if the set has an error whose payload contains a pointer.
-4. Not checked: a callee storing a read-only pointer argument through its own `mut` field, and a pointer returned from a `&p` passed to a `mut` field. These remain undefined behaviour if the memory no longer exists (§12).
-5. A task's handle is derived from what its task borrows, through `mut` fields too (§15, Tasks, rules 8 and 10).
+4. Not checked: a pointer returned from a `&p` passed to a `mut` field. It remains undefined behaviour if the memory no longer exists (§12).
+5. What a function **keeps** of its read-only fields is its **contract**: the fields its result may point into, as they are or through them, written `-> R from a and b` after its result; and for each field, the fields whose places, or what they point to, it may store the field or what the field points to in, written `x: T into y and z` after the field's type. `from` names read-only fields; `into` follows a read-only field and names a `mut` field, or a read-only one whose type reaches a `*mut` or `[]mut` that can hold a pointer. `from` and `into` are names everywhere else, as `utf8::from` is.
+6. A fn's contract is inferred from its body, its summary, and needn't be written. One that is written is held to exactly: what the body keeps, no more and no less, so that callers can go by it, as by a fn's errors in an api.ctx (§10, Modules, rule 5). So is a fn's in an api.ctx (§10, Modules, rule 13), where nothing written says it keeps nothing; its definition may leave it unwritten, or write the same. `ctxc check --fix` writes what the body keeps, and `ctxc api` writes it in a first api.ctx. A fn that stores a field in a static has no contract that says so, and is an error where it is held to one.
+7. A function type's contract is part of the type (§5): unwritten, the function keeps nothing. A call through a value of the type goes by it. A fn named as a value, or a bind (§4), has the contract of the type it is to have, if it is to be a function type, and otherwise its own: what its body keeps of the fields it isn't bound must be in it, and a bind whose fn keeps a field in one the bind gives is an error, since no type can say so.
+8. An extern fn's contract is taken on its word, as its C types are (§13, Unchecked operations): unwritten, it keeps nothing.
+9. A task's handle is derived from what its task borrows, through `mut` fields too (§15, Tasks, rules 8 and 10).
+
+<!-- context:
+struct Model { n: u32 }
+-->
+```ctx
+// The result points into `m`, and nothing of `key`: a local key is fine (rule 2).
+fn at { m: []Model, key: []u8 } -> ?*Model from m {
+    if key.len == 0 or m.len == 0 { return null }
+    return &m[0]
+}
+
+// push keeps `item` in `list`: a local's address can't go into a list that outlives it.
+fn push { mut list: [4][]u8, item: []u8 into list } { list[0] = item }
+
+// A function type says what its values keep: lookup's result points into nothing passed in.
+fn spawn { lookup: &fn{ name: []u8 } -> ?*Model } -> ?*Model {
+    let mut buf: [8]u8
+    return lookup{ name = buf[..] }
+}
+
+fn main {} {
+    let models: [1]Model = [Model{ n = 1 }]
+    let mut buf: [4]u8
+    _ = at{ m = models[..], key = buf[..] }
+    let mut names: [4][]u8
+    push{ list = &names, item = buf[..] }              // names is in buf's scope: fine
+}
+```
 
 ## 15. Capabilities and the entry point
 
@@ -1695,7 +1732,7 @@ lib/script/nwarg.ctx:41:17: panic: index 5 out of bounds for length 3
 
 Settled questions are removed, and the rest keep their numbers.
 
-- **1. Dangling pointers across calls:** direct calls have inferred success/error and pointer-store origins (§14); indirect calls remain conservative, and origins through mutable arguments remain outside the check.
+- **1. Dangling pointers across calls:** what a call keeps is checked, by its callee's summary or its function type's contract (§14, Escape check); a pointer returned from a `&p` passed to a `mut` field remains outside the check (rule 4).
 - **3. Allocator instance mismatch:** `alloc::resize`, `new` and `free` take the allocator's state on each call, and passing a different `S` instance of the same type than the memory came from isn't caught. Brands would close this. Lists, maps and builders keep a pointer to their state, so they can't mix instances.
 - **4. Method sugar:** should `x.f{...}` mean `f{ first = &x, ... }`?
 - **5. File = namespace:** should each file implicitly be a namespace?
@@ -1808,6 +1845,8 @@ fn movement {
 
 9. C's global variables have no declaration of their own: a capability names them, `extern name: T` among its fields, and only its namespace reads them (§15, rule 12). Reading one is as much an effect as calling an extern fn that takes the capability.
 
+10. An extern fn's borrowing contract, `from` after its result and `into` after a field's type (§14, Escape check, rule 8), is taken on its word, as its C types are: one that keeps a pointer it is given, as a C library that holds on to a buffer does, says so with `into`, and one whose result points into an argument says so with `from`. Unwritten, it keeps nothing.
+
 ### Literal conversions
 
 ```ctx
@@ -1918,7 +1957,7 @@ fn build { mut b: Build } {
 7. `link` adds a library (`-l`), `framework` a macOS framework, and `lib_path` a directory to find libraries in (`-L`).
 8. Paths are relative to the directory `build.ctx` is in, and may leave it through `..`. Errors name an executable's files by their paths from the working directory, without `.` or `..` (`lib/formats/gff.ctx`). A file named `build.ctx` is never one of an executable's files.
 9. Names, roots, directories, libraries and paths can't be empty or hold a tab or a line break, a name is ASCII letters, digits, `_`, `-` and `.` and doesn't end in `.`, so that names Windows takes for one another differ only in ASCII's case, a generated file's name (rule 13) is ASCII letters, digits, `_` and `-` and isn't `build` or `api` in any case, and a level is 0 to 3: the build panics.
-10. `ctxc run PATH [-- ARGS...]` builds the program at PATH (a `.ctx` file, or a directory, with or without a `build.ctx`) and runs its first executable; `ctxc exe PATH -o OUT` writes that executable to OUT; `ctxc test PATH [ARGS...]` builds it to run its tests instead (§20); `ctxc check PATH` reports its errors and builds nothing (§21). Only ctxc and a C compiler are needed (internals.md, "Working on ctxc"). `ctxc graph DIR GEN LIST` runs the build program as `run` does and writes what it describes to LIST, and the files it generates to GEN, for tools that build the executables themselves (ctxc/drive.ctx). `ctxc where PATH NAME` says where the program at PATH declares NAME, `a::b::f` or a name in any namespace, with its module and where it is visible; `ctxc api PATH FOLDER` writes FOLDER/api.ctx, a first contract for a folder from what the rest of the program names of its files: each fn's signature with the errors it is inferred to fail with, and what is complete without a body moved from the files (§10, Modules, rule 3), a starting point rather than one kept up to date.
+10. `ctxc run PATH [-- ARGS...]` builds the program at PATH (a `.ctx` file, or a directory, with or without a `build.ctx`) and runs its first executable; `ctxc exe PATH -o OUT` writes that executable to OUT; `ctxc test PATH [ARGS...]` builds it to run its tests instead (§20); `ctxc check PATH` reports its errors and builds nothing (§21). Only ctxc and a C compiler are needed (internals.md, "Working on ctxc"). `ctxc graph DIR GEN LIST` runs the build program as `run` does and writes what it describes to LIST, and the files it generates to GEN, for tools that build the executables themselves (ctxc/drive.ctx). `ctxc where PATH NAME` says where the program at PATH declares NAME, `a::b::f` or a name in any namespace, with its module and where it is visible; `ctxc api PATH FOLDER` writes FOLDER/api.ctx, a first contract for a folder from what the rest of the program names of its files: each fn's signature with the errors it is inferred to fail with and what it keeps (§14, Escape check, rule 6), and what is complete without a body moved from the files (§10, Modules, rule 3), a starting point rather than one kept up to date.
 11. A build writes only under ctxc's home, in `build/run`, in a directory of the program's own, which its absolute path names: ctxcs building different programs at once don't meet. A big program's C is several units, grouped by the files that declare their functions, which are compiled at once; a unit whose C, runtime, C compiler and flags are the same as when it was last built isn't compiled again, so an edit recompiles only the units of the files it touched, and those that call a small function it changed, which each hold a copy of it for C to inline (ctxc/drive.ctx, ctxc/emit_c.ctx).
 12. `#build::sources{ dir }` on the build program's `fn build` makes the `.ctx` files under directory `dir` its files too, besides build.ctx, found as rule 5 finds an executable's, with paths as rule 8 says. So a code generator can be a library of its own, which build programs share. `fn build` may have several. They are the build program's files only, not its executables'. ctxc reads the attribute (std's `build::sources`, §17) from build.ctx before it compiles the build program, so `dir` must be a string literal; one that names no directory, or one without `.ctx` files, and the attribute on anything else in build.ctx, are errors at their positions.
 13. `build::gen_file{ &b, exe, name, text }` gives the executable a file of ctxlang source, `NAME.ctx`, that holds `text`, as if it were in one of its directories: for modules (§10, Modules, rule 1), in its executable's root. ctxc writes it in the program's build directory (rule 11), as `gen/EXE/NAME.ctx`, never in the source tree, and errors in it name that path; the executable is compiled from ctxc's own copy of the text, so another ctxc building the same program at once can't change what it compiles. It is written only when its text changed; the other `.ctx` files in its executable's directory are removed, and the directory of an executable that generates none, once it is empty. One executable can't have two files of one name, nor on Windows names that differ only in case. The build program never sees the files it generates: they are only its executables'. A `Build` writes no file itself: the text goes to ctxc with the build's description (std/build.ctx), and ctxc writes it.

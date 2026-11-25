@@ -10,7 +10,7 @@ namespace alloc {
     // The result's address is a multiple of `align`, and its bytes past the ones kept are zero:
     // memory a program hasn't written holds zero (spec §11, Initialization). Returns null on failure.
     // Byte-level, so one allocator serves every element type.
-    type Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes
+    type Fn(S) = fn{ mut heap: S, mem: Bytes, new: usize, align: usize } -> ?Bytes from mem
 
     // The allocator returned null: what every typed allocation fails with.
     error out_of_memory

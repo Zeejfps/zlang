@@ -1,0 +1,20 @@
+// `ctxc api` writes, in a folder's first api.ctx, what each fn keeps (spec §14, Escape check,
+// rule 6), where its signature doesn't say it already: `from` after its result and `into`
+// after a field's type. The program builds with the api.ctx it wrote.
+//# $ ctxc api . lib/table
+//# stdout:
+//| wrote lib/table/api.ctx: 6 declarations
+//# file lib/table/api.ctx:
+//| namespace table {
+//|     struct Table { names: [][]u8 }
+//|     struct Last { name: []u8 }
+//|     // The name at i.
+//|     fn at { t: Table, i: usize } -> []u8 from t
+//|     // Remembers a name.
+//|     fn note { mut last: Last, name: []u8 into last }
+//|     fn count { t: Table } -> usize
+//|     // Already says so.
+//|     fn whole { t: Table } -> Table from t
+//| }
+//# $ ctxc run .
+//# exit: 7

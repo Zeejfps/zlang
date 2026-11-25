@@ -43,5 +43,5 @@ fn main { mut io: Io } {
     let mut heap = arena::Arena{ buf = @slice(&mem[0], mem.len), used = 0, handed = 0 }
     let mut nums = list::new(i32){ realloc = arena::alloc, &heap }
     let mut total = 0
-    let l = list::new(i32){ realloc = log_to{ log = &io, _ }, &heap }  //~ error at 45: expected fn{ mut heap: _, mem: []mut u8, new: usize, align: usize } -> ?[]mut u8, got &fn{ mut heap: arena::Arena, mem: []mut u8, new: usize, align: usize } -> ?[]mut u8
+    let l = list::new(i32){ realloc = log_to{ log = &io, _ }, &heap }  //~ error at 45: expected fn{ mut heap: _, mem: []mut u8, new: usize, align: usize } -> ?[]mut u8 from mem, got &fn{ mut heap: arena::Arena, mem: []mut u8, new: usize, align: usize } -> ?[]mut u8 from mem
 }

@@ -133,6 +133,7 @@ namespace parser {
                 params = ctx_fields{ &p, decl = true }
             }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
+            let from = contract{ &p, word = "from", after = ret != null }
             let has_body = next_is{ p, k = tok::Kind::lbrace } and not nl{ p }
             if p.api and not p.bad and has_body {
                 // A fn of an api.ctx is its signature: the module's files define it.
@@ -148,9 +149,9 @@ namespace parser {
             if (p.api and not has_body) or bodiless {
                 let at = prev_end{ p }
                 let body = syntax::Block{ id = new_id{ &p }, span = source::Span{ file = p.file, start = at, end = at }, stmts = slice::empty(syntax::Stmt){} }
-                d = syntax::DeclKind::func{ name, tparams = tps.names, tsets = tps.sets, params, ret, body, external = false, declared = true }
+                d = syntax::DeclKind::func{ name, tparams = tps.names, tsets = tps.sets, params, ret, from, body, external = false, declared = true }
             } else {
-                d = syntax::DeclKind::func{ name, tparams = tps.names, tsets = tps.sets, params, ret, body = block{ &p }, external = false, declared = false }
+                d = syntax::DeclKind::func{ name, tparams = tps.names, tsets = tps.sets, params, ret, from, body = block{ &p }, external = false, declared = false }
             }
         } else if k == tok::Kind::kw_extern and kind{ p, ahead = 1 } == tok::Kind::kw_union {
             skip{ &p }
@@ -165,10 +166,11 @@ namespace parser {
             if next_is{ p, k = tok::Kind::lparen } { fail{ &p, msg = "an extern fn cannot have generic parameters" } }
             let params = ctx_fields{ &p, decl = true }
             let ret: ?syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { type_expr{ &p } } else { null }
+            let from = contract{ &p, word = "from", after = ret != null }
             if next_is{ p, k = tok::Kind::lbrace } and not nl{ p } { fail{ &p, msg = "an extern fn has no body: C provides it" } }
             let at = prev_end{ p }
             let body = syntax::Block{ id = new_id{ &p }, span = source::Span{ file = p.file, start = at, end = at }, stmts = slice::empty(syntax::Stmt){} }
-            d = syntax::DeclKind::func{ name, tparams = slice::empty(syntax::Name){}, tsets = slice::empty(bool){}, params, ret, body, external = true, declared = false }
+            d = syntax::DeclKind::func{ name, tparams = slice::empty(syntax::Name){}, tsets = slice::empty(bool){}, params, ret, from, body, external = true, declared = false }
         } else if k == tok::Kind::kw_struct {
             skip{ &p }
             let name = ident{ &p }
@@ -438,6 +440,33 @@ namespace parser {
         return fields
     }
 
+    // `from a and b` after a function's result, or `into a and b` after a context field's type,
+    // on the same line: the fields it names (§14, Escape check). `from` and `into` are names
+    // everywhere else, as `utf8::from` is. Empty if the word isn't there; after: whether what
+    // comes before may take it (`from` needs a result).
+    fn contract { mut p: Parser, word: []u8, after: bool } -> []syntax::Name {
+        let none = slice::empty(syntax::Name){}
+        if p.bad or not next_is{ p, k = tok::Kind::ident } or nl{ p } or not slice::eq_bytes{ a = text_of{ p, t = p.toks[p.i] }, b = word } { return none }
+        if not after {
+            failf{ &p, msg = @fmt("`{}` names the fields a function's result may point into, so it follows the result: `-> T {} a`", utf8::String{ bytes = word }, utf8::String{ bytes = word }) }
+            return none
+        }
+        skip{ &p }
+        let mut xs = list::new(syntax::Name){ realloc = arena::alloc, heap = p.heap }
+        try! list::push{ list = &xs, item = ident{ &p } }
+        while accept{ &p, k = tok::Kind::kw_and } { try! list::push{ list = &xs, item = ident{ &p } } }
+        // `-> T from a, b {`: a list as other languages write one.
+        if next_is{ p, k = tok::Kind::comma } and kind{ p, ahead = 1 } == tok::Kind::ident and kind{ p, ahead = 2 } == tok::Kind::lbrace and slice::eq_bytes{ a = word, b = "from" } {
+            let t = p.toks[p.i]
+            fix{ &p, start = t.span.start, end = t.span.end, text = " and", safe = true, msg = "join the names with `and`" }
+            slipf{ &p, span = t.span, msg = @fmt("the fields after `{}` are joined with `and`: `{} a and b`", utf8::String{ bytes = word }, utf8::String{ bytes = word }) }
+            skip{ &p }
+            try! list::push{ list = &xs, item = ident{ &p } }
+            while accept{ &p, k = tok::Kind::kw_and } { try! list::push{ list = &xs, item = ident{ &p } } }
+        }
+        return list::items{ list = xs }
+    }
+
     // `enum K {` without its integer type: an error with the two ways on, and the parse goes on
     // with `u8`.
     fn enum_without_type { mut p: Parser, keyword: tok::Token, name: syntax::Name } -> syntax::TypeExpr {
@@ -473,7 +502,8 @@ namespace parser {
             let name = ident{ &p }
             expect{ &p, k = tok::Kind::colon }
             let ty = type_expr{ &p }
-            try! list::push{ list = &xs, item = syntax::Param{ span = span_from{ p, start }, attrs, mutable, name, ty } }
+            let into = contract{ &p, word = "into", after = true }
+            try! list::push{ list = &xs, item = syntax::Param{ span = span_from{ p, start }, attrs, mutable, name, ty, into } }
             if not accept{ &p, k = tok::Kind::comma } and not lacks_comma{ &p } { break }
         }
         expect{ &p, k = close }
@@ -616,7 +646,8 @@ namespace parser {
             skip{ &p }
             let params = ctx_fields{ &p, decl = false }
             let ret: ?*syntax::TypeExpr = if accept{ &p, k = tok::Kind::arrow } { box{ &p, value = type_expr{ &p } } } else { null }
-            t = syntax::TypeKind::func{ bound, params, ret, external }
+            let from = contract{ &p, word = "from", after = ret != null }
+            t = syntax::TypeKind::func{ bound, params, ret, from, external }
         } else if k == tok::Kind::ident {
             let mut segs = list::new(syntax::Seg){ realloc = arena::alloc, heap = p.heap }
             try! list::push{ list = &segs, item = type_seg{ &p } }

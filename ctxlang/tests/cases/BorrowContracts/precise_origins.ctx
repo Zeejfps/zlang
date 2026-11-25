@@ -1,0 +1,51 @@
+// Borrowing contracts (spec §14, Escape check, rules 2 and 7): a lookup through a function value
+// points into nothing its key is, by its type's contract, so a key in a local buffer is fine;
+// a name read through a pointer to a local holds what the local holds, not its address; and so
+// does an element of a local array a `for` goes over.
+
+struct Model { n: u32 }
+struct Doc { name: []u8 }
+struct World { last: []u8 }
+
+fn find { table: []Model, name: []u8 } -> ?*Model {
+    if name.len == 0 { return null }
+    return &table[name.len % table.len]
+}
+
+fn spawn { lookup: &fn{ name: []u8 } -> ?*Model } -> u32 {
+    let mut buf: [3]u8 = "abc"
+    let m = lookup{ name = buf[..] } ifnull { return 0 }
+    return m.n
+}
+
+fn read_name { doc: *Doc } -> []u8 { return doc.*.name }
+
+fn read_into { mut w: World, name: []u8 } {
+    let doc = Doc{ name }
+    w.last = read_name{ doc = &doc }
+}
+
+// An element of a local array of literals holds a literal's bytes, not the array's address:
+// a list outside the loop may keep it.
+fn first_name { mut heap: arena::Arena } -> []u8 {
+    let mut kept = list::new([]u8){ realloc = arena::alloc, &heap }
+    let names: [2][]u8 = ["gcc", "cc"]
+    for name in names { try! list::push{ list = &kept, item = name } }
+    return list::items{ list = kept }[0]
+}
+
+fn main { mut io: Io } {
+    let models: [2]Model = [Model{ n = 7 }, Model{ n = 9 }]
+    io::println_u64{ &io, n = spawn{ lookup = find{ table = models[..], _ } } }
+    let mut w = World{ last = "" }
+    read_into{ &w, name = "kept" }
+    io::println{ &io, s = utf8::of{ chars = w.last } }
+    let mut buf: [64]u8
+    let mut heap = arena::new{ buf = buf[..] }
+    io::println{ &io, s = utf8::of{ chars = first_name{ &heap } } }
+}
+
+//# stdout:
+//| 9
+//| kept
+//| gcc

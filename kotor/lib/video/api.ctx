@@ -62,7 +62,7 @@ namespace bink {
     fn duration_us { header: Header } -> u64
     // Opens a movie and reads its header and frame index. The decoder's memory (about 2.5 times a
     // picture's pixels, plus one frame of the file) comes from `realloc`; `close` gives it back.
-    fn open(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8, tables: *bink_tables::Tables } -> OpenError!Movie
+    fn open(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, path: []u8, tables: *bink_tables::Tables } -> OpenError!Movie from tables
     // Decodes the next frame, or returns null after the last.
     fn next { mut fs: Fs, mut m: Movie } -> error(ReadError, DecodeError)!?Frame
     fn close(S) { mut fs: Fs, realloc: alloc::Fn(S), mut heap: S, mut m: Movie }
@@ -73,7 +73,7 @@ namespace bink {
     fn read_frame { mut fs: Fs, mut m: Movie } -> ReadError!?[]u8
     // Splits a frame's bytes: one packet per audio track, each a u32 size and that many bytes,
     // then the video packet.
-    fn split { header: Header, bytes: []u8, frame: u32 } -> error(bad_frame)!Packets
+    fn split { header: Header, bytes: []u8, frame: u32 } -> error(bad_frame)!Packets from bytes
     // Decodes the frame `read_frame` read: its audio packet, then its video.
     fn decode_frame { mut m: Movie, bytes: []u8 } -> DecodeError!Frame
 }
@@ -128,10 +128,10 @@ namespace bink_video {
     // A decoder's pictures and the bundles it refills, for one movie's size and tables.
     type Decoder
     fn new(S) { realloc: alloc::Fn(S), mut heap: S, width: u32, height: u32, tables: *bink_tables::Tables } -> error(
-        alloc::out_of_memory, bad_size)!Decoder
+        alloc::out_of_memory, bad_size)!Decoder from tables
     fn free(S) { realloc: alloc::Fn(S), mut heap: S, mut d: Decoder }
     // Decodes a video packet into the picture after the last one.
     fn decode { mut d: Decoder, packet: []u8 } -> Error!
     // The last picture decoded, plane p: 0 Y, 1 U (Cb), 2 V (Cr).
-    fn plane { d: Decoder, p: u32 } -> Plane
+    fn plane { d: Decoder, p: u32 } -> Plane from d
 }
