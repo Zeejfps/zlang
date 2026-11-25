@@ -1,0 +1,79 @@
+// find_header gives the first field of a name, compared without ASCII case; find_header_from
+// walks the fields that repeat. has_token reads a comma-separated value, each element whole
+// and without the spaces and tabs around it, without case.
+
+fn main { mut io: Io } {
+    let mut array: [8]http::Header
+    let mut headers = array[..]
+    let text = "GET / HTTP/1.1\r\nHost: h\r\nSet-Cookie: a=1\r\nconnection: keep-alive, Upgrade\r\nSET-COOKIE: b=2\r\nX-Empty:\r\nset-cookie: c=3\r\n\r\n"
+    let head = try! http::parse_request_head{ buffer = text, &headers } ifnull { return }
+    let h = head.headers
+    for name in ["host", "HOST", "Connection", "x-empty", "set-cookie", "Set-Cookie-2", "Hos", ""] {
+        if let v = http::find_header{ headers = h, name } { _ = @fmt(&io, "{}: \"{}\"\n", name, v) } else { _ = @fmt(&io, "{}: none\n", name) }
+    }
+    let mut from: usize = 0
+    while true {
+        let i = http::find_header_from{ headers = h, name = "Set-Cookie", from } ifnull { break }
+        _ = @fmt(&io, "set-cookie at {}: {}\n", i, h[i].value)
+        from = i + 1
+    }
+    if http::find_header_from{ headers = h, name = "host", from = 100 } == null { _ = @fmt(&io, "none past the end\n") }
+    if http::find_header{ headers = h[..0], name = "host" } == null { _ = @fmt(&io, "none in no fields\n") }
+
+    let tests = [
+        "keep-alive, Upgrade", "upgrade",
+        "keep-alive,Upgrade", "UPGRADE",
+        " \tupgrade\t ", "upgrade",
+        "close", "close",
+        "Close", "close",
+        "upgraded", "upgrade",                  // a longer token
+        "x-upgrade", "upgrade",
+        "upgrade-x, close", "upgrade",
+        "up grade", "upgrade",
+        "upgrade;q=1", "upgrade",               // a parameter makes another element
+        ",,close,,", "close",
+        "", "close",
+        ",", "close",
+        "a, b , c", "b",
+        "a, b , c", "c",
+        "a, b , c", "a",
+        "a, b , c", "d",
+    ]
+    let mut k: usize = 0
+    while k < tests.len {
+        _ = @fmt(&io, "has_token(\"{}\", \"{}\") = {}\n", tests[k], tests[k + 1], http::has_token{ value = tests[k], token = tests[k + 1] })
+        k = k + 2
+    }
+}
+
+//# stdout escaped:
+//| host: "h"
+//| HOST: "h"
+//| Connection: "keep-alive, Upgrade"
+//| x-empty: ""
+//| set-cookie: "a=1"
+//| Set-Cookie-2: none
+//| Hos: none
+//| : none
+//| set-cookie at 1: a=1
+//| set-cookie at 3: b=2
+//| set-cookie at 5: c=3
+//| none past the end
+//| none in no fields
+//| has_token("keep-alive, Upgrade", "upgrade") = true
+//| has_token("keep-alive,Upgrade", "UPGRADE") = true
+//| has_token(" \tupgrade\t ", "upgrade") = true
+//| has_token("close", "close") = true
+//| has_token("Close", "close") = true
+//| has_token("upgraded", "upgrade") = false
+//| has_token("x-upgrade", "upgrade") = false
+//| has_token("upgrade-x, close", "upgrade") = false
+//| has_token("up grade", "upgrade") = false
+//| has_token("upgrade;q=1", "upgrade") = false
+//| has_token(",,close,,", "close") = true
+//| has_token("", "close") = false
+//| has_token(",", "close") = false
+//| has_token("a, b , c", "b") = true
+//| has_token("a, b , c", "c") = true
+//| has_token("a, b , c", "a") = true
+//| has_token("a, b , c", "d") = false

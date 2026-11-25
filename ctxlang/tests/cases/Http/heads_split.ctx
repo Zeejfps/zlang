@@ -1,0 +1,81 @@
+// A head that is still arriving is null, at every length short of its end, and whole once its
+// empty line is in: the parsers read each line only once its end has arrived. A bad head is
+// null, or the same error at the same offset, at every length, so a head is refused as soon as
+// the line that is wrong is whole, however its bytes came. Bytes after the head are left.
+
+fn try_request { text: []u8 } -> !?usize {
+    let mut array: [8]http::Header
+    let mut headers = array[..]
+    let head = try http::parse_request_head{ buffer = text, &headers } ifnull { return null }
+    return head.size
+}
+
+fn try_response { text: []u8 } -> !?usize {
+    let mut array: [8]http::Header
+    let mut headers = array[..]
+    let head = try http::parse_response_head{ buffer = text, &headers } ifnull { return null }
+    return head.size
+}
+
+fn parse_either { text: []u8, request: bool } -> !?usize {
+    if request { return try_request{ text } }
+    return try_response{ text }
+}
+
+fn describe { mut io: Io, r: !?usize } {
+    match r {
+        ok{ value } => {
+            if let n = value { _ = @fmt(&io, "{} bytes", n) } else { _ = @fmt(&io, "incomplete") }
+        }
+        http::malformed{ at } => { _ = @fmt(&io, "malformed at {}", at) }
+        err{ error } => { _ = @fmt(&io, "{}", error) }
+    }
+}
+
+// Whether r is null or the same as whole.
+fn agrees { r: !?usize, whole: !?usize } -> bool {
+    if r is ok{ value = v } and v == null { return true }
+    if r is ok{ value = a } and whole is ok{ value = b } { return a == b }
+    if r is http::malformed{ at = p } and whole is http::malformed{ at = q } { return p == q }
+    if r is http::too_many_headers and whole is http::too_many_headers { return true }
+    if r is http::unsupported_version and whole is http::unsupported_version { return true }
+    if r is http::unsupported_coding and whole is http::unsupported_coding { return true }
+    return false
+}
+
+fn show { mut io: Io, text: []u8, request: bool } {
+    let whole = parse_either{ text, request }
+    let mut first: usize = text.len + 1        // the shortest prefix that isn't null
+    for n in 0..text.len {
+        let r = parse_either{ text = text[..n], request }
+        if not agrees{ r, whole } {
+            _ = @fmt(&io, "DISAGREES at {}: ", n)
+            describe{ &io, r }
+            _ = @fmt(&io, "\n")
+        }
+        if first > text.len and not (r is ok{ value = v } and v == null) { first = n }
+    }
+    describe{ &io, r = whole }
+    if first <= text.len { _ = @fmt(&io, ", from {} bytes of {}\n", first, text.len) } else { _ = @fmt(&io, ", only whole, {} bytes\n", text.len) }
+}
+
+fn main { mut io: Io } {
+    show{ &io, text = "\r\nPOST /p?q HTTP/1.1\r\nHost: h\r\nContent-Length: 5\r\nX:  a b \r\n\r\nhello", request = true }
+    show{ &io, text = "GET / HTTP/1.0\n\n", request = true }
+    show{ &io, text = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\n", request = false }
+    show{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\nBad Name: x\r\nMore: y\r\n\r\n", request = true }
+    show{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\n", request = true }
+    show{ &io, text = "GET / HTTP/3.0\r\nHost: h\r\n\r\n", request = true }
+    show{ &io, text = "HTTP/1.1 200 OK\r\nTransfer-Encoding: br\r\n\r\n", request = false }
+    show{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\n\rX", request = true }
+}
+
+//# stdout:
+//| 62 bytes, from 62 bytes of 67
+//| 16 bytes, only whole, 16 bytes
+//| 47 bytes, from 47 bytes of 50
+//| malformed at 28, from 38 bytes of 49
+//| malformed at 60, from 63 bytes of 65
+//| http::unsupported_version, from 16 bytes of 27
+//| http::unsupported_coding, from 40 bytes of 42
+//| malformed at 25, only whole, 27 bytes

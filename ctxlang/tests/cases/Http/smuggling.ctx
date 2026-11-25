@@ -1,0 +1,126 @@
+// Where request smuggling hides, the parsers refuse: both Content-Length and Transfer-Encoding
+// (at the second of them), two lengths that differ (at the second value), a length that isn't
+// digits or overflows a u64 (at its value), a coding after chunked (at it), any coding but
+// chunked (unsupported_coding), chunked with parameters, Transfer-Encoding in HTTP/1.0, and
+// obsolete folding. Equal lengths, in two fields or a list, are one; empty list elements are
+// ignored; coding names have no case. Each line is the fields after "POST / HTTP/1.1\r\nHost:
+// h\r\n", which are 26 bytes.
+
+fn show { mut io: Io, fields: []u8 } {
+    let mut text: [512]u8
+    let start = "POST / HTTP/1.1\r\nHost: h\r\n"
+    slice::copy(u8){ dst = text[..start.len], src = start }
+    slice::copy(u8){ dst = text[start.len..start.len + fields.len], src = fields }
+    slice::copy(u8){ dst = text[start.len + fields.len..start.len + fields.len + 2], src = "\r\n" }
+    let mut array: [8]http::Header
+    let mut headers = array[..]
+    let r = http::parse_request_head{ buffer = text[..start.len + fields.len + 2], &headers }
+    match r {
+        ok{ value } => {
+            let head = value ifnull { return }
+            match http::frame_request{ head } {
+                none => { _ = @fmt(&io, "none\n") }
+                length{ n } => { _ = @fmt(&io, "length {}\n", n) }
+                chunked => { _ = @fmt(&io, "chunked\n") }
+                until_close => { _ = @fmt(&io, "until close\n") }
+            }
+        }
+        http::malformed{ at } => { _ = @fmt(&io, "malformed at {}\n", at) }
+        err{ error } => { _ = @fmt(&io, "{}\n", error) }
+    }
+}
+
+fn main { mut io: Io } {
+    show{ &io, fields = "" }
+    show{ &io, fields = "Content-Length: 5\r\n" }
+    show{ &io, fields = "content-LENGTH:0\r\n" }
+    show{ &io, fields = "Content-Length: 18446744073709551615\r\n" }
+    show{ &io, fields = "Transfer-Encoding: chunked\r\n" }
+    show{ &io, fields = "transfer-encoding: CHUNKED\r\n" }
+    show{ &io, fields = "Transfer-Encoding: , chunked ,\r\n" }
+    // Both fields, either way round: at the second.
+    show{ &io, fields = "Content-Length: 5\r\nTransfer-Encoding: chunked\r\n" }        // 45
+    show{ &io, fields = "Transfer-Encoding: chunked\r\nContent-Length: 5\r\n" }        // 54
+    // Lengths.
+    show{ &io, fields = "Content-Length: 5\r\nContent-Length: 5\r\n" }
+    show{ &io, fields = "Content-Length: 5\r\nContent-Length: 6\r\n" }                 // 61
+    show{ &io, fields = "Content-Length: 5, 5,5\r\n" }
+    show{ &io, fields = "Content-Length: 5, 6\r\n" }                                   // 45
+    show{ &io, fields = "Content-Length: 5,\r\n" }                                     // 44: an empty element
+    show{ &io, fields = "Content-Length: 5a\r\n" }                                     // 43
+    show{ &io, fields = "Content-Length: 5 5\r\n" }                                    // 44
+    show{ &io, fields = "Content-Length:\r\n" }                                        // 41: empty
+    show{ &io, fields = "Content-Length: -1\r\n" }                                     // 42
+    show{ &io, fields = "Content-Length: +1\r\n" }                                     // 42
+    show{ &io, fields = "Content-Length: 0x10\r\n" }                                   // 43
+    show{ &io, fields = "Content-Length: 18446744073709551616\r\n" }                   // 42: past a u64
+    // Codings.
+    show{ &io, fields = "Transfer-Encoding: gzip, chunked\r\n" }                       // a coding before chunked
+    show{ &io, fields = "Transfer-Encoding: gzip\r\n" }
+    show{ &io, fields = "Transfer-Encoding: identity\r\n" }
+    show{ &io, fields = "Transfer-Encoding: chunked, gzip\r\n" }                       // 54: after chunked
+    show{ &io, fields = "Transfer-Encoding: chunked, chunked\r\n" }                    // 54
+    show{ &io, fields = "Transfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n" }   // 73
+    show{ &io, fields = "Transfer-Encoding: gzip\r\nTransfer-Encoding: chunked\r\n" }
+    show{ &io, fields = "Transfer-Encoding: chunked;q=1\r\n" }                         // 52: chunked has no parameters
+    show{ &io, fields = "Transfer-Encoding: chunked x\r\n" }                           // 52
+    show{ &io, fields = "Transfer-Encoding:\r\n" }                                     // 44: no coding
+    show{ &io, fields = "Transfer-Encoding: ,\r\n" }                                   // 45
+    show{ &io, fields = "Transfer-Encoding: \"chunked\"\r\n" }                         // 45
+    // Folding a framing field.
+    show{ &io, fields = "Transfer-Encoding: chunked\r\n , gzip\r\n" }                  // 54
+    show{ &io, fields = "Content-Length: 1\r\n 0\r\n" }                                // 45
+    // Transfer-Encoding in HTTP/1.0 (RFC 9112 §6.1).
+    let mut array: [8]http::Header
+    let mut headers = array[..]
+    match http::parse_request_head{ buffer = "POST / HTTP/1.0\r\nTransfer-Encoding: chunked\r\n\r\n", &headers } {
+        ok => { _ = @fmt(&io, "1.0: read\n") }
+        http::malformed{ at } => { _ = @fmt(&io, "1.0: malformed at {}\n", at) }
+        else => { _ = @fmt(&io, "1.0: another error\n") }
+    }
+    // A response's framing fields are checked as a request's are.
+    match http::parse_response_head{ buffer = "HTTP/1.1 200 OK\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n", &headers } {
+        ok => { _ = @fmt(&io, "response: read\n") }
+        http::malformed{ at } => { _ = @fmt(&io, "response: malformed at {}\n", at) }
+        else => { _ = @fmt(&io, "response: another error\n") }
+    }
+}
+
+//# stdout:
+//| none
+//| length 5
+//| length 0
+//| length 18446744073709551615
+//| chunked
+//| chunked
+//| chunked
+//| malformed at 45
+//| malformed at 54
+//| length 5
+//| malformed at 61
+//| length 5
+//| malformed at 45
+//| malformed at 44
+//| malformed at 43
+//| malformed at 44
+//| malformed at 41
+//| malformed at 42
+//| malformed at 42
+//| malformed at 43
+//| malformed at 42
+//| http::unsupported_coding
+//| http::unsupported_coding
+//| http::unsupported_coding
+//| malformed at 54
+//| malformed at 54
+//| malformed at 73
+//| http::unsupported_coding
+//| malformed at 52
+//| malformed at 52
+//| malformed at 44
+//| malformed at 45
+//| malformed at 45
+//| malformed at 54
+//| malformed at 45
+//| 1.0: malformed at 17
+//| response: malformed at 36

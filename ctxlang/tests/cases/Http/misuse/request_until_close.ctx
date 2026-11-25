@@ -1,0 +1,12 @@
+// write_request_head panics for a body framed until_close: only a response's body can end
+// when the connection does, since a request's end is what the server answers.
+
+fn main { mut io: Io } {
+    let mut buf: [64]u8
+    _ = http::write_request_head{ into = buf[..], method = "POST", target = "/", host = "h", headers = [], framing = http::Framing::until_close, close = true }
+}
+
+//# panic: std/http.ctx:361:37: panic: http::write_request_head: a request's body can't end at a close
+//# path:
+//|   at http::write_request_head (std/http.ctx:361:37)
+//|   at main (request_until_close.ctx:6:33)

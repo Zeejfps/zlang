@@ -163,3 +163,12 @@ as the write-ups gave them.
     (std/test.ctx, `SLICE`): a limit is at least what it says, and nothing can print how long
     a test took. A monotonic clock under a capability that doesn't start threads would fix it.
     *Hit by 1:* std's test runner.
+
+39. **Storing through a read-only slice of `mut` elements needs the slice `mut` too.** http's head
+    parsers fill the caller's `[]mut Header` with slices of a buffer the caller owns. Written
+    `headers: []mut Header`, the escape check (§14, Escape check, rule 3) can't tell where the
+    stored slices go and refuses a buffer that is a local array, so the field is `mut headers`
+    and every caller writes `let mut headers = fields[..]` and passes `&headers`, though the
+    callee never changes which elements the slice names. Following stores through a read-only
+    slice's elements, as through a `mut` field, would drop the extra local. *Hit by 1:* http
+    (`parse_request_head`, `parse_response_head`, and the connection and server fns over them).

@@ -1,0 +1,145 @@
+// What parse_request_head and parse_response_head refuse, each with malformed's offset: a start
+// line that isn't one, a field name with a byte that isn't a token's or whitespace before its
+// colon, obsolete line folding, a control byte in a value, a bare CR, a request without its one
+// Host. Another HTTP version is unsupported_version, and a field past the caller's array
+// too_many_headers.
+
+fn request { mut io: Io, text: []u8 } {
+    let mut fields: [8]http::Header
+    let mut headers = fields[..]
+    match http::parse_request_head{ buffer = text, &headers } {
+        ok{ value } => {
+            if let head = value { _ = @fmt(&io, "request: {} fields\n", head.headers.len) } else { _ = @fmt(&io, "request: incomplete\n") }
+        }
+        http::malformed{ at } => { _ = @fmt(&io, "request: malformed at {}\n", at) }
+        err{ error } => { _ = @fmt(&io, "request: {}\n", error) }
+    }
+}
+
+fn response { mut io: Io, text: []u8 } {
+    let mut fields: [8]http::Header
+    let mut headers = fields[..]
+    match http::parse_response_head{ buffer = text, &headers } {
+        ok{ value } => {
+            if let head = value { _ = @fmt(&io, "response: {} \"{}\"\n", head.status, head.reason) } else { _ = @fmt(&io, "response: incomplete\n") }
+        }
+        http::malformed{ at } => { _ = @fmt(&io, "response: malformed at {}\n", at) }
+        err{ error } => { _ = @fmt(&io, "response: {}\n", error) }
+    }
+}
+
+fn main { mut io: Io } {
+    // Request lines.
+    request{ &io, text = " GET / HTTP/1.1\r\n\r\n" }                   // 0: no method
+    request{ &io, text = "GET\t/ HTTP/1.1\r\n\r\n" }                   // 3: a tab
+    request{ &io, text = "G(T / HTTP/1.1\r\n\r\n" }                    // 1: not a token's
+    request{ &io, text = "GET  / HTTP/1.1\r\n\r\n" }                   // 4: no target
+    request{ &io, text = "GET /\x01 HTTP/1.1\r\n\r\n" }                // 5: a control byte
+    request{ &io, text = "GET /\r\n\r\n" }                             // 5: no version
+    request{ &io, text = "GET / \r\n\r\n" }                            // 6
+    request{ &io, text = "GET / http/1.1\r\n\r\n" }                    // 6: the name has case
+    request{ &io, text = "GET / HTTP/1\r\n\r\n" }                      // 12
+    request{ &io, text = "GET / HTTP/1.x\r\n\r\n" }                    // 13
+    request{ &io, text = "GET / HTTP/1.1 \r\n\r\n" }                   // 14: after the version
+    request{ &io, text = "GET / HTTP/1.10\r\n\r\n" }                   // 14
+    request{ &io, text = "GET / HTTP/1.1\rX\n\r\n" }                   // 14: a bare CR
+    request{ &io, text = "\r\rGET / HTTP/1.1\r\n\r\n" }                // 0
+    request{ &io, text = "GET / HTTP/2.0\r\n\r\n" }
+    request{ &io, text = "GET / HTTP/0.9\r\n\r\n" }
+    // Fields: the request line is 16 bytes, Host's line 9.
+    request{ &io, text = "GET / HTTP/1.1\r\n Host: h\r\n\r\n" }        // 16: folding
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\n\tx\r\n\r\n" }  // 25: folding
+    request{ &io, text = "GET / HTTP/1.1\r\nHost : h\r\n\r\n" }        // 20: whitespace before the colon
+    request{ &io, text = "GET / HTTP/1.1\r\n: h\r\n\r\n" }             // 16: no name
+    request{ &io, text = "GET / HTTP/1.1\r\nHo\"st: h\r\n\r\n" }       // 18
+    request{ &io, text = "GET / HTTP/1.1\r\nHostname\r\n\r\n" }        // 24: no colon
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\nX: a\x01b\r\n\r\n" }    // 29: a control byte
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\nX: a\x7fb\r\n\r\n" }    // 29: DEL
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\nX: a\x00b\r\n\r\n" }    // 29: NUL
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\nX: a\rb\r\n\r\n" }      // 29: a bare CR
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\n\rX" }                  // 25
+    // Host.
+    request{ &io, text = "GET / HTTP/1.1\r\nA: b\r\n\r\n" }            // 22: where Host was due
+    request{ &io, text = "GET / HTTP/1.1\nA: b\n\n" }                  // 20
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: a\r\nhost: b\r\n\r\n" }      // 25: a second
+    request{ &io, text = "GET / HTTP/1.0\r\nHost: a\r\nHOST: a\r\n\r\n" }      // 25
+    // Fields past the array, which holds 8.
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\n2: x\r\n3: x\r\n4: x\r\n5: x\r\n6: x\r\n7: x\r\n8: x\r\n\r\n" }
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\n2: x\r\n3: x\r\n4: x\r\n5: x\r\n6: x\r\n7: x\r\n8: x\r\n9: x\r\n\r\n" }
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\n2: x\r\n3: x\r\n4: x\r\n5: x\r\n6: x\r\n7: x\r\n8: x\r\n9: x" }    // not until its line ends
+    // A bad line is refused before the head is complete; a partial one isn't looked at.
+    request{ &io, text = "GET / HTTP/1.1\r\nHost : h\r\n" }
+    request{ &io, text = "GET / HTTP/1.1\r\nHost : h" }
+
+    // Status lines.
+    response{ &io, text = "HTTP/1.1 200\r\n\r\n" }                     // no reason: read
+    response{ &io, text = "HTTP/1.1 200 \r\n\r\n" }
+    response{ &io, text = "HTTP/1.1 599 Odd\tbut fine\xc3\xa9\r\n\r\n" }
+    response{ &io, text = "\r\nHTTP/1.1 200 OK\r\n\r\n" }              // 0: no empty lines first
+    response{ &io, text = "HTTP/1.1\r\n\r\n" }                         // 8
+    response{ &io, text = "HTTP/1.1  200 OK\r\n\r\n" }                 // 9
+    response{ &io, text = "HTTP/1.1 20 OK\r\n\r\n" }                   // 11
+    response{ &io, text = "HTTP/1.1 2000 OK\r\n\r\n" }                 // 12
+    response{ &io, text = "HTTP/1.1 200OK\r\n\r\n" }                   // 12
+    response{ &io, text = "HTTP/1.1 099 x\r\n\r\n" }                   // 9: below 100
+    response{ &io, text = "HTTP/1.1 600 x\r\n\r\n" }                   // 9: past 599
+    response{ &io, text = "HTTP/1.1 200 O\x01K\r\n\r\n" }              // 14
+    response{ &io, text = "HTTP/2 200 OK\r\n\r\n" }                    // 6
+    response{ &io, text = "HTTP/2.0 200 OK\r\n\r\n" }
+    response{ &io, text = "HTTP/1.1 200 OK\r\nX : y\r\n\r\n" }         // 18
+    response{ &io, text = "HTTP/1.1 200 OK\r\n y\r\n\r\n" }            // 17
+}
+
+//# stdout:
+//| request: malformed at 0
+//| request: malformed at 3
+//| request: malformed at 1
+//| request: malformed at 4
+//| request: malformed at 5
+//| request: malformed at 5
+//| request: malformed at 6
+//| request: malformed at 6
+//| request: malformed at 12
+//| request: malformed at 13
+//| request: malformed at 14
+//| request: malformed at 14
+//| request: malformed at 14
+//| request: malformed at 0
+//| request: http::unsupported_version
+//| request: http::unsupported_version
+//| request: malformed at 16
+//| request: malformed at 25
+//| request: malformed at 20
+//| request: malformed at 16
+//| request: malformed at 18
+//| request: malformed at 24
+//| request: malformed at 29
+//| request: malformed at 29
+//| request: malformed at 29
+//| request: malformed at 29
+//| request: malformed at 25
+//| request: malformed at 22
+//| request: malformed at 20
+//| request: malformed at 25
+//| request: malformed at 25
+//| request: 8 fields
+//| request: http::too_many_headers
+//| request: incomplete
+//| request: malformed at 20
+//| request: incomplete
+//| response: 200 ""
+//| response: 200 ""
+//| response: 599 "Odd	but fineé"
+//| response: malformed at 0
+//| response: malformed at 8
+//| response: malformed at 9
+//| response: malformed at 11
+//| response: malformed at 12
+//| response: malformed at 12
+//| response: malformed at 9
+//| response: malformed at 9
+//| response: malformed at 14
+//| response: malformed at 6
+//| response: http::unsupported_version
+//| response: malformed at 18
+//| response: malformed at 17

@@ -1,0 +1,177 @@
+// The chunked decoder, fed a body split at every byte boundary and a byte at a time, gives the
+// same body, stops at the same byte (what follows is the next message's), and refuses a broken
+// body at the same offset, counted from the body's start. Sizes are up to 16 hexadecimal
+// digits in either case, extensions are ignored, trailers are checked and dropped, and a bare
+// LF ends a line. The encoder's pieces make a body the decoder reads back.
+
+// Feeds `input` to the decoder, appending the body to out[..n]: how much it used.
+fn feed { mut chunked: http::Chunked, input: []u8, mut out: [512]u8, mut n: usize } -> !usize {
+    let mut i: usize = 0
+    while i < input.len {
+        let d = try http::decode{ &chunked, input = input[i..] }
+        slice::copy(u8){ dst = out[n..n + d.body.len], src = d.body }
+        n = n + d.body.len
+        i = i + d.used
+        if d.done { break }
+        if d.used == 0 { @panic("decode used nothing") }
+    }
+    return i
+}
+
+// The input decoded whole, then split at each point, then a byte at a time: the body, how
+// much was used, or the error, which must agree every way.
+fn show { mut io: Io, input: []u8 } {
+    let mut first: [512]u8
+    let mut first_n: usize = 0
+    let mut c0 = http::Chunked{ .. }
+    let r0 = feed{ chunked = &c0, input, out = &first, n = &first_n }
+    let mut agree = true
+    for s in 0..input.len + 1 {
+        let mut out: [512]u8
+        let mut n: usize = 0
+        let mut c = http::Chunked{ .. }
+        let mut r = feed{ chunked = &c, input = input[..s], &out, &n }
+        if r is ok{ value = used } and used == s and not (c.state is done) {
+            r = feed{ chunked = &c, input = input[s..], &out, &n }
+            if r is ok{ value = used } { r = used + s }
+        }
+        if not same{ a = r0, b = r, x = first[..first_n], y = out[..n] } or (c.state is done) != (c0.state is done) { agree = false }
+    }
+    let mut out: [512]u8
+    let mut n: usize = 0
+    let mut c = http::Chunked{ .. }
+    let mut used: usize = 0
+    let mut r: !usize = 0
+    for k in 0..input.len {
+        if c.state is done { break }
+        let one = feed{ chunked = &c, input = input[k..k + 1], &out, &n }
+        if one is ok{ value = u } {
+            used = used + u
+        } else {
+            r = one
+            break
+        }
+    }
+    if r is ok { r = used }
+    if not same{ a = r0, b = r, x = first[..first_n], y = out[..n] } or (c.state is done) != (c0.state is done) { agree = false }
+    _ = @fmt(&io, "{}", if agree { "" } else { "SPLITS DISAGREE: " })
+    match r0 {
+        ok{ value } => { _ = @fmt(&io, "body \"{}\", used {} of {}, done {}\n", first[..first_n], value, input.len, c0.state is done) }
+        http::malformed{ at } => { _ = @fmt(&io, "malformed at {}\n", at) }
+    }
+}
+
+fn same { a: !usize, b: !usize, x: []u8, y: []u8 } -> bool {
+    if a is ok{ value = u } { return b is ok{ value = v } and u == v and slice::eq_bytes{ a = x, b = y } }
+    if a is http::malformed{ at = p } { return b is http::malformed{ at = q } and p == q }
+    return false
+}
+
+fn main { mut io: Io } {
+    show{ &io, input = "4\r\nWiki\r\n5\r\npedia\r\nC\r\n in\n\nchunks.\r\n0\r\n\r\n" }
+    show{ &io, input = "4\r\nWiki\r\n0\r\n\r\nGET / HTTP/1.1\r\n" }             // the next message is left
+    show{ &io, input = "4;name=value\r\nWiki\r\n6 ; a=\"b;c\" ;d\r\npedia \r\n0;last\r\n\r\n" }
+    show{ &io, input = "a\nabcdefghij\nA\r\nABCDEFGHIJ\n0\n\n" }               // bare LF; either case
+    show{ &io, input = "0000000000000004\r\nWiki\r\n0\r\n\r\n" }                // 16 digits
+    show{ &io, input = "4\r\nWiki\r\n0\r\nExpires: never\r\nX-Y:\tz \r\n\r\nrest" }  // trailers dropped
+    show{ &io, input = "0\r\n\r\n" }
+    show{ &io, input = "4\r\nWi" }                                              // not done
+    show{ &io, input = "" }
+    // Refusals.
+    show{ &io, input = "x\r\n" }                                                // 0
+    show{ &io, input = "\r\n" }                                                 // 0: no digits
+    show{ &io, input = "-1\r\n" }                                               // 0
+    show{ &io, input = "0x5\r\n" }                                              // 1
+    show{ &io, input = "12345678901234567\r\n" }                                // 16: a 17th digit
+    show{ &io, input = "4\rX" }                                                 // 1: a bare CR
+    show{ &io, input = "4 x\r\n" }                                              // 2
+    show{ &io, input = "4;a\x01\r\n" }                                          // 3
+    show{ &io, input = "4\r\nWikiX" }                                           // 7: no CRLF after the data
+    show{ &io, input = "4\r\nWiki\rX" }                                         // 7
+    show{ &io, input = "0\r\n folded: x\r\n\r\n" }                              // 3: folding
+    show{ &io, input = "0\r\nX : y\r\n\r\n" }                                   // 4
+    show{ &io, input = "0\r\n: y\r\n\r\n" }                                     // 3
+    show{ &io, input = "0\r\nX: \x01\r\n\r\n" }                                 // 6
+    show{ &io, input = "0\r\nX: y\rz\r\n\r\n" }                                 // 7
+    show{ &io, input = "0\r\n\rX" }                                             // 3
+
+    // A size line longer than CHUNK_LINE_MOST, and a trailer section longer than TRAILERS_MOST.
+    let mut long: [20000]u8
+    slice::fill(u8){ s = long[..], v = 'a' }
+    long[0] = '1'
+    long[1] = ';'
+    let mut c = http::Chunked{ .. }
+    if http::decode{ chunked = &c, input = long[..5000] } is http::malformed{ at } {
+        _ = @fmt(&io, "a long extension: malformed at {}\n", at)
+    }
+    c = http::Chunked{ .. }
+    let head = "0\r\nX: "
+    slice::copy(u8){ dst = long[..head.len], src = head }
+    if http::decode{ chunked = &c, input = long[..] } is http::malformed{ at } {
+        _ = @fmt(&io, "long trailers: malformed at {}\n", at)
+    }
+
+    // The encoder's pieces.
+    let mut line: [http::CHUNK_HEAD_MOST]u8
+    let sizes: [6]u64 = [1, 15, 16, 255, 4096, 18446744073709551615]
+    for size in sizes {
+        let n = http::write_chunk_head{ into = line[..], size }
+        _ = @fmt(&io, "{} -> \"{}\"\n", size, line[..n - 2])
+    }
+    let text = "a body sent in pieces of every size"
+    let mut body: [512]u8
+    let mut n: usize = 0
+    let mut at: usize = 0
+    let mut piece: usize = 1
+    while at < text.len {
+        let take = @min(piece, text.len - at)
+        n = n + http::write_chunk_head{ into = body[n..], size = take }
+        slice::copy(u8){ dst = body[n..n + take], src = text[at..at + take] }
+        n = n + take
+        slice::copy(u8){ dst = body[n..n + 2], src = http::CHUNK_END }
+        n = n + 2
+        at = at + take
+        piece = piece + 1
+    }
+    slice::copy(u8){ dst = body[n..n + http::LAST_CHUNK.len], src = http::LAST_CHUNK }
+    n = n + http::LAST_CHUNK.len
+    show{ &io, input = body[..n] }
+}
+
+//# stdout:
+//| body "Wikipedia in
+//|
+//| chunks.", used 41 of 41, done true
+//| body "Wiki", used 14 of 30, done true
+//| body "Wikipedia ", used 54 of 54, done true
+//| body "abcdefghijABCDEFGHIJ", used 30 of 30, done true
+//| body "Wiki", used 29 of 29, done true
+//| body "Wiki", used 39 of 43, done true
+//| body "", used 5 of 5, done true
+//| body "Wi", used 5 of 5, done false
+//| body "", used 0 of 0, done false
+//| malformed at 0
+//| malformed at 0
+//| malformed at 0
+//| malformed at 1
+//| malformed at 16
+//| malformed at 1
+//| malformed at 2
+//| malformed at 3
+//| malformed at 7
+//| malformed at 7
+//| malformed at 3
+//| malformed at 4
+//| malformed at 3
+//| malformed at 6
+//| malformed at 7
+//| malformed at 3
+//| a long extension: malformed at 4096
+//| long trailers: malformed at 16387
+//| 1 -> "1"
+//| 15 -> "f"
+//| 16 -> "10"
+//| 255 -> "ff"
+//| 4096 -> "1000"
+//| 18446744073709551615 -> "ffffffffffffffff"
+//| body "a body sent in pieces of every size", used 80 of 80, done true

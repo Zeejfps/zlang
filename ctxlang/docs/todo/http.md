@@ -1,7 +1,7 @@
 # HTTP: design
 
 Status: **design**, threads.md's item 1, after net.md. **Built: `url`** (Order of work, 1), as
-std/url.ctx; nothing else here is. HTTP/1.1, client and
+std/url.ctx, and **the core** (2 and 3), as std/http.ctx; nothing else here is. HTTP/1.1, client and
 server, written in ctxlang over `net` and `tls` (net.md), with URLs (`url`) and WebSocket
 (`websocket`) beside it.
 
@@ -121,6 +121,91 @@ returning how much of the buffer the head took, or null while it is incomplete),
 status), a chunk decoder that is a struct fed bytes and giving body bytes (`Chunked`, `decode`), and
 writers of heads into a buffer. Connections use them; a program over another transport may too.
 
+Built (Order of work, 2 and 3) as std/http.ctx, whose header says it in full:
+
+```text
+namespace http {
+    struct RequestHead { method: []u8, target: []u8, version: u8, headers: []Header, size: usize, content_length: ?u64, chunked: bool }
+    struct ResponseHead { version: u8, status: u16, reason: []u8, headers: []Header, size: usize, content_length: ?u64, chunked: bool }
+
+    fn parse_request_head { buffer: []u8, mut headers: []mut Header } -> !?RequestHead
+    fn parse_response_head { buffer: []u8, mut headers: []mut Header } -> !?ResponseHead
+    fn frame_request { head: RequestHead } -> Framing
+    fn frame_response { head: ResponseHead, method: []u8 } -> Framing
+
+    struct Chunked { state: ChunkState, left: u64, ... }         // Chunked{ .. } or a zero value starts one
+    struct Decoded { used: usize, body: []u8, done: bool }
+    fn decode { mut chunked: Chunked, input: []u8 } -> !Decoded
+
+    fn write_chunk_head { into: []mut u8, size: u64 } -> usize
+    const CHUNK_HEAD_MOST: usize = 18
+    const CHUNK_END: []u8 = "\r\n"
+    const LAST_CHUNK: []u8 = "0\r\n\r\n"
+
+    fn write_request_head { into: []mut u8, method: []u8, target: []u8, host: []u8, headers: []Header, framing: Framing, close: bool } -> !usize
+    fn write_response_head { into: []mut u8, status: u16, headers: []Header, framing: Framing, close: bool } -> !usize
+}
+```
+
+It differs from the design above in these places, with what building it settled:
+
+- **The parsers take `mut headers: []mut Header`**, a slice local of the caller's (`let mut
+  headers = fields[..]`, then `&headers`), not a read-only `[]mut Header`. The fields they store
+  hold slices of `buffer`, and the escape check (spec §14, Escape check, rule 3) can tell where a
+  kept value goes only through a place given to a `mut` field: through a read-only slice it
+  refuses the keep whenever the value comes from a local, so the read-only form could never take
+  a buffer that is a local array, the commonest caller of a sans-IO core. `read_response`,
+  `read_request` and `serve_connection` take `mut headers` too, for the same reason.
+- **A head is a struct** with `size`, the bytes the head took (what "how much of the buffer the
+  head took" is), so the body or the next message begins at `buffer[size..]`; a parser's result
+  is null while the head is incomplete.
+- **The parsers check the framing fields, and framing can't fail.** A smuggling refusal needs the
+  field's offset, which only the parser has, so the parsers refuse as they read and record
+  `content_length` and `chunked`; `frame_request` and `frame_response` give a `Framing`, not a
+  `!Framing`. `frame_response` also gives `none` for a 2xx to CONNECT (RFC 9112 §6.3), after
+  which the connection is a tunnel: what a client through an HTTPS proxy needs.
+- **Lines are read whole**: a parser looks at a line once its end has arrived, so a head is null
+  until it is complete or a whole line in it is wrong, and the same bytes give the same answer
+  however they arrived.
+- **Too many fields and too large a head**: a field past the caller's array is
+  `too_many_headers`. `head_too_large` isn't the parsers' to say: a head too large for its buffer
+  is one still incomplete when the buffer is full, which only the caller sees, so a connection
+  says it. A server answers both with 431 (RFC 6585).
+- **The writers fail, not panic**, with `head_too_large` when `into` is too small: a head's size
+  comes from fields and targets a program often takes from its input, so a short buffer is a
+  run-time case, unlike url's sizes, which the caller computes before the call. They fail with
+  `malformed{ at }` for bytes that can't be in a head (a CR in a value or a space in a target,
+  which would inject a field) and for a field the writer writes itself (Host, Content-Length,
+  Transfer-Encoding), at the offset it would have had. A status outside 100 to 599 and a request
+  framed `until_close` panic: those are the program's own numbers and choices, not its input.
+- **The writers take a `Framing`, not a `Body`**: a connection turns a `Body` into the framing its
+  head declares (`bytes` is `length`), and `until_close` is how a server sends an HTTP/1.0 client a
+  body it would have chunked; it writes `Connection: close`. `Body` is declared here for the
+  connections.
+- **The parsers refuse more than the design listed**: an HTTP/1.1 request without Host, and any
+  request with two (RFC 9112 §3.2, a server's MUST); Transfer-Encoding in HTTP/1.0 (§6.1);
+  `chunked` with parameters or twice; a status outside 100 to 599; a control byte in a value. A
+  request may be preceded by empty lines, which are skipped (§2.2).
+- **And read more**: a later HTTP/1.x as 1.1, as RFC 9110 §2.5 says a recipient should, where the
+  design took only 1.0 and 1.1 (another major version is still `unsupported_version`); a status
+  line without a reason; equal lengths, in two fields or a list ("5, 5"), as one (RFC 9110 §8.6).
+  A request target is any bytes but spaces and controls: url reads its parts.
+- **The chunk decoder gives slices**: `decode` consumes framing bytes and gives one run of body
+  bytes as a slice of its input, so a connection copies body bytes once, and can receive a chunk's
+  data (`left` bytes) straight into the program's buffer. Its `malformed{ at }` is the offset in
+  the body, not 0, so a refusal says where it is. A size line longer than `CHUNK_LINE_MOST` (4096)
+  bytes, or a trailer section longer than `TRAILERS_MOST` (16384), is malformed: both are dropped
+  as they are read, so nothing else bounds what a peer sends there.
+
+Tested in tests/cases/Http, compiled and interpreted: request and status lines and fields; each
+refusal with its offset; the smuggling cases (both length fields, two lengths, a bad length,
+obsolete folding, a coding before chunked, a coding after it, HTTP/1.0 with Transfer-Encoding);
+bare LF; heads at every prefix, null until whole and refused at the same offset; framing for
+HEAD, 1xx, 204, 304, CONNECT, HTTP/1.0 and until_close; the chunked decoder fed each body whole,
+split at every byte boundary and a byte at a time, with its refusals; chunks written and decoded
+back; heads written and parsed back, and refused into every shorter buffer; `find_header` and
+`find_header_from` with case and repeats; `has_token`; and the panics of misuse.
+
 ## Connections
 
 ```
@@ -187,7 +272,7 @@ namespace http {
 
     // Reads a response's head into the connection's buffer and `headers`. 1xx responses but
     // 101 are read and passed over.
-    fn read_response { mut net: Net, mut conn: Connection, headers: []mut Header } -> !Response
+    fn read_response { mut net: Net, mut conn: Connection, mut headers: []mut Header } -> !Response
 
     // Reads at most into.len bytes of the body: how many, 0 at its end. Chunked bodies come
     // de-chunked.
@@ -248,7 +333,7 @@ namespace http {
 
     // Reads a request's head. Null when the peer closed the connection before a new request
     // began, which is how a kept-alive connection ends.
-    fn read_request { mut net: Net, mut conn: Connection, headers: []mut Header } -> !?Incoming
+    fn read_request { mut net: Net, mut conn: Connection, mut headers: []mut Header } -> !?Incoming
 
     // Writes "100 Continue", for a request that expects it, before its body is read.
     fn send_continue { mut net: Net, mut conn: Connection } -> !
@@ -427,7 +512,7 @@ namespace http {
     // 400 (431 for a head larger than the buffer, 501 for an unknown transfer coding, 505 for the
     // version) and ends the connection. The head's deadline runs the read in a task of its own,
     // started with start_concurrent and waited for with wait_for.
-    fn serve_connection { mut net: Net, mut threads: Threads, mut conn: Connection, headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, mut exchange: Exchange } -> ! } -> !
+    fn serve_connection { mut net: Net, mut threads: Threads, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, mut exchange: Exchange } -> ! } -> !
 
     // A whole response, for a handler: status, headers, and the body as bytes.
     fn respond { mut net: Net, mut exchange: Exchange, status: u16, headers: []Header, body: []u8 } -> !
@@ -455,9 +540,10 @@ runs concurrently and what each connection costs.
 fn connection { mut net: Net, mut threads: Threads, socket: net::Socket, site: *Site } -> ! {
     defer net::close{ &net, socket }
     let mut buffer: [16384]u8
-    let mut headers: [100]http::Header
+    let mut fields: [100]http::Header
+    let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-    try http::serve_connection{ &net, &threads, &conn, headers = headers[..], limits = http::Limits{ .. }, handle = answer{ site, _ } }
+    try http::serve_connection{ &net, &threads, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } }
 }
 
 fn answer { site: *Site, mut net: Net, mut exchange: http::Exchange } -> ! {
@@ -602,7 +688,7 @@ Each with its reason; none is "later":
 
 ```
 namespace http {
-    error malformed{ at: usize }        // not HTTP/1.1: the offset in the head, or 0 in a body's framing
+    error malformed{ at: usize }        // not HTTP/1.1: the offset in the head, or in a chunked body
     error head_too_large                // a head longer than the connection's buffer
     error too_many_headers              // more fields than the caller's array holds
     error body_too_large                // past read_whole_body's or fetch's limit, or past a `length` body's length
@@ -674,9 +760,9 @@ After net.md's packages 1 to 8 (1, `task::wait_all_for`, for 6), and its 9 to 11
    Verified: Testing 1's URL cases, compiled and interpreted. **Built** (URLs, Built).
 2. **Heads.** std/http.ctx's core: `Header`, `find_header`, `find_header_from`, `has_token`, head
    parsing for requests and responses with every refusal, head writing. Verified: Testing 1's head
-   cases.
+   cases. **Built** (The core, Built).
 3. **Bodies.** `Framing` and its decision, `Body`, the chunked decoder and encoder. Verified: Testing
-   1's framing and chunked cases, split at every byte.
+   1's framing and chunked cases, split at every byte. **Built** (The core, Built).
 4. **A client over sockets.** `Stream` (plain), `Connection`, `open`, `send_request`, `write_body`,
    `finish_body`, `read_response`, `read_body`, `read_whole_body`, `discard_body`, keep-alive.
    Verified: Testing 2 without TLS or redirects.
@@ -716,6 +802,15 @@ Each package also updates spec §17's table for what it adds.
    is rarely there.
 10. **A short `into` panics** in `url`, as in `utf8` (URLs, Built). Rejected: an error, for a size
    the caller can compute before the call.
+
+11. **A head's writer fails when `into` is short**, with `head_too_large` (The core, Built), unlike
+   url's: a head's size comes from input, so a short buffer is a run-time case. Rejected: a panic,
+   which would make every server size its buffer for the largest head a client could make it send.
+12. **The parsers take `mut headers`** (The core, Built): the escape check sees where a kept slice
+   goes only through a `mut` field's place. Rejected: a read-only `[]mut Header`, which refuses
+   every buffer that is a local.
+13. **The parsers check framing; `frame_*` can't fail** (The core, Built). Rejected: refusals in
+   `frame_request`, which has no offsets to give.
 
 ## Open questions
 

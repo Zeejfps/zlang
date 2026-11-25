@@ -1,0 +1,17 @@
+// write_chunk_head panics when `into` is too small for the line: CHUNK_HEAD_MOST bytes always
+// suffice, so a shorter buffer is the caller's mistake, as url's are.
+
+fn main { mut io: Io } {
+    let mut line: [http::CHUNK_HEAD_MOST]u8
+    let n = http::write_chunk_head{ into = line[..4], size = 255 }
+    _ = @fmt(&io, "{}", line[..n])
+    _ = http::write_chunk_head{ into = line[..4], size = 4096 }
+}
+
+//# stdout escaped:
+//| ff\r
+//| \
+//# panic: std/http.ctx:337:36: panic: http::write_chunk_head: into is too small
+//# path:
+//|   at http::write_chunk_head (std/http.ctx:337:36)
+//|   at main (chunk_head_small.ctx:8:31)

@@ -1,0 +1,16 @@
+// write_response_head panics for a status outside 100 to 599, which is a number the program
+// chose, not bytes it was given.
+
+fn main { mut io: Io } {
+    let mut buf: [64]u8
+    let n = try! http::write_response_head{ into = buf[..], status = 599, headers = [], framing = http::Framing::none, close = false }
+    _ = @fmt(&io, "{} bytes\n", n)
+    _ = http::write_response_head{ into = buf[..], status = 600, headers = [], framing = http::Framing::none, close = false }
+}
+
+//# stdout:
+//| 17 bytes
+//# panic: std/http.ctx:386:43: panic: http::write_response_head: a status is 100 to 599
+//# path:
+//|   at http::write_response_head (std/http.ctx:386:43)
+//|   at main (status.ctx:8:34)

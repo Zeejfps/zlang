@@ -1,0 +1,79 @@
+// frame_request and frame_response decide how a body ends (RFC 9112 §6.3). A response to HEAD,
+// a 1xx, 204 or 304, and a 2xx to CONNECT have none, whatever their fields say; otherwise
+// chunked, then Content-Length, and a response with neither runs until the server closes. A
+// request with neither has no body. HTTP/1.0 frames as 1.1 does, without chunked, which it
+// can't have.
+
+fn write_framing { mut io: Io, framing: http::Framing } {
+    match framing {
+        none => { _ = @fmt(&io, "none\n") }
+        length{ n } => { _ = @fmt(&io, "length {}\n", n) }
+        chunked => { _ = @fmt(&io, "chunked\n") }
+        until_close => { _ = @fmt(&io, "until close\n") }
+    }
+}
+
+fn response { mut io: Io, method: []u8, text: []u8 } {
+    let mut array: [8]http::Header
+    let mut headers = array[..]
+    let head = try! http::parse_response_head{ buffer = text, &headers } ifnull { return }
+    _ = @fmt(&io, "{} {} {} \"{}\", {} of {} bytes: ", method, head.version, head.status, head.reason, head.size, text.len)
+    write_framing{ &io, framing = http::frame_response{ head, method } }
+}
+
+fn request { mut io: Io, text: []u8 } {
+    let mut array: [8]http::Header
+    let mut headers = array[..]
+    let head = try! http::parse_request_head{ buffer = text, &headers } ifnull { return }
+    _ = @fmt(&io, "{} {}: ", head.method, head.version)
+    write_framing{ &io, framing = http::frame_request{ head } }
+}
+
+fn main { mut io: Io } {
+    response{ &io, method = "GET", text = "HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nhello world\n" }
+    response{ &io, method = "GET", text = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n" }
+    response{ &io, method = "GET", text = "HTTP/1.1 200 OK\r\n\r\n" }
+    response{ &io, method = "GET", text = "HTTP/1.0 200 OK\r\n\r\n" }
+    response{ &io, method = "GET", text = "HTTP/1.0 200 OK\r\nContent-Length: 3\r\n\r\n" }
+    response{ &io, method = "HEAD", text = "HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\n" }
+    response{ &io, method = "HEAD", text = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n" }
+    response{ &io, method = "head", text = "HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\n" }    // methods have case
+    response{ &io, method = "GET", text = "HTTP/1.1 100 Continue\r\n\r\n" }
+    response{ &io, method = "GET", text = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n" }
+    response{ &io, method = "GET", text = "HTTP/1.1 199 Odd\r\nContent-Length: 4\r\n\r\n" }
+    response{ &io, method = "GET", text = "HTTP/1.1 204 No Content\r\nContent-Length: 4\r\n\r\n" }
+    response{ &io, method = "GET", text = "HTTP/1.1 304 Not Modified\r\nContent-Length: 4\r\n\r\n" }
+    response{ &io, method = "GET", text = "HTTP/1.1 205 Reset Content\r\nContent-Length: 0\r\n\r\n" }
+    response{ &io, method = "POST", text = "HTTP/1.1 404 Not Found\r\n\r\n" }
+    response{ &io, method = "CONNECT", text = "HTTP/1.1 200 Connection established\r\n\r\n" }
+    response{ &io, method = "CONNECT", text = "HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n" }
+    request{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\n\r\n" }
+    request{ &io, text = "POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 7\r\n\r\n" }
+    request{ &io, text = "POST / HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n" }
+    request{ &io, text = "POST / HTTP/1.0\r\nContent-Length: 7\r\n\r\n" }
+    request{ &io, text = "POST / HTTP/1.0\r\n\r\n" }
+}
+
+//# stdout:
+//| GET 11 200 "OK", 39 of 51 bytes: length 12
+//| GET 11 200 "OK", 47 of 47 bytes: chunked
+//| GET 11 200 "OK", 19 of 19 bytes: until close
+//| GET 10 200 "OK", 19 of 19 bytes: until close
+//| GET 10 200 "OK", 38 of 38 bytes: length 3
+//| HEAD 11 200 "OK", 39 of 39 bytes: none
+//| HEAD 11 200 "OK", 47 of 47 bytes: none
+//| head 11 200 "OK", 39 of 39 bytes: length 12
+//| GET 11 100 "Continue", 25 of 25 bytes: none
+//| GET 11 101 "Switching Protocols", 56 of 56 bytes: none
+//| GET 11 199 "Odd", 39 of 39 bytes: none
+//| GET 11 204 "No Content", 46 of 46 bytes: none
+//| GET 11 304 "Not Modified", 48 of 48 bytes: none
+//| GET 11 205 "Reset Content", 49 of 49 bytes: length 0
+//| POST 11 404 "Not Found", 26 of 26 bytes: until close
+//| CONNECT 11 200 "Connection established", 39 of 39 bytes: none
+//| CONNECT 11 407 "Proxy Authentication Required", 65 of 65 bytes: length 0
+//| GET 11: none
+//| POST 11: length 7
+//| POST 11: chunked
+//| POST 10: length 7
+//| POST 10: none

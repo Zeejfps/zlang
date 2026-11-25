@@ -1,0 +1,58 @@
+// parse_request_head reads a request line and fields into slices of the buffer, and says how
+// many bytes the head took. CRLF and bare LF both end a line; empty lines before the request
+// line are skipped; values lose the spaces and tabs around them. A later HTTP/1.x is 1.1. A
+// head is null until its empty line has arrived.
+
+fn show { mut io: Io, text: []u8 } {
+    let mut fields: [8]http::Header
+    let mut headers = fields[..]
+    let r = http::parse_request_head{ buffer = text, &headers } iferr err{ error } {
+        _ = @fmt(&io, "{}\n", error)
+        return
+    }
+    let head = r ifnull {
+        _ = @fmt(&io, "incomplete\n")
+        return
+    }
+    _ = @fmt(&io, "{} \"{}\" {} size={} of {}\n", head.method, head.target, head.version, head.size, text.len)
+    for h in head.headers { _ = @fmt(&io, "  \"{}\" = \"{}\"\n", h.name, h.value) }
+}
+
+fn main { mut io: Io } {
+    show{ &io, text = "GET /a?b HTTP/1.1\r\nHost: example.com\r\nAccept: */*\r\n\r\n" }
+    show{ &io, text = "GET / HTTP/1.1\nHost: h\n\nbody" }                     // bare LF
+    show{ &io, text = "GET / HTTP/1.1\r\nHost: h\n\r\n" }                      // mixed
+    show{ &io, text = "\r\n\nPOST /x HTTP/1.0\r\n\r\n" }                       // empty lines first; 1.0 needs no Host
+    show{ &io, text = "OPTIONS * HTTP/1.1\r\nhost:h\r\nX-Empty:\r\nX-Pad: \t a  b \t\r\n\r\n" }
+    show{ &io, text = "GET http://h/p HTTP/1.9\r\nHost: h\r\n\r\n" }           // read as 1.1
+    show{ &io, text = "M-1.x!#$%&'*+^_`|~ /%e2\xc3\xa9 HTTP/1.1\r\nHost: h\r\nV: \xc3\xa9 x\r\n\r\n" }
+    show{ &io, text = "" }
+    show{ &io, text = "\r\n" }
+    show{ &io, text = "GET / HTTP/1.1\r" }
+    show{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\n" }
+    show{ &io, text = "GET / HTTP/1.1\r\nHost: h\r\n\r" }
+}
+
+//# stdout:
+//| GET "/a?b" 11 size=53 of 53
+//|   "Host" = "example.com"
+//|   "Accept" = "*/*"
+//| GET "/" 11 size=24 of 28
+//|   "Host" = "h"
+//| GET "/" 11 size=26 of 26
+//|   "Host" = "h"
+//| POST "/x" 10 size=23 of 23
+//| OPTIONS "*" 11 size=57 of 57
+//|   "host" = "h"
+//|   "X-Empty" = ""
+//|   "X-Pad" = "a  b"
+//| GET "http://h/p" 11 size=36 of 36
+//|   "Host" = "h"
+//| M-1.x!#$%&'*+^_`|~ "/%e2é" 11 size=56 of 56
+//|   "Host" = "h"
+//|   "V" = "é x"
+//| incomplete
+//| incomplete
+//| incomplete
+//| incomplete
+//| incomplete

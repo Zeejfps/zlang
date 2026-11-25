@@ -1,0 +1,12 @@
+// write_chunk_head panics for a chunk of 0 bytes, which would end the body: LAST_CHUNK does
+// that, with the empty trailer section after it.
+
+fn main { mut io: Io } {
+    let mut line: [http::CHUNK_HEAD_MOST]u8
+    _ = http::write_chunk_head{ into = line[..], size = 0 }
+}
+
+//# panic: std/http.ctx:330:24: panic: http::write_chunk_head: a chunk of 0 bytes ends the body: write LAST_CHUNK
+//# path:
+//|   at http::write_chunk_head (std/http.ctx:330:24)
+//|   at main (chunk_head_zero.ctx:6:31)

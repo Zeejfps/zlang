@@ -1,0 +1,143 @@
+// write_request_head and write_response_head write a head that the parsers read back as it
+// was: the start line, Host for a request, the caller's fields, the framing field, and
+// Connection: close when asked or when the body runs until the close. A head that doesn't fit
+// `into` is head_too_large, at every size short of it; bytes that can't be in a head are
+// malformed at the offset where they would have gone.
+
+fn write_framing { mut io: Io, framing: http::Framing } {
+    match framing {
+        none => { _ = @fmt(&io, "none") }
+        length{ n } => { _ = @fmt(&io, "length {}", n) }
+        chunked => { _ = @fmt(&io, "chunked") }
+        until_close => { _ = @fmt(&io, "until close") }
+    }
+}
+
+fn round_trip_request { mut io: Io, method: []u8, target: []u8, host: []u8, headers: []http::Header, framing: http::Framing, close: bool } {
+    let mut buf: [512]u8
+    let n = try! http::write_request_head{ into = buf[..], method, target, host, headers, framing, close }
+    _ = @fmt(&io, "{}", buf[..n])
+    let mut array: [8]http::Header
+    let mut fields = array[..]
+    let head = try! http::parse_request_head{ buffer = buf[..n], headers = &fields } ifnull { @panic("incomplete") }
+    if head.size != n or not slice::eq_bytes{ a = head.method, b = method } or not slice::eq_bytes{ a = head.target, b = target } { @panic("read back differently") }
+    _ = @fmt(&io, "-> {} fields, ", head.headers.len)
+    write_framing{ &io, framing = http::frame_request{ head } }
+    _ = @fmt(&io, "\n")
+    // Every shorter buffer is too small.
+    for k in 0..n {
+        if not (http::write_request_head{ into = buf[..k], method, target, host, headers, framing, close } is http::head_too_large) { @panic("fit in less") }
+    }
+}
+
+fn round_trip_response { mut io: Io, status: u16, headers: []http::Header, framing: http::Framing, close: bool } {
+    let mut buf: [512]u8
+    let n = try! http::write_response_head{ into = buf[..], status, headers, framing, close }
+    _ = @fmt(&io, "{}", buf[..n])
+    let mut array: [8]http::Header
+    let mut fields = array[..]
+    let head = try! http::parse_response_head{ buffer = buf[..n], headers = &fields } ifnull { @panic("incomplete") }
+    if head.size != n or head.status != status { @panic("read back differently") }
+    _ = @fmt(&io, "-> {} fields, ", head.headers.len)
+    write_framing{ &io, framing = http::frame_response{ head, method = "GET" } }
+    _ = @fmt(&io, "\n")
+    for k in 0..n {
+        if not (http::write_response_head{ into = buf[..k], status, headers, framing, close } is http::head_too_large) { @panic("fit in less") }
+    }
+}
+
+fn refuse { mut io: Io, method: []u8, target: []u8, host: []u8, headers: []http::Header } {
+    let mut buf: [512]u8
+    match http::write_request_head{ into = buf[..], method, target, host, headers, framing = http::Framing::none, close = false } {
+        ok => { _ = @fmt(&io, "written\n") }
+        http::malformed{ at } => { _ = @fmt(&io, "malformed at {}\n", at) }
+        http::head_too_large => { _ = @fmt(&io, "too large\n") }
+    }
+}
+
+fn main { mut io: Io } {
+    round_trip_request{ &io, method = "GET", target = "/", host = "example.com", headers = [], framing = http::Framing::none, close = false }
+    round_trip_request{ &io, method = "POST", target = "/form?a=1", host = "[::1]:8080",
+                        headers = [http::Header{ name = "Content-Type", value = "text/plain" }, http::Header{ name = "X-Empty", value = "" }],
+                        framing = http::Framing::length{ n = 1234 }, close = true }
+    round_trip_request{ &io, method = "PUT", target = "/up", host = "h", headers = [http::Header{ name = "Connection", value = "keep-alive" }],
+                        framing = http::Framing::chunked, close = false }
+    round_trip_response{ &io, status = 200, headers = [http::Header{ name = "Content-Type", value = "text/html; charset=utf-8" }], framing = http::Framing::length{ n = 0 }, close = false }
+    round_trip_response{ &io, status = 404, headers = [], framing = http::Framing::chunked, close = true }
+    round_trip_response{ &io, status = 200, headers = [], framing = http::Framing::until_close, close = false }
+    round_trip_response{ &io, status = 204, headers = [], framing = http::Framing::none, close = false }
+    round_trip_response{ &io, status = 431, headers = [], framing = http::Framing::length{ n = 18446744073709551615 }, close = false }
+    round_trip_response{ &io, status = 599, headers = [], framing = http::Framing::none, close = false }    // a status without a reason
+
+    // Refusals: "GET / HTTP/1.1\r\n" is 16 bytes and "Host: h\r\n" 9.
+    refuse{ &io, method = "", target = "/", host = "h", headers = [] }                // 0
+    refuse{ &io, method = "GE T", target = "/", host = "h", headers = [] }            // 2
+    refuse{ &io, method = "GET", target = "", host = "h", headers = [] }              // 4
+    refuse{ &io, method = "GET", target = "/a b", host = "h", headers = [] }          // 6
+    refuse{ &io, method = "GET", target = "/a\r\n", host = "h", headers = [] }        // 6
+    refuse{ &io, method = "GET", target = "/", host = "h\r\nX: y", headers = [] }     // 23: a header injected
+    refuse{ &io, method = "GET", target = "/", host = "h", headers = [http::Header{ name = "", value = "v" }] }          // 25
+    refuse{ &io, method = "GET", target = "/", host = "h", headers = [http::Header{ name = "A:B", value = "v" }] }       // 26
+    refuse{ &io, method = "GET", target = "/", host = "h", headers = [http::Header{ name = "A", value = "v\nw" }] }      // 29
+    refuse{ &io, method = "GET", target = "/", host = "h", headers = [http::Header{ name = "Content-Length", value = "5" }] }       // 25
+    refuse{ &io, method = "GET", target = "/", host = "h", headers = [http::Header{ name = "transfer-encoding", value = "chunked" }] }  // 25
+    refuse{ &io, method = "GET", target = "/", host = "h", headers = [http::Header{ name = "HOST", value = "h" }] }      // 25
+    refuse{ &io, method = "GET", target = "/", host = "h", headers = [http::Header{ name = "A", value = "\xc3\xa9\t ok" }] }  // field bytes
+}
+
+//# stdout escaped:
+//| GET / HTTP/1.1\r
+//| Host: example.com\r
+//| \r
+//| -> 1 fields, none
+//| POST /form?a=1 HTTP/1.1\r
+//| Host: [::1]:8080\r
+//| Content-Type: text/plain\r
+//| X-Empty:\r
+//| Content-Length: 1234\r
+//| Connection: close\r
+//| \r
+//| -> 5 fields, length 1234
+//| PUT /up HTTP/1.1\r
+//| Host: h\r
+//| Connection: keep-alive\r
+//| Transfer-Encoding: chunked\r
+//| \r
+//| -> 3 fields, chunked
+//| HTTP/1.1 200 OK\r
+//| Content-Type: text/html; charset=utf-8\r
+//| Content-Length: 0\r
+//| \r
+//| -> 2 fields, length 0
+//| HTTP/1.1 404 Not Found\r
+//| Transfer-Encoding: chunked\r
+//| Connection: close\r
+//| \r
+//| -> 2 fields, chunked
+//| HTTP/1.1 200 OK\r
+//| Connection: close\r
+//| \r
+//| -> 1 fields, until close
+//| HTTP/1.1 204 No Content\r
+//| \r
+//| -> 0 fields, none
+//| HTTP/1.1 431 Request Header Fields Too Large\r
+//| Content-Length: 18446744073709551615\r
+//| \r
+//| -> 1 fields, length 18446744073709551615
+//| HTTP/1.1 599 \r
+//| \r
+//| -> 0 fields, until close
+//| malformed at 0
+//| malformed at 2
+//| malformed at 4
+//| malformed at 6
+//| malformed at 6
+//| malformed at 23
+//| malformed at 25
+//| malformed at 26
+//| malformed at 29
+//| malformed at 25
+//| malformed at 25
+//| malformed at 25
+//| written

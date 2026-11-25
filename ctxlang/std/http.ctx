@@ -1,0 +1,817 @@
+// std: http. HTTP/1.1's sans-IO core (docs/todo/http.md, The core): message heads parsed in a
+// buffer into slices of it, how a message's body is framed, chunked bodies decoded and encoded,
+// and heads written into a buffer. There is no socket here: a connection reads bytes into a
+// buffer and asks this core what they are, so every rule is tested without a network.
+//
+//   let mut fields: [100]http::Header
+//   let head = try http::parse_request_head{ buffer = received, headers = fields[..] } ifnull {
+//       // incomplete: receive more after `received`, and ask again
+//   }
+//   // head.method "GET", head.target "/a?b", head.version 11, head.headers, head.size
+//   let framing = http::frame_request{ head }                 // none, length{ n } or chunked
+//   let host = http::find_header{ headers = head.headers, name = "host" }
+//
+// It is pure, with no capability, so it runs in the interpreter and while compiling.
+//
+// What the parsers read (RFC 9112, with RFC 9110's fields):
+//
+//   - A head is a start line, field lines, and an empty line, each ending in CRLF or a bare LF
+//     (RFC 9112 §2.2 lets a recipient take one as a line's end). A CR anywhere else is malformed.
+//     A request may be preceded by empty lines, which are skipped (§2.2); a response may not.
+//   - A request line is `method SP target SP HTTP/1.x`: the method a token, the target any bytes
+//     but spaces and control bytes (url::parse reads it, if the program wants its parts). A
+//     status line is `HTTP/1.x SP 3DIGIT SP reason`, the status 100 to 599 and the reason any
+//     field bytes; a status line that ends after its status has an empty reason, since servers
+//     send that and the reason means nothing (RFC 9112 §4).
+//   - The version is `HTTP/` and two digits around a dot. HTTP/1.0 is 10 and HTTP/1.1 is 11; a
+//     later 1.x is read as 11, as RFC 9110 §2.5 says a recipient should. Another major version is
+//     unsupported_version.
+//   - A field line is `name: value`: the name a token, with nothing between it and the colon,
+//     the value field bytes (visible ASCII, bytes past 127, spaces and tabs), without the spaces
+//     and tabs around it. A line that starts with a space or a tab is obsolete line folding,
+//     malformed. Names and values are slices of the buffer, as they were sent.
+//   - Framing fields, where request smuggling hides (RFC 9112 §6): Content-Length is digits that
+//     fit a u64, or a list of such that are all equal ("42, 42", which RFC 9110 §8.6 lets a
+//     recipient take as one), and so are two Content-Length fields; any other is malformed.
+//     Transfer-Encoding is a list of codings, empty elements ignored, whose last is `chunked`,
+//     once: a coding after `chunked` is malformed, and any coding but `chunked` is
+//     unsupported_coding, since http decodes no gzip or deflate. A message with both fields is
+//     malformed, and so is an HTTP/1.0 message with Transfer-Encoding (RFC 9112 §6.1).
+//   - A request must have one Host field if it is HTTP/1.1, and at most one if it is HTTP/1.0
+//     (RFC 9112 §3.2): a second is malformed, and so is an HTTP/1.1 request without one.
+//
+// Lines are read whole: a parser looks at a line once its end is in the buffer, so a head that
+// is still arriving is null until it is complete or a whole line in it is wrong, and the same
+// bytes give the same answer however they arrived.
+//
+// Errors: malformed{ at } is the offset of what's wrong, from the buffer's start for a head
+// (the first byte that can't be there, where a value that is wrong begins, the start of a field
+// line that can't be in this message, a line's end when it ends too soon, or the empty line of
+// an HTTP/1.1 request without Host), and from the body's start for a chunked body. too_many_headers is a head with more field lines than the
+// caller's array holds. head_too_large is a head that doesn't fit its buffer: the parsers can't
+// see that (a head that doesn't fit is one that is still incomplete when the buffer is full,
+// which only the caller knows), so a connection says it; the writers say it when `into` is too
+// small. A server answers both with 431 (RFC 6585).
+//
+// Buffers: the writers fail with head_too_large when `into` is too small, rather than panic as
+// url's do. How large a head is depends on the fields and target the program passes, often
+// from its input, so a short buffer is something a program meets at run time, not a mistake it
+// can rule out before the call. write_chunk_head panics instead: CHUNK_HEAD_MOST bytes always
+// suffice.
+//
+// The parsers take `mut headers: []mut Header`, a slice local of the caller's, as in
+// `let mut headers = fields[..]` and `parse_request_head{ buffer, &headers }`. The fields they
+// store there are slices of `buffer`, and the escape check (spec §14) can tell that a buffer
+// outlives the fields only for a place given to a `mut` field: through a read-only slice it
+// can't see where the fields go, and would refuse every buffer that is a local.
+
+namespace http {
+    // A header field: a name and a value, slices of the buffer the head was read into or of the
+    // caller's own bytes. Values are bytes, not utf8::String: HTTP's field values are octets
+    // (RFC 9110 §5.5), which needn't be UTF-8.
+    struct Header { name: []u8, value: []u8 }
+
+    // How a message's body ends (RFC 9112 §6.3).
+    union Framing {
+        none,                       // no body: HEAD's response, 1xx, 204, 304, a request without either field
+        length{ n: u64 },           // Content-Length
+        chunked,                    // Transfer-Encoding: chunked
+        until_close,                // a response that ends when the server closes
+    }
+
+    // How a body this end sends is framed: what send_request and send_response take. The
+    // connection turns it into the Framing a head is written with.
+    union Body {
+        none,
+        bytes{ bytes: []u8 },       // all of it, with its Content-Length, in the same write as the head when it fits the buffer
+        length{ n: u64 },           // n bytes, which write_body then sends
+        chunked,                    // write_body sends chunks, finish_body the last
+    }
+
+    // A request's head: slices of the buffer it was parsed from, and `headers`, a slice of the
+    // caller's array. `size` is how many bytes of the buffer the head took, its empty line
+    // included: the body, or the next message, begins there. `content_length` and `chunked`
+    // are what its framing fields said, checked; frame_request makes them a Framing.
+    struct RequestHead {
+        method: []u8,
+        target: []u8,
+        version: u8,                // 10 or 11
+        headers: []Header,
+        size: usize,
+        content_length: ?u64,
+        chunked: bool,
+    }
+
+    // A response's head, as a RequestHead is a request's.
+    struct ResponseHead {
+        version: u8,
+        status: u16,
+        reason: []u8,
+        headers: []Header,
+        size: usize,
+        content_length: ?u64,
+        chunked: bool,
+    }
+
+    error malformed{ at: usize }        // not HTTP/1.1: the offset in the head, or in a chunked body
+    error head_too_large                // a head longer than its buffer
+    error too_many_headers              // more fields than the caller's array holds
+    error unsupported_version           // not HTTP/1.x
+    error unsupported_coding            // a transfer coding other than chunked
+
+    // ---- fields
+
+    // The first field named `name`, compared without ASCII case; null if there is none.
+    fn find_header { headers: []Header, name: []u8 } -> ?[]u8 {
+        for h in headers {
+            if is_same_name{ a = h.name, b = name } { return h.value }
+        }
+        return null
+    }
+
+    // The index of the next field named `name` at or after `from`, without ASCII case: for
+    // fields that repeat. Null if there is none.
+    fn find_header_from { headers: []Header, name: []u8, from: usize } -> ?usize {
+        let mut i = from
+        while i < headers.len {
+            if is_same_name{ a = headers[i].name, b = name } { return i }
+            i = i + 1
+        }
+        return null
+    }
+
+    // Whether a comma-separated field value holds `token`, without ASCII case: has_token{ value =
+    // "keep-alive, Upgrade", token = "upgrade" } is true. Each element is compared whole, without
+    // the spaces and tabs around it, so "upgraded" and "x-upgrade" don't hold "upgrade".
+    fn has_token { value: []u8, token: []u8 } -> bool {
+        let mut i: usize = 0
+        while i <= value.len {
+            let mut end = i
+            while end < value.len and value[end] != ',' { end = end + 1 }
+            let element = trim_space{ text = value[i..end] }
+            if element.len > 0 and is_same_name{ a = element, b = token } { return true }
+            i = end + 1
+        }
+        return false
+    }
+
+    // ---- heads
+
+    // A request's head at the start of `buffer`, its fields into `headers`: null while it is
+    // incomplete. The header says what is read and refused.
+    fn parse_request_head { buffer: []u8, mut headers: []mut Header } -> !?RequestHead {
+        let mut i: usize = 0
+        // Empty lines before the request line are skipped (RFC 9112 §2.2).
+        while i < buffer.len {
+            if buffer[i] == '\n' {
+                i = i + 1
+            } else if buffer[i] == '\r' {
+                if i + 1 == buffer.len { return null }
+                if buffer[i + 1] != '\n' { return malformed{ at = i } }
+                i = i + 2
+            } else {
+                break
+            }
+        }
+        let lf = try find_line_end{ buffer, from = i } ifnull { return null }
+        let stop = trim_cr{ buffer, from = i, lf }
+        let mut j = i
+        while j < stop and is_tchar{ c = buffer[j] } { j = j + 1 }
+        if j == i { return malformed{ at = i } }
+        if j == stop or buffer[j] != ' ' { return malformed{ at = j } }
+        let method = buffer[i..j]
+        let mut k = j + 1
+        while k < stop and buffer[k] != ' ' {
+            if not is_target_byte{ c = buffer[k] } { return malformed{ at = k } }
+            k = k + 1
+        }
+        if k == j + 1 or k == stop { return malformed{ at = k } }
+        let target = buffer[j + 1..k]
+        let version = try read_version{ buffer, from = k + 1, to = stop }
+        if stop > k + 9 { return malformed{ at = k + 9 } }
+        let mut fields = Fields{ count = 0, has_length = false, length = 0, coded = false, chunked = false, hosts = 0 }
+        let size = try read_fields{ buffer, from = lf + 1, &headers, version, request = true, &fields } ifnull { return null }
+        if version == 11 and fields.hosts == 0 {
+            // The empty line that ends the head is where a Host field was due.
+            return malformed{ at = size - (if size >= 2 and buffer[size - 2] == '\r' { 2 } else { 1 }) }
+        }
+        return RequestHead{ method, target, version, headers = headers[..fields.count], size,
+                            content_length = if fields.has_length { fields.length } else { null }, chunked = fields.chunked }
+    }
+
+    // A response's head at the start of `buffer`, its fields into `headers`: null while it is
+    // incomplete.
+    fn parse_response_head { buffer: []u8, mut headers: []mut Header } -> !?ResponseHead {
+        let lf = try find_line_end{ buffer, from = 0 } ifnull { return null }
+        let stop = trim_cr{ buffer, from = 0, lf }
+        let version = try read_version{ buffer, from = 0, to = stop }
+        if stop == 8 or buffer[8] != ' ' { return malformed{ at = 8 } }
+        let mut status: u16 = 0
+        for k in 9..12 {
+            if k >= stop or not ascii::is_digit{ c = buffer[k] } { return malformed{ at = k } }
+            status = status * 10 + @as(u16, buffer[k] - '0')
+        }
+        if status < 100 or status > 599 { return malformed{ at = 9 } }
+        let mut reason = buffer[12..12]
+        if stop > 12 {
+            if buffer[12] != ' ' { return malformed{ at = 12 } }
+            for k in 13..stop {
+                if not is_field_byte{ c = buffer[k] } { return malformed{ at = k } }
+            }
+            reason = buffer[13..stop]
+        }
+        let mut fields = Fields{ count = 0, has_length = false, length = 0, coded = false, chunked = false, hosts = 0 }
+        let size = try read_fields{ buffer, from = lf + 1, &headers, version, request = false, &fields } ifnull { return null }
+        return ResponseHead{ version, status, reason, headers = headers[..fields.count], size,
+                             content_length = if fields.has_length { fields.length } else { null }, chunked = fields.chunked }
+    }
+
+    // ---- framing
+
+    // How a request's body ends (RFC 9112 §6.3): chunked, its Content-Length, or none without
+    // either field.
+    fn frame_request { head: RequestHead } -> Framing {
+        if head.chunked { return Framing::chunked }
+        if let n = head.content_length { return Framing::length{ n } }
+        return Framing::none
+    }
+
+    // How a response's body ends (RFC 9112 §6.3), given the method of the request it answers:
+    // none for a response to HEAD, for 1xx, 204 and 304, and for a 2xx to CONNECT, after which
+    // the connection is a tunnel; otherwise chunked, its Content-Length, or until the server
+    // closes. Methods are compared with case, as they are named (RFC 9110 §9.1).
+    fn frame_response { head: ResponseHead, method: []u8 } -> Framing {
+        let s = head.status
+        if slice::eq_bytes{ a = method, b = "HEAD" } or s < 200 or s == 204 or s == 304 { return Framing::none }
+        if slice::eq_bytes{ a = method, b = "CONNECT" } and s < 300 { return Framing::none }
+        if head.chunked { return Framing::chunked }
+        if let n = head.content_length { return Framing::length{ n } }
+        return Framing::until_close
+    }
+
+    // ---- chunked bodies
+
+    // Where a chunked body's decoder is: in a chunk-size line, a chunk's data, or the trailer
+    // section. Each framing byte moves it on.
+    union ChunkState {
+        size,                       // the size's hexadecimal digits
+        size_space,                 // spaces after the size, before an extension or the line's end
+        extension,                  // an extension, ignored
+        size_cr,                    // a CR that ends the size line
+        data,                       // `left` bytes of data
+        data_end,                   // the CRLF after a chunk's data
+        data_end_cr,
+        trailer_start,              // the start of a trailer line, or of the final empty line
+        trailer_name,
+        trailer_value,
+        trailer_cr,
+        final_cr,                   // the CR of the empty line that ends the body
+        done,
+    }
+
+    // A chunked body's decoder (RFC 9112 §7.1), fed its bytes as they arrive: Chunked{ .. } or a
+    // zero value starts one. Chunk sizes are at most 16 hexadecimal digits, extensions are
+    // ignored, and trailer fields are checked and dropped (RFC 9110 §6.5.1 lets a recipient
+    // discard them). A size line longer than CHUNK_LINE_MOST bytes, or a trailer section longer
+    // than TRAILERS_MOST, is malformed: they are dropped as they are read, so nothing else bounds
+    // what a peer could send there.
+    struct Chunked {
+        state: ChunkState = ChunkState::size,
+        left: u64 = 0,              // while in `data`, the chunk's bytes not yet given; in `size`, the size so far
+        digits: u32 = 0,            // the size's digits so far
+        line: usize = 0,            // the size line's bytes so far
+        trailers: usize = 0,        // the trailer section's bytes so far
+        offset: usize = 0,          // the body's bytes decoded so far: where a malformed byte is
+    }
+
+    // What decode did: `used` bytes of its input went, and `body` is the body's bytes among
+    // them, a slice of the input. `done` is the body's end, after its trailers: what follows
+    // `used` is the next message.
+    struct Decoded { used: usize, body: []u8, done: bool }
+
+    const CHUNK_LINE_MOST: usize = 4096
+    const TRAILERS_MOST: usize = 16384
+
+    // Reads `input` as the next bytes of a chunked body, up to and including one run of the
+    // body's bytes: framing bytes before it are consumed, and the run is given as a slice of
+    // `input`, which ends at the chunk's end or the input's. A caller loops until `used` is
+    // input.len or the body is done. Once done, it uses nothing more.
+    fn decode { mut chunked: Chunked, input: []u8 } -> !Decoded {
+        let mut i: usize = 0
+        while i < input.len {
+            if chunked.state is done { break }
+            if chunked.state is data {
+                let have: u64 = input.len - i
+                let take = @as(usize, @min(chunked.left, have))
+                chunked.left = chunked.left - take
+                chunked.offset = chunked.offset + take
+                if chunked.left == 0 { chunked.state = ChunkState::data_end }
+                return Decoded{ used = i + take, body = input[i..i + take], done = false }
+            }
+            try step_chunked{ &chunked, c = input[i] }
+            chunked.offset = chunked.offset + 1
+            i = i + 1
+        }
+        return Decoded{ used = i, body = input[i..i], done = chunked.state is done }
+    }
+
+    // A chunk-size line's most bytes: 16 hexadecimal digits and CRLF.
+    const CHUNK_HEAD_MOST: usize = 18
+    // What follows a chunk's data.
+    const CHUNK_END: []u8 = "\r\n"
+    // The last chunk and the empty trailer section: the end of a chunked body.
+    const LAST_CHUNK: []u8 = "0\r\n\r\n"
+
+    // A chunk's size line, `size` in lower-case hexadecimal and CRLF, into `into`: how many
+    // bytes. The chunk's data follows it, then CHUNK_END; LAST_CHUNK ends the body. `size` 0
+    // panics, since that chunk would end the body; `into` shorter than CHUNK_HEAD_MOST panics
+    // if the line doesn't fit.
+    fn write_chunk_head { into: []mut u8, size: u64 } -> usize {
+        if size == 0 { @panic("http::write_chunk_head: a chunk of 0 bytes ends the body: write LAST_CHUNK") }
+        let mut digits: usize = 0
+        let mut v = size
+        while v > 0 {
+            digits = digits + 1
+            v = v >> 4
+        }
+        if into.len < digits + 2 { @panic("http::write_chunk_head: into is too small") }
+        v = size
+        let mut k = digits
+        while k > 0 {
+            k = k - 1
+            into[k] = HEX[@as(usize, v & 15)]
+            v = v >> 4
+        }
+        into[digits] = '\r'
+        into[digits + 1] = '\n'
+        return digits + 2
+    }
+
+    // ---- writing heads
+
+    // A request's head into `into`: how many bytes. The request line (HTTP/1.1), Host with
+    // `host`'s value, `headers` as they are, the framing field (Content-Length for `length`,
+    // Transfer-Encoding for `chunked`, none for `none`), `Connection: close` if `close`, and the
+    // empty line. `headers` may not name Host, Content-Length or Transfer-Encoding, which are
+    // written from the other arguments. Bytes that can't be in a head (a method that isn't a
+    // token, a space in the target, a CR in a value) are malformed, at the offset in the head
+    // where they would have been written; head_too_large if it doesn't fit. A request's body
+    // can't end at a close, so `until_close` panics.
+    fn write_request_head { into: []mut u8, method: []u8, target: []u8, host: []u8, headers: []Header, framing: Framing, close: bool } -> !usize {
+        if framing is until_close { @panic("http::write_request_head: a request's body can't end at a close") }
+        if method.len == 0 { return malformed{ at = 0 } }
+        for c at k in method {
+            if not is_tchar{ c } { return malformed{ at = k } }
+        }
+        let mut n = try put{ into, n = 0, s = method }
+        n = try put{ into, n, s = " " }
+        if target.len == 0 { return malformed{ at = n } }
+        for c at k in target {
+            if not is_target_byte{ c } { return malformed{ at = n + k } }
+        }
+        n = try put{ into, n, s = target }
+        n = try put{ into, n, s = " HTTP/1.1\r\n" }
+        n = try put_field{ into, n, name = "Host", value = host }
+        n = try put_fields{ into, n, headers, request = true }
+        n = try put_framing{ into, n, framing, close }
+        return put{ into, n, s = "\r\n" }
+    }
+
+    // A response's head into `into`: how many bytes. The status line (HTTP/1.1, `status` and its
+    // reason phrase from RFC 9110 §15, none for a status it doesn't name), `headers` as they
+    // are, the framing field, `Connection: close` if `close` or the framing is `until_close`,
+    // and the empty line. `headers` may not name Content-Length or Transfer-Encoding; malformed
+    // and head_too_large are as for write_request_head. A status outside 100 to 599 panics.
+    fn write_response_head { into: []mut u8, status: u16, headers: []Header, framing: Framing, close: bool } -> !usize {
+        if status < 100 or status > 599 { @panic("http::write_response_head: a status is 100 to 599") }
+        let mut n = try put{ into, n = 0, s = "HTTP/1.1 " }
+        n = try put_decimal{ into, n, v = status }
+        n = try put{ into, n, s = " " }
+        n = try put{ into, n, s = find_reason{ status } }
+        n = try put{ into, n, s = "\r\n" }
+        n = try put_fields{ into, n, headers, request = false }
+        n = try put_framing{ into, n, framing, close = close or framing is until_close }
+        return put{ into, n, s = "\r\n" }
+    }
+
+    // ---- reading
+
+    const HEX: [16]u8 = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']
+
+    // What a head's field lines said about framing and Host, as they are read.
+    struct Fields {
+        count: usize,               // fields read
+        has_length: bool,
+        length: u64,
+        coded: bool,                // a Transfer-Encoding field was read
+        chunked: bool,              // and its codings ended in chunked
+        hosts: u32,
+    }
+
+    // Whether `a` and `b` are the same, without ASCII case.
+    fn is_same_name { a: []u8, b: []u8 } -> bool {
+        if a.len != b.len { return false }
+        for c at i in a {
+            if ascii::to_lower{ c } != ascii::to_lower{ c = b[i] } { return false }
+        }
+        return true
+    }
+
+    // A token's bytes (RFC 9110 §5.6.2): letters, digits, and !#$%&'*+-.^_`|~.
+    fn is_tchar { c: u8 } -> bool {
+        if ascii::is_alnum{ c } { return true }
+        return c == '!' or c == '#' or c == '$' or c == '%' or c == '&' or c == '\'' or c == '*' or c == '+' or c == '-' or c == '.' or c == '^' or c == '_' or c == '`' or c == '|' or c == '~'
+    }
+
+    // A field value's bytes (RFC 9110 §5.5): visible ASCII, obs-text (past 127), space and tab.
+    fn is_field_byte { c: u8 } -> bool {
+        return (c >= 0x21 and c != 0x7f) or c == ' ' or c == '\t'
+    }
+
+    // A request target's bytes: visible ASCII and obs-text, so no space and no control byte.
+    fn is_target_byte { c: u8 } -> bool {
+        return c >= 0x21 and c != 0x7f
+    }
+
+    // Whether `c` is optional whitespace (RFC 9110 §5.6.3).
+    fn is_space { c: u8 } -> bool { return c == ' ' or c == '\t' }
+
+    // `text` without the spaces and tabs at its ends.
+    fn trim_space { text: []u8 } -> []u8 {
+        let mut a: usize = 0
+        let mut b = text.len
+        while a < b and is_space{ c = text[a] } { a = a + 1 }
+        while b > a and is_space{ c = text[b - 1] } { b = b - 1 }
+        return text[a..b]
+    }
+
+    // The offset of the LF that ends the line starting at `from`, or null if it hasn't arrived.
+    // A CR not followed by LF is malformed there.
+    fn find_line_end { buffer: []u8, from: usize } -> !?usize {
+        let mut k = from
+        while k < buffer.len {
+            let c = buffer[k]
+            if c == '\n' { return k }
+            if c == '\r' {
+                if k + 1 == buffer.len { return null }
+                if buffer[k + 1] != '\n' { return malformed{ at = k } }
+                return k + 1
+            }
+            k = k + 1
+        }
+        return null
+    }
+
+    // Where the line from `from` to its LF at `lf` ends, without its CR.
+    fn trim_cr { buffer: []u8, from: usize, lf: usize } -> usize {
+        if lf > from and buffer[lf - 1] == '\r' { return lf - 1 }
+        return lf
+    }
+
+    // An HTTP version at buffer[from..to]'s start, "HTTP/1.1": 10 or 11.
+    fn read_version { buffer: []u8, from: usize, to: usize } -> !u8 {
+        let name = "HTTP/"
+        for c at k in name {
+            if from + k >= to or buffer[from + k] != c { return malformed{ at = from + k } }
+        }
+        let p = from + 5
+        if p >= to or not ascii::is_digit{ c = buffer[p] } { return malformed{ at = p } }
+        if p + 1 >= to or buffer[p + 1] != '.' { return malformed{ at = p + 1 } }
+        if p + 2 >= to or not ascii::is_digit{ c = buffer[p + 2] } { return malformed{ at = p + 2 } }
+        if buffer[p] != '1' { return unsupported_version }
+        if buffer[p + 2] == '0' { return 10 }
+        return 11
+    }
+
+    // The field lines from `from` to the empty line that ends the head, into `headers`: the
+    // head's size, or null while it is incomplete.
+    fn read_fields { buffer: []u8, from: usize, mut headers: []mut Header, version: u8, request: bool, mut fields: Fields } -> !?usize {
+        let mut i = from
+        while true {
+            if i == buffer.len { return null }
+            if buffer[i] == '\n' { return i + 1 }
+            if buffer[i] == '\r' {
+                if i + 1 == buffer.len { return null }
+                if buffer[i + 1] == '\n' { return i + 2 }
+                return malformed{ at = i }
+            }
+            let lf = try find_line_end{ buffer, from = i } ifnull { return null }
+            let stop = trim_cr{ buffer, from = i, lf }
+            // A line that starts with whitespace is obsolete folding (RFC 9112 §5.2).
+            if is_space{ c = buffer[i] } { return malformed{ at = i } }
+            let mut j = i
+            while j < stop and is_tchar{ c = buffer[j] } { j = j + 1 }
+            if j == i { return malformed{ at = i } }
+            if j == stop or buffer[j] != ':' { return malformed{ at = j } }
+            let mut v = j + 1
+            let mut e = stop
+            while v < e and is_space{ c = buffer[v] } { v = v + 1 }
+            while e > v and is_space{ c = buffer[e - 1] } { e = e - 1 }
+            for k in v..e {
+                if not is_field_byte{ c = buffer[k] } { return malformed{ at = k } }
+            }
+            if fields.count == headers.len { return too_many_headers }
+            let name = buffer[i..j]
+            headers[fields.count] = Header{ name, value = buffer[v..e] }
+            fields.count = fields.count + 1
+            if is_same_name{ a = name, b = "content-length" } {
+                if fields.coded { return malformed{ at = i } }
+                try read_length{ buffer, from = v, to = e, &fields }
+            } else if is_same_name{ a = name, b = "transfer-encoding" } {
+                if fields.has_length or version == 10 { return malformed{ at = i } }
+                try read_codings{ buffer, from = v, to = e, &fields }
+            } else if request and is_same_name{ a = name, b = "host" } {
+                if fields.hosts > 0 { return malformed{ at = i } }
+                fields.hosts = 1
+            }
+            i = lf + 1
+        }
+        return null
+    }
+
+    // A Content-Length value, buffer[from..to]: digits, or a list of equal ones, equal to an
+    // earlier field's.
+    fn read_length { buffer: []u8, from: usize, to: usize, mut fields: Fields } -> ! {
+        let mut k = from
+        while true {
+            while k < to and is_space{ c = buffer[k] } { k = k + 1 }
+            let start = k
+            let mut n: u64 = 0
+            while k < to and ascii::is_digit{ c = buffer[k] } {
+                n = n * 10 + @as(u64, buffer[k] - '0') ifoverflow { return malformed{ at = start } }
+                k = k + 1
+            }
+            if k == start { return malformed{ at = k } }
+            if fields.has_length and fields.length != n { return malformed{ at = start } }
+            fields.has_length = true
+            fields.length = n
+            while k < to and is_space{ c = buffer[k] } { k = k + 1 }
+            if k == to { return }
+            if buffer[k] != ',' { return malformed{ at = k } }
+            k = k + 1
+        }
+    }
+
+    // A Transfer-Encoding value, buffer[from..to]: codings, of which only a last `chunked` is
+    // read.
+    fn read_codings { buffer: []u8, from: usize, to: usize, mut fields: Fields } -> ! {
+        let mut any = false
+        let mut k = from
+        while k <= to {
+            let mut end = k
+            while end < to and buffer[end] != ',' { end = end + 1 }
+            let mut s = k
+            while s < end and is_space{ c = buffer[s] } { s = s + 1 }
+            let mut e = end
+            while e > s and is_space{ c = buffer[e - 1] } { e = e - 1 }
+            if s < e {
+                any = true
+                // A coding after chunked would be applied after it (RFC 9112 §6.1).
+                if fields.chunked { return malformed{ at = s } }
+                let mut t = s
+                while t < e and is_tchar{ c = buffer[t] } { t = t + 1 }
+                if t == s { return malformed{ at = s } }
+                if not is_same_name{ a = buffer[s..t], b = "chunked" } { return unsupported_coding }
+                // chunked has no parameters.
+                if t < e { return malformed{ at = t } }
+                fields.chunked = true
+            }
+            k = end + 1
+        }
+        if not any { return malformed{ at = from } }
+        fields.coded = true
+    }
+
+    // A framing byte of a chunked body, `c`, at chunked.offset.
+    fn step_chunked { mut chunked: Chunked, c: u8 } -> ! {
+        let at = chunked.offset
+        let s = chunked.state
+        if s is size | size_space | extension | size_cr {
+            chunked.line = chunked.line + 1
+            if chunked.line > CHUNK_LINE_MOST { return malformed{ at } }
+        } else if s is trailer_start | trailer_name | trailer_value | trailer_cr | final_cr {
+            chunked.trailers = chunked.trailers + 1
+            if chunked.trailers > TRAILERS_MOST { return malformed{ at } }
+        }
+        match s {
+            size => {
+                let d = net::read_hex_digit{ c }
+                if d < 16 {
+                    if chunked.digits == 16 { return malformed{ at } }
+                    chunked.left = chunked.left * 16 + d
+                    chunked.digits = chunked.digits + 1
+                } else if chunked.digits == 0 {
+                    return malformed{ at }
+                } else if c == ';' {
+                    chunked.state = ChunkState::extension
+                } else if is_space{ c } {
+                    chunked.state = ChunkState::size_space
+                } else if c == '\r' {
+                    chunked.state = ChunkState::size_cr
+                } else if c == '\n' {
+                    end_size_line{ &chunked }
+                } else {
+                    return malformed{ at }
+                }
+            }
+            size_space => {
+                if c == ';' {
+                    chunked.state = ChunkState::extension
+                } else if c == '\r' {
+                    chunked.state = ChunkState::size_cr
+                } else if c == '\n' {
+                    end_size_line{ &chunked }
+                } else if not is_space{ c } {
+                    return malformed{ at }
+                }
+            }
+            extension => {
+                if c == '\r' {
+                    chunked.state = ChunkState::size_cr
+                } else if c == '\n' {
+                    end_size_line{ &chunked }
+                } else if not is_field_byte{ c } {
+                    return malformed{ at }
+                }
+            }
+            size_cr => {
+                if c != '\n' { return malformed{ at = at - 1 } }
+                end_size_line{ &chunked }
+            }
+            data => { @panic("http::decode: a data byte taken as framing") }
+            data_end => {
+                if c == '\r' {
+                    chunked.state = ChunkState::data_end_cr
+                } else if c == '\n' {
+                    chunked.state = ChunkState::size
+                } else {
+                    return malformed{ at }
+                }
+            }
+            data_end_cr => {
+                if c != '\n' { return malformed{ at = at - 1 } }
+                chunked.state = ChunkState::size
+            }
+            trailer_start => {
+                if c == '\r' {
+                    chunked.state = ChunkState::final_cr
+                } else if c == '\n' {
+                    chunked.state = ChunkState::done
+                } else if is_tchar{ c } {
+                    chunked.state = ChunkState::trailer_name
+                } else {
+                    return malformed{ at }       // obsolete folding among them
+                }
+            }
+            trailer_name => {
+                if c == ':' {
+                    chunked.state = ChunkState::trailer_value
+                } else if not is_tchar{ c } {
+                    return malformed{ at }
+                }
+            }
+            trailer_value => {
+                if c == '\r' {
+                    chunked.state = ChunkState::trailer_cr
+                } else if c == '\n' {
+                    chunked.state = ChunkState::trailer_start
+                } else if not is_field_byte{ c } {
+                    return malformed{ at }
+                }
+            }
+            trailer_cr => {
+                if c != '\n' { return malformed{ at = at - 1 } }
+                chunked.state = ChunkState::trailer_start
+            }
+            final_cr => {
+                if c != '\n' { return malformed{ at = at - 1 } }
+                chunked.state = ChunkState::done
+            }
+            done => { @panic("http::decode: a byte after the body's end") }
+        }
+    }
+
+    // The end of a chunk-size line: the chunk's data next, or the trailers after the last chunk.
+    fn end_size_line { mut chunked: Chunked } {
+        chunked.state = if chunked.left == 0 { ChunkState::trailer_start } else { ChunkState::data }
+        chunked.digits = 0
+        chunked.line = 0
+    }
+
+    // ---- writing
+
+    // s after into[..n]: the new length, or head_too_large if it doesn't fit.
+    fn put { into: []mut u8, n: usize, s: []u8 } -> !usize {
+        if s.len > into.len - n { return head_too_large }
+        slice::copy(u8){ dst = into[n..n + s.len], src = s }
+        return n + s.len
+    }
+
+    // `v` in decimal after into[..n].
+    fn put_decimal { into: []mut u8, n: usize, v: u64 } -> !usize {
+        let mut digits: [20]u8
+        let mut k: usize = 20
+        let mut x = v
+        while true {
+            k = k - 1
+            digits[k] = '0' + @trunc(u8, x % 10)
+            x = x / 10
+            if x == 0 { break }
+        }
+        return put{ into, n, s = digits[k..] }
+    }
+
+    // A field line, "name: value\r\n", after into[..n], its bytes checked.
+    fn put_field { into: []mut u8, n: usize, name: []u8, value: []u8 } -> !usize {
+        if name.len == 0 { return malformed{ at = n } }
+        for c at k in name {
+            if not is_tchar{ c } { return malformed{ at = n + k } }
+        }
+        let mut m = try put{ into, n, s = name }
+        m = try put{ into, n = m, s = if value.len > 0 { ": " } else { ":" } }
+        for c at k in value {
+            if not is_field_byte{ c } { return malformed{ at = m + k } }
+        }
+        m = try put{ into, n = m, s = value }
+        return put{ into, n = m, s = "\r\n" }
+    }
+
+    // The caller's fields after into[..n]; those the writer writes itself are malformed.
+    fn put_fields { into: []mut u8, n: usize, headers: []Header, request: bool } -> !usize {
+        let mut m = n
+        for h in headers {
+            if is_same_name{ a = h.name, b = "content-length" } or is_same_name{ a = h.name, b = "transfer-encoding" } or (request and is_same_name{ a = h.name, b = "host" }) {
+                return malformed{ at = m }
+            }
+            m = try put_field{ into, n = m, name = h.name, value = h.value }
+        }
+        return m
+    }
+
+    // The framing field and Connection: close after into[..n].
+    fn put_framing { into: []mut u8, n: usize, framing: Framing, close: bool } -> !usize {
+        let mut m = n
+        match framing {
+            length{ n = size } => {
+                m = try put{ into, n = m, s = "Content-Length: " }
+                m = try put_decimal{ into, n = m, v = size }
+                m = try put{ into, n = m, s = "\r\n" }
+            }
+            chunked => { m = try put{ into, n = m, s = "Transfer-Encoding: chunked\r\n" } }
+            none | until_close => {}
+        }
+        if close { m = try put{ into, n = m, s = "Connection: close\r\n" } }
+        return m
+    }
+
+    // A status's reason phrase (RFC 9110 §15), or "" for one it doesn't name.
+    fn find_reason { status: u16 } -> []u8 {
+        return match status {
+            100 => "Continue"
+            101 => "Switching Protocols"
+            200 => "OK"
+            201 => "Created"
+            202 => "Accepted"
+            203 => "Non-Authoritative Information"
+            204 => "No Content"
+            205 => "Reset Content"
+            206 => "Partial Content"
+            300 => "Multiple Choices"
+            301 => "Moved Permanently"
+            302 => "Found"
+            303 => "See Other"
+            304 => "Not Modified"
+            307 => "Temporary Redirect"
+            308 => "Permanent Redirect"
+            400 => "Bad Request"
+            401 => "Unauthorized"
+            403 => "Forbidden"
+            404 => "Not Found"
+            405 => "Method Not Allowed"
+            406 => "Not Acceptable"
+            408 => "Request Timeout"
+            409 => "Conflict"
+            410 => "Gone"
+            411 => "Length Required"
+            412 => "Precondition Failed"
+            413 => "Content Too Large"
+            414 => "URI Too Long"
+            415 => "Unsupported Media Type"
+            416 => "Range Not Satisfiable"
+            417 => "Expectation Failed"
+            421 => "Misdirected Request"
+            422 => "Unprocessable Content"
+            426 => "Upgrade Required"
+            428 => "Precondition Required"
+            429 => "Too Many Requests"
+            431 => "Request Header Fields Too Large"
+            500 => "Internal Server Error"
+            501 => "Not Implemented"
+            502 => "Bad Gateway"
+            503 => "Service Unavailable"
+            504 => "Gateway Timeout"
+            505 => "HTTP Version Not Supported"
+            else => ""
+        }
+    }
+}
