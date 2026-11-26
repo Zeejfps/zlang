@@ -1,0 +1,17 @@
+// wait_failure on a group whose failures stop it panics: such a group holds none, and its
+// first failure is wait_all's.
+
+fn fail {} -> ! { return task::out_of_resources }
+
+fn read { mut threads: Threads, mut g: task::Group } { _ = task::wait_failure{ &threads, group = &g } }
+fn main { mut threads: Threads } {
+    let mut g: task::Group
+    task::start_in{ &threads, group = &g, run = fail{ _ } }
+    read{ &threads, &g }
+}
+
+//# panic: program: panic: task::wait_failure on a group whose failures stop it: only a `Failures::keep` group holds them
+//# path:
+//|   at task::wait_failure (std/task.ctx:327:55)
+//|   at read (03.ctx:6:78)
+//|   at main (03.ctx:10:9)

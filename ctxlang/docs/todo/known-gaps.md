@@ -2,9 +2,6 @@
 
 - The front end is over its budget: checking and lowering ctxc takes about 215 ms natively,
   against 100 ms for the check alone. It hasn't been profiled.
-- On Linux and macOS, `mem::pages` clears its memory with memset (std/os/posix), touching every
-  page up front; calloc, as `mem::reserve` uses, would leave that to the OS. Untested there, so
-  left for a machine that can run it.
 - The interpreter's layer (std/os/interp) has no standard input, files or processes, and calls no
   C library but the math functions: the suite's programs that use those are checked by their
   expected outputs alone.
@@ -18,3 +15,11 @@
   pages for that reason. Telling fields apart would need summaries by field path. The extra
   body check adds front-end work; a safety-only replay could replace it if profiling justifies
   it.
+- A task's error can outlive what it points into. A task fn whose error's payload holds a slice
+  of a read-only argument (`fails { path: []u8 } -> ! { return bad{ path } }`, started with
+  `path = buf[..]`) compiles, and `try task::wait{ ... }` or `wait_all` then returns that error
+  out of `buf`'s function, past `buf`'s life: a handle's result and a group's errors (the one a
+  stop group holds, the failures a keep group keeps) are read through its `mut` field, which the
+  escape check doesn't follow (spec §14, Escape check, rule 4). Closing it means the start's
+  bind making the handle's result derived from what the bind borrows, so the error can't be
+  read where those are gone.

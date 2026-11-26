@@ -1,0 +1,186 @@
+// A keep group's tasks on workers: a failure cancels none of the others, which run to their
+// end; wait_failure waits for each failure and gives them in the order they happened, then
+// null once the group is empty; a task that owns a group reads its failures while it goes on
+// starting tasks; a reader asked to stop fails with `cancelled`, and a reader whose deadline
+// passes with `deadline_passed`, the group left running, but a failure held already is given
+// first; wait_all_failures whose waiter is cancelled stops the group, as wait_all does,
+// and gives what its tasks failed with; and std's heap has every byte back after each.
+
+error bad{ n: u64 }
+
+const SECOND: u64 = 1000000000
+const MILLISECOND: u64 = 1000000
+
+fn fail_after { mut threads: Threads, ms: u64, n: u64 } -> ! {
+    thread::sleep{ &threads, nanoseconds = ms * MILLISECOND }
+    try task::check_cancelled{ &threads }
+    return bad{ n }
+}
+
+fn nap { mut threads: Threads, ms: u64, mut ended: bool } -> ! {
+    thread::sleep{ &threads, nanoseconds = ms * MILLISECOND }
+    try task::check_cancelled{ &threads }
+    ended = true
+}
+
+fn name_of { e: error } -> u64 {
+    match e {
+        bad{ n } => { return n }
+        task::cancelled => { return 100 }
+        else => { return 0 }
+    }
+}
+
+// Failures that cancel nothing, waited for one at a time, in the order they happened.
+fn in_order { mut io: Io, mut threads: Threads } -> ! {
+    let mut ended = false
+    {
+        let mut g = task::Group{ failures = task::Failures::keep, .. }
+        try task::start_concurrent_in{ &threads, group = &g, run = fail_after{ &threads, ms = 300, n = 3, _ } }
+        try task::start_concurrent_in{ &threads, group = &g, run = fail_after{ &threads, ms = 20, n = 1, _ } }
+        try task::start_concurrent_in{ &threads, group = &g, run = nap{ &threads, ms = 400, &ended, _ } }
+        try task::start_concurrent_in{ &threads, group = &g, run = fail_after{ &threads, ms = 150, n = 2, _ } }
+        _ = @fmt(&io, "in order:")
+        while true {
+            let e = try task::wait_failure{ &threads, group = &g } ifnull { break }
+            _ = @fmt(&io, " {}", name_of{ e })
+        }
+        io::println{ &io, s = "" }
+    }
+    _ = @fmt(&io, "the nap ended: {}\n", ended)
+}
+
+// A task that owns a keep group, and reads its failures between starts: how many it read.
+fn reporter { mut threads: Threads } -> !u64 {
+    let mut g = task::Group{ failures = task::Failures::keep, .. }
+    let mut read: u64 = 0
+    let mut n: u64 = 1
+    while n <= 4 {
+        try task::start_concurrent_in{ &threads, group = &g, run = fail_after{ &threads, ms = 10, n, _ } }
+        let e = try task::wait_failure{ &threads, group = &g } ifnull { return 0 }
+        if name_of{ e } == n { read = read + 1 }
+        n = n + 1
+    }
+    try task::start_concurrent_in{ &threads, group = &g, run = fail_after{ &threads, ms = 10, n = 5, _ } }
+    try task::start_concurrent_in{ &threads, group = &g, run = fail_after{ &threads, ms = 10, n = 6, _ } }
+    while true {
+        _ = try task::wait_failure{ &threads, group = &g } ifnull { break }
+        read = read + 1
+    }
+    return read
+}
+
+// A reader waiting on a group whose nap runs long: once cancelled, what it fails with.
+fn reader { mut threads: Threads } -> !bool {
+    let mut ended = false
+    let mut g = task::Group{ failures = task::Failures::keep, .. }
+    try task::start_concurrent_in{ &threads, group = &g, run = nap{ &threads, ms = 30000, &ended, _ } }
+    let got = try task::wait_failure{ &threads, group = &g }
+    return got != null
+}
+
+// Deadlines on wait_failure: one that passes leaves the group running, and a failure held
+// already is given first.
+fn deadlines { mut io: Io, mut threads: Threads } -> ! {
+    let mut ended = false
+    let mut g = task::Group{ failures = task::Failures::keep, .. }
+    try task::start_concurrent_in{ &threads, group = &g, run = nap{ &threads, ms = 30000, &ended, _ } }
+    try task::start_concurrent_in{ &threads, group = &g, run = fail_after{ &threads, ms = 0, n = 7, _ } }
+    // Failure 7 is held by then: a deadline of 0 gives it, then looks again without waiting.
+    thread::sleep{ &threads, nanoseconds = 200 * MILLISECOND }
+    let began = os::now{ &threads }
+    while true {
+        let r = task::run_within{ cancel = &threads, nanoseconds = 0, run = task::wait_failure{ &threads, group = &g, _ } }
+        match r {
+            ok{ value } => {
+                let e = value ifnull { io::println{ &io, s = "deadline: null" }; break }
+                _ = @fmt(&io, "deadline: failure {}\n", name_of{ e })
+            }
+            err{ error } => {
+                match error {
+                    task::deadline_passed => { io::println{ &io, s = "deadline: passed" } }
+                    task::cancelled => { io::println{ &io, s = "deadline: cancelled" } }
+                }
+                break
+            }
+        }
+    }
+    _ = @fmt(&io, "deadline: in time {}\n", os::now{ &threads } - began < SECOND)
+    _ = @fmt(&io, "deadline: group running {}\n", not task::wait_all_for{ &threads, group = &g, nanoseconds = 0 })
+    task::cancel_all{ &threads, group = &g }
+}
+
+// wait_all_failures whose waiter is cancelled: it stops the group, waits, and gives its failures.
+fn collector { mut threads: Threads } -> !u64 {
+    let mut ended = false
+    let mut g = task::Group{ failures = task::Failures::keep, .. }
+    try task::start_concurrent_in{ &threads, group = &g, run = fail_after{ &threads, ms = 0, n = 8, _ } }
+    try task::start_concurrent_in{ &threads, group = &g, run = nap{ &threads, ms = 30000, &ended, _ } }
+    let mut h = heap::new{ mem = &threads }
+    let es = try task::wait_all_failures(heap::Heap){ &threads, group = &g, realloc = heap::alloc, heap = &h }
+    let mut sum: u64 = 0
+    for e in es { sum = sum * 1000 + name_of{ e } }
+    _ = alloc::resize(error, heap::Heap){ realloc = heap::alloc, heap = &h, mem = es, count = 0 }
+    return sum
+}
+
+fn check_heap { mut io: Io, threads: Threads, before: heap::Live, what: []u8 } {
+    let now = heap::count_live{ mem = threads }
+    if now.bytes == before.bytes and now.blocks == before.blocks {
+        _ = @fmt(&io, "{}: no leak\n", what)
+    } else {
+        _ = @fmt(&io, "{}: {} bytes in {} blocks left\n", what, now.bytes - before.bytes, now.blocks - before.blocks)
+    }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    let before = heap::count_live{ mem = threads }
+    in_order{ &io, &threads } iferr { return 1 }
+    check_heap{ &io, threads, before, what = "in order" }
+
+    let mut rep: task::Task(!u64)
+    task::start_concurrent{ &threads, task = &rep, run = reporter{ &threads, _ } } iferr { return 2 }
+    _ = @fmt(&io, "reporter read: {}\n", task::wait{ &threads, task = &rep } iferr { 0 })
+    check_heap{ &io, threads, before, what = "reporter" }
+
+    let mut r: task::Task(!bool)
+    task::start_concurrent{ &threads, task = &r, run = reader{ &threads, _ } } iferr { return 3 }
+    thread::sleep{ &threads, nanoseconds = 50 * MILLISECOND }
+    match task::cancel{ &threads, task = &r } {
+        ok => { io::println{ &io, s = "reader: no failure" } }
+        err{ error } => {
+            match error {
+                task::cancelled => { io::println{ &io, s = "reader: cancelled" } }
+                else => { io::println{ &io, s = "reader: failed" } }
+            }
+        }
+    }
+    check_heap{ &io, threads, before, what = "reader" }
+
+    deadlines{ &io, &threads } iferr { return 4 }
+    check_heap{ &io, threads, before, what = "deadlines" }
+
+    let mut c: task::Task(!u64)
+    task::start_concurrent{ &threads, task = &c, run = collector{ &threads, _ } } iferr { return 5 }
+    thread::sleep{ &threads, nanoseconds = 50 * MILLISECOND }
+    _ = @fmt(&io, "collector: {}\n", task::cancel{ &threads, task = &c } iferr { 0 })
+    check_heap{ &io, threads, before, what = "collector" }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| in order: 1 2 3
+//| the nap ended: true
+//| in order: no leak
+//| reporter read: 6
+//| reporter: no leak
+//| reader: cancelled
+//| reader: no leak
+//| deadline: failure 7
+//| deadline: passed
+//| deadline: in time true
+//| deadline: group running true
+//| deadlines: no leak
+//| collector: 8100
+//| collector: no leak

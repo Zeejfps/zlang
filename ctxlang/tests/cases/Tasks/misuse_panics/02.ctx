@@ -35,6 +35,6 @@ fn main { mut threads: Threads } {
 
 //# panic: program: panic: task::wait on a handle that holds no task
 //# path:
-//|   at task::wait(!u64) (std/task.ctx:149:41)
+//|   at task::wait(!u64) (std/task.ctx:166:41)
 //|   at wait_on (02.ctx:30:78)
 //|   at main (02.ctx:33:12)

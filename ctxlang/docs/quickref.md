@@ -334,6 +334,11 @@ fields and leaves the rest zero, `let mut g = task::Group{ .. }`. It is never as
 returned or kept in a struct, only passed to a `mut` field, `task = &t`.
 `task::start{ &threads, task = &t, run = load{ &fs, path, _ } }` lends what the bind borrows
 until `task::wait` ends it, or the handle's scope does, which cancels and waits.
+A group's first failure cancels the others; `let mut g = task::Group{ failures =
+task::Failures::keep, .. }` keeps them instead, on std's heap, at most `kept` at once (0 for 64),
+for `task::wait_failure{ &threads, group = &g }` (the oldest, or null once the group is empty) and
+`task::wait_all_failures(S){ &threads, group = &g, realloc, &heap }` (all of them, in a slice the
+caller frees); `task::count_dropped` counts those past the bound.
 
 ## Printing and text
 

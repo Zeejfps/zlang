@@ -1,0 +1,192 @@
+// A keep group's failures, its tasks run at once (the limit is 0, and the interpreter runs
+// every task so): each failure is held, in order, and cancels nothing; wait_failure takes them
+// oldest first, then null; wait_all succeeds and leaves them; wait_all_failures gives them in a
+// slice from an arena and from std's heap; past `kept` the oldest stay and the rest are counted
+// (count_dropped), and a `kept` of 0 holds 64; the ring that holds them grows and wraps in
+// order; cancel_all and a group's scope drop what is unread; and std's heap has every byte
+// back after each.
+
+error bad{ n: u64 }
+
+fn fail { n: u64 } -> ! { return bad{ n } }
+
+fn succeed { mut ran: u64 } -> ! { ran = ran + 1 }
+
+fn number_of { e: error } -> u64 {
+    match e {
+        bad{ n } => { return n }
+        else => { return 0 }
+    }
+}
+
+// Reads the failures g holds, oldest first, until it gives null.
+fn read_all { mut io: Io, mut threads: Threads, mut g: task::Group } {
+    while true {
+        let e = task::wait_failure{ &threads, group = &g } iferr { return } ifnull { break }
+        _ = @fmt(&io, " {}", number_of{ e })
+    }
+    io::println{ &io, s = "" }
+}
+
+fn show_all { mut io: Io, es: []error } {
+    for e in es { _ = @fmt(&io, " {}", number_of{ e }) }
+    io::println{ &io, s = "" }
+}
+
+// Failures that cancel nothing, read one at a time, then null.
+fn one_at_a_time { mut io: Io, mut threads: Threads } {
+    let mut ran: u64 = 0
+    {
+        let mut g = task::Group{ failures = task::Failures::keep, .. }
+        task::start_in{ &threads, group = &g, run = fail{ n = 1, _ } }
+        task::start_in{ &threads, group = &g, run = succeed{ &ran, _ } }
+        task::start_in{ &threads, group = &g, run = fail{ n = 2, _ } }
+        task::start_in{ &threads, group = &g, run = fail{ n = 3, _ } }
+        task::wait_all{ &threads, group = &g } iferr { io::println{ &io, s = "wait_all failed" } }
+        _ = @fmt(&io, "read:")
+        read_all{ &io, &threads, &g }
+        _ = @fmt(&io, "dropped: {}\n", task::count_dropped{ &threads, group = &g })
+    }
+    _ = @fmt(&io, "ran: {}\n", ran)
+}
+
+// All at once, into an arena's slice and into std's heap's, which is freed.
+fn all_at_once { mut io: Io, mut threads: Threads } -> ! {
+    let mut buf: [4096]u8
+    let mut a = arena::new{ buf = buf[..] }
+    {
+        let mut g = task::Group{ failures = task::Failures::keep, .. }
+        task::start_in{ &threads, group = &g, run = fail{ n = 4, _ } }
+        task::start_in{ &threads, group = &g, run = fail{ n = 5, _ } }
+        let es = try task::wait_all_failures(arena::Arena){ &threads, group = &g, realloc = arena::alloc, heap = &a }
+        _ = @fmt(&io, "arena:")
+        show_all{ &io, es }
+        let none = try task::wait_all_failures(arena::Arena){ &threads, group = &g, realloc = arena::alloc, heap = &a }
+        _ = @fmt(&io, "again: {}\n", none.len)
+    }
+    let mut h = heap::new{ mem = &threads }
+    {
+        let mut g = task::Group{ failures = task::Failures::keep, .. }
+        task::start_in{ &threads, group = &g, run = fail{ n = 6, _ } }
+        task::start_in{ &threads, group = &g, run = fail{ n = 7, _ } }
+        task::start_in{ &threads, group = &g, run = fail{ n = 8, _ } }
+        let es = try task::wait_all_failures(heap::Heap){ &threads, group = &g, realloc = heap::alloc, heap = &h }
+        _ = @fmt(&io, "heap:")
+        show_all{ &io, es }
+        _ = alloc::resize(error, heap::Heap){ realloc = heap::alloc, heap = &h, mem = es, count = 0 }
+    }
+}
+
+// Past `kept` the oldest stay, and the rest are counted; 0 holds 64.
+fn past_the_most { mut io: Io, mut threads: Threads } {
+    {
+        let mut g = task::Group{ failures = task::Failures::keep, kept = 2, .. }
+        let mut n: u64 = 1
+        while n <= 5 {
+            task::start_in{ &threads, group = &g, run = fail{ n, _ } }
+            n = n + 1
+        }
+        _ = @fmt(&io, "kept 2:")
+        read_all{ &io, &threads, &g }
+        _ = @fmt(&io, "dropped: {}\n", task::count_dropped{ &threads, group = &g })
+    }
+    {
+        let mut g = task::Group{ failures = task::Failures::keep, .. }
+        let mut n: u64 = 1
+        while n <= 70 {
+            task::start_in{ &threads, group = &g, run = fail{ n, _ } }
+            n = n + 1
+        }
+        let mut first: u64 = 0
+        let mut last: u64 = 0
+        let mut count: u64 = 0
+        while true {
+            let e = task::wait_failure{ &threads, group = &g } iferr { return } ifnull { break }
+            if count == 0 { first = number_of{ e } }
+            last = number_of{ e }
+            count = count + 1
+        }
+        _ = @fmt(&io, "kept 0: {} held, {} to {}, {} dropped\n", count, first, last, task::count_dropped{ &threads, group = &g })
+    }
+}
+
+// Read while failures come, so the ring wraps, then grows with what it holds in order.
+fn wrap_and_grow { mut io: Io, mut threads: Threads } {
+    let mut g = task::Group{ failures = task::Failures::keep, kept = 8, .. }
+    task::start_in{ &threads, group = &g, run = fail{ n = 1, _ } }
+    task::start_in{ &threads, group = &g, run = fail{ n = 2, _ } }
+    task::start_in{ &threads, group = &g, run = fail{ n = 3, _ } }
+    _ = @fmt(&io, "took:")
+    let mut i: u32 = 0
+    while i < 2 {
+        let e = task::wait_failure{ &threads, group = &g } iferr { return } ifnull { return }
+        _ = @fmt(&io, " {}", number_of{ e })
+        i = i + 1
+    }
+    io::println{ &io, s = "" }
+    let mut n: u64 = 4
+    while n <= 11 {
+        task::start_in{ &threads, group = &g, run = fail{ n, _ } }
+        n = n + 1
+    }
+    _ = @fmt(&io, "then:")
+    read_all{ &io, &threads, &g }
+    _ = @fmt(&io, "dropped: {}\n", task::count_dropped{ &threads, group = &g })
+}
+
+// cancel_all, and a scope's end, drop what is unread.
+fn drop_unread { mut io: Io, mut threads: Threads } {
+    let mut g = task::Group{ failures = task::Failures::keep, .. }
+    task::start_in{ &threads, group = &g, run = fail{ n = 1, _ } }
+    task::cancel_all{ &threads, group = &g }
+    _ = @fmt(&io, "after cancel_all:")
+    read_all{ &io, &threads, &g }
+    task::start_in{ &threads, group = &g, run = fail{ n = 2, _ } }
+    task::start_in{ &threads, group = &g, run = fail{ n = 3, _ } }
+}
+
+// Whether std's heap has every byte back since `before`, said after `what`.
+fn check_heap { mut io: Io, threads: Threads, before: heap::Live, what: []u8 } {
+    let now = heap::count_live{ mem = threads }
+    if now.bytes == before.bytes and now.blocks == before.blocks {
+        _ = @fmt(&io, "{}: no leak\n", what)
+    } else {
+        _ = @fmt(&io, "{}: {} bytes in {} blocks left\n", what, now.bytes - before.bytes, now.blocks - before.blocks)
+    }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    task::set_limit{ &threads, workers = 0 }
+    let before = heap::count_live{ mem = threads }
+    one_at_a_time{ &io, &threads }
+    check_heap{ &io, threads, before, what = "one at a time" }
+    all_at_once{ &io, &threads } iferr { return 1 }
+    check_heap{ &io, threads, before, what = "all at once" }
+    past_the_most{ &io, &threads }
+    check_heap{ &io, threads, before, what = "past the most" }
+    wrap_and_grow{ &io, &threads }
+    check_heap{ &io, threads, before, what = "wrap and grow" }
+    drop_unread{ &io, &threads }
+    check_heap{ &io, threads, before, what = "drop unread" }
+    return 0
+}
+
+//# stdout:
+//| read: 1 2 3
+//| dropped: 0
+//| ran: 1
+//| one at a time: no leak
+//| arena: 4 5
+//| again: 0
+//| heap: 6 7 8
+//| all at once: no leak
+//| kept 2: 1 2
+//| dropped: 3
+//| kept 0: 64 held, 1 to 64, 6 dropped
+//| past the most: no leak
+//| took: 1 2
+//| then: 3 4 5 6 7 8 9 10
+//| dropped: 1
+//| wrap and grow: no leak
+//| after cancel_all:
+//| drop unread: no leak

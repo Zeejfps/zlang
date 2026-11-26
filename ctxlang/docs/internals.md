@@ -203,7 +203,8 @@ next blocking call sees the flag. A `write` cancelled after some of its bytes we
 
 **Cancellation follows the scopes down.** A task that waits (`wait`, `wait_for`, `wait_all`) when it
 is cancelled, or is cancelled while it waits, cancels what it waits for, then still waits for it to
-end; `wait_for` then waits to the end and returns true. A cancelled task that returns ends its own
+end; `wait_for` then waits to the end and returns true. (`wait_failure`, a read of a group's
+failures, fails instead, and its scope's end cancels the group: Groups' failures, below.) A cancelled task that returns ends its own
 handles' scopes, which cancel their tasks (spec §15, Tasks, rule 6). So cancelling a task reaches every task
 it started, and a task never ends before the tasks it started. How a waiting task is woken: a waiter
 records in its own slot what it waits on, under the table's mutex; `cancel` sets the flag under the
@@ -238,7 +239,7 @@ longer than the deadline. `fs`'s calls and the other calls checked before only a
 before only for a deadline too, for the same reasons, and so are Windows' synchronous reads of an
 inherited pipe: a cancel interrupts one from the thread that cancels, and a deadline has no
 other thread there when it passes. A wait for a task (`wait`, `wait_for`, `wait_all`,
-`wait_all_for`) that is still waiting when its waiter's deadline passes cancels what it waits
+`wait_all_for`, `wait_all_failures`) that is still waiting when its waiter's deadline passes cancels what it waits
 for and waits to the end, as a waiter asked to stop does: its result is the task's, usually
 `cancelled`, since those waits have no error of their own.
 
@@ -324,6 +325,52 @@ What `task::State` holds and does, all of it std over the platform layer's threa
   backend: threads.md.)
 - **A panic** in a task ends the program, as on any thread, reported as `panic in task NAME:`, NAME
   being the task fn's.
+
+### Groups' failures
+
+A `Group`'s `failures` setting says what a failing task does to the others (spec §17, `task`).
+`Failures::stop`, the zero, is the first design: the first failure is kept in the group's `error`,
+asks the others to stop (`stop_group`), and is `wait_all`'s result. `Failures::keep` is for a
+group whose tasks fail alone, as a server's connections do:
+
+- **What is held.** A failing task's error is copied, under the table's mutex, into a ring on
+  std's heap that the group owns (`held`, `oldest`, `count`), which starts empty, grows from 4 by
+  doubling up to the bound, `kept` or `KEPT` (64) for 0, and keeps its order when it grows. A
+  task run at once fails into it the same way, and broadcasts `t.groups`, which a worker's end
+  broadcasts too, so a waiting reader wakes either way.
+- **Past the bound, the oldest stay.** A failure past it, or one the heap has no room for, is
+  counted in `dropped` and dropped. What is held is then the first failures, in order, which are
+  the likeliest to say what went wrong, and holding never overwrites what a reader hasn't seen;
+  a ring that dropped the oldest would keep the latest instead, and lose the cause. The count is
+  a `u64`, since a server's group lives as long as the server.
+- **Reading.** `wait_failure` takes the oldest; `wait_all_failures` waits as `wait_all` does,
+  then copies every held one into a slice from the caller's allocator, called outside the
+  table's mutex since it is the caller's code (the group then has no task, and only its holder
+  starts one), and frees the ring. If the caller's allocator fails, the failures stay held, so
+  nothing is lost to a retry or to `wait_failure`.
+- **Who frees the ring.** The group: `wait_all_failures` once it has copied them, and
+  `cancel_all`, the scope's end, which drops what is unread and starts `dropped` again at 0.
+  `wait_all` leaves them held, so a program reads them after it, before the scope ends. The
+  program never frees it.
+- **A reader asked to stop**, or past its deadline, fails with `cancelled` or
+  `deadline_passed` and leaves the group as it was. `wait_all` stops the group instead, as
+  every wait for tasks does: it ends the group, and has no error of its own to fail with, so a
+  stop can only be passed down. `wait_failure` ends nothing and has one: it is a read of the
+  group's failures, as `net::receive` is of a socket, and fails as std's blocking reads do. The
+  stop still reaches the group's tasks, through the reader's scope, whose end cancels the group
+  (spec §15, Tasks, rule 6), and a deadline is then a bound on one read, not the group's end:
+  `run_within` of 0 around `wait_failure` looks without waiting, which a loop that does other
+  work between reads needs. A held failure is returned before the stop is looked at, as an
+  operation that completed returns its result. `wait_all_failures`, which ends the group, stops
+  it as `wait_all` does.
+- **A stop group's** held failures are none: `wait_failure` and `wait_all_failures` panic on one,
+  and `count_dropped` is 0.
+- **Errors are values.** A held failure is a copy of the task's error, as a stop group's `error`
+  and a `Task`'s result are: its payload's pointers point where the task's did. The checker treats
+  them the same way: each is read through the handle's `mut` field, which the escape check
+  doesn't follow (spec §14, Escape check, rule 4). So a payload that points into a local the
+  task read is valid only within that local's scope, and nothing checks that a program keeps
+  to it, for `wait` and `wait_all` as for these; keeping several adds no case of its own.
 
 ### The interpreter
 
