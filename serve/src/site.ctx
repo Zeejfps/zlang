@@ -56,9 +56,17 @@ namespace site {
         let began = clock::read_monotonic{ &clock }
         let mut sent = Sent{ status = 0, bytes = 0 }
         let request = exchange.request
-        // The request's buffers come from the C heap and go back to it when it is answered:
+        // The request's buffers come from std's heap and go back to it when it is answered:
         // a worker's stack stays committed at the deepest it has been (serve/PLAN.md, Findings),
         // so a buffer on it would be paid for by every idle connection whose thread ever ran one.
+        //
+        // An arena of the request's own, over mem::reserve and given back with mem::release,
+        // would free the buffers in one call, but the heap is cheaper per request and no less
+        // clear: each buffer is freed by a defer next to where it is made. Measured as PLAN.md's
+        // Findings are, both cost nothing once the connections are idle (76 MiB at 1,000), but
+        // the arena's reserve, its first MiB committed, and the release, three system calls and
+        // fresh pages each request, cost 4% of the requests per second for a 6-byte file and 8%
+        // for a 64 KiB one, and 15 MiB more while flooding, where the heap reuses its blocks.
         let mut h = heap::new{ &mem }
         let r = respond_to{ &fs, &h, &clock, site, &net, exchange, &sent }
         let mut failure: ?error = null

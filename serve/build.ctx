@@ -3,10 +3,9 @@
 // program of its own (`kotor/tools/ctxc exe serve/tools/load -o serve/out/load.exe`).
 fn build { mut b: Build } {
     let exe = build::exe{ &b, name = "serve", root = "src" }
-    build::add_sources{ &b, exe, dir = "src/heap" }
-    // The unchecked operations (ctxlang/docs/spec.md §13) are errors but in src/heap, the C
-    // heap's binding: its extern fns, and its blocks as slices.
-    build::deny_unchecked{ &b, exe, except = ["src/heap"] }
+    // The unchecked operations (ctxlang/docs/spec.md §13) are errors in every file: serve's
+    // memory beyond the stack is std's heap, so none of serve's own code is unchecked.
+    build::deny_unchecked{ &b, exe, except = [] }
     // A server: optimized as kotor is. Its panics keep their call paths, a few percent slower,
     // since a panic in a server is a bug to find from its log.
     build::optimize{ &b, exe, level = 2 }

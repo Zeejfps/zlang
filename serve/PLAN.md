@@ -68,11 +68,13 @@ next.
 Step 10, in serve/: `kotor/tools/ctxc exe serve -o serve/out/serve.exe` from the repository's root
 (serve/out is ignored, as kotor's is), and `kotor/tools/ctxc test serve` for its tests.
 
-- **Layout.** build.ctx (`-O2`, call paths kept for panics); src/main.ctx, the command line;
-  src/run.ctx, `main`, the acceptor, a task per connection, and stopping; src/site.ctx, what is
-  answered; src/paths.ctx, a target as a path under the root; src/mime.ctx, content types;
-  src/access.ctx, the log, its journal and the times; src/heap/heap.ctx, C's heap behind `alloc::Fn`, the only file with unchecked operations;
-  src/*_test.ctx. tools/load is the load generator, a program of its own
+- **Layout.** build.ctx (`-O2`, call paths kept for panics, the unchecked operations denied in
+  every file); src/main.ctx, the command line; src/run.ctx, `main`, the acceptor, a task per
+  connection, and stopping; src/site.ctx, what is answered; src/paths.ctx, a target as a path
+  under the root; src/mime.ctx, content types; src/access.ctx, the log, its journal and the
+  times; src/*_test.ctx. A request's buffers come from std's heap (`heap::alloc`, spec §17); serve
+  carried its own copy of kotor's C heap in src/heap until std had one (friction.md, 43), and has
+  no unchecked code of its own since. tools/load is the load generator, a program of its own
   (`kotor/tools/ctxc exe serve/tools/load -o serve/out/load.exe`); tools/measure.ps1 runs the
   load test.
 - **`serve DIR [--port N] [--address A] [--grace SECONDS] [--connections N]`**, on 127.0.0.1:8080
@@ -202,6 +204,9 @@ clients 23,301/s (0.170), 16 clients 22,380/s (0.710), 64 clients 20,908/s (2.90
   put a 64 KiB UTF-16 path on the stack in each file call (friction.md, 49, fixed by 6c6b1f43). Before serve moved
   its request buffers (the decoded target, the path, the 64 KiB file chunk) from the stack to the
   C heap, a file's idle connection cost 376 KiB: that move is in site.ctx, with the reason.
+  They come from std's heap now, measured the same (76.2 MiB at 1,000 idle, 26,800 to 27,200
+  requests/s on the small file); a request's arena over `mem::reserve`, given back with
+  `mem::release`, measured the same idle but 4 to 8% slower, and site.ctx says why the heap stays.
 - **The head's deadline is `task::run_within`'s**, on the connection's thread (http.md, Decision
   15): a deadline the blocked receive's own wait observes, as it observes a cancel, instead of a
   task that is cancelled. With one client asking for the file, 1,000 idle connections held: 10,446
@@ -238,7 +243,8 @@ Entries added to ctxlang/docs/todo/friction.md during this plan:
 - 41 (step 9): a callback any thread calls can't reach its namespace's statics without a forged
   capability (stop's handler).
 - 42: serve_connection doesn't say what it answered, so a log maps errors back to statuses.
-- 43: std has no general-purpose heap; serve wrote kotor's over C's malloc again.
+- 43 (*Fixed*): std had no general-purpose heap, so serve wrote kotor's over C's malloc again;
+  std's `heap` (1c129692) and `mem::release` (7a9ef685) answer it, and serve uses std's heap.
 - 44: a task's standard output is its thread's buffer: a log from many tasks needs a journal of
   the program's own, or a write per line, which cut throughput to a sixth.
 - 45: a type's `@fmt` writer reaches one sink (`net::Address` into a Builder only).
