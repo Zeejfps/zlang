@@ -144,9 +144,24 @@ namespace fs {
     // `path` as an absolute path, in memory from `realloc`: a copy if it is one, or else the
     // working directory and `path` joined by a `/`. It neither removes `.` and `..` nor looks at
     // whether `path` exists.
+    //
+    // The working directory is read into a small buffer on the stack, and only if it doesn't
+    // fit there into one from `realloc` with room for the longest any system gives: a thread's
+    // stack stays committed at the deepest it has been, so room for the longest on the stack
+    // would stay with every thread that ever called this.
     fn make_absolute(S) { mut fs: Fs, mut heap: S, realloc: alloc::Fn(S), path: []u8 } -> !alloc::Bytes {
-        let mut dir: [32768]u8
-        let n = if os::is_absolute{ path } { 0 } else { try os::working_dir{ &fs, into = dir[..] } }
+        let mut small: [1024]u8
+        let mut big = slice::empty(u8){}
+        defer {
+            if big.len > 0 { _ = realloc{ &heap, mem = big, new = 0, align = 1 } }
+        }
+        let n = if os::is_absolute{ path } { 0 } else {
+            os::working_dir{ &fs, into = small[..] } iferr {
+                big = try alloc::make(u8, S){ realloc, &heap, count = WORKING_DIR_MOST }
+                try os::working_dir{ &fs, into = big }
+            }
+        }
+        let dir: []u8 = if big.len > 0 { big } else { small[..] }
         let sep: usize = if n > 0 and path.len > 0 and dir[n - 1] != '/' and dir[n - 1] != '\\' { 1 } else { 0 }
         let out = try alloc::make(u8, S){ realloc, &heap, count = n + sep + path.len }
         slice::copy(u8){ dst = out[..n], src = dir[..n] }
@@ -154,6 +169,10 @@ namespace fs {
         slice::copy(u8){ dst = out[n + sep..], src = path }
         return out
     }
+
+    // The longest working directory make_absolute reads, in bytes: Windows' longest path, 32,767
+    // UTF-16 units, at 3 bytes a unit, more than POSIX systems' PATH_MAX.
+    const WORKING_DIR_MOST: usize = 98301
 
     // The names of directory `path`'s entries, without "." and "..", sorted by their bytes, in one
     // allocation from `realloc`: the slice of them, then their bytes. Free it with `list_free`.

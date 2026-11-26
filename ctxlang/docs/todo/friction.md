@@ -239,14 +239,15 @@ as the write-ups gave them.
     `task::check_cancelled`. A wait that also waits on the task's cancel object, as
     `thread::sleep` does, would say it. *Hit by 1:* serve.
 
-49. **Windows' file calls put a 64 KiB path buffer on the stack, which stays committed.** Each
-    of std's file functions on Windows converts the path into a `[32768]u16` local (the longest
-    path Windows takes), and a thread's stack stays committed at the deepest it has been, so
-    every worker that ever touched a file keeps those pages: serve's 1,000 idle connections
-    that had each asked for a file took 238 MiB, and 176 MiB when they had asked for /stats
-    instead. A buffer sized to the path would need memory std doesn't have (entry 43), and a
-    long-path fallback in a function of its own could still be inlined into the common frame:
-    there is no way to say that a function mustn't be. *Hit by 1:* serve.
+49. *Resolved by COMMIT (fill in the hash, then remove this entry):* **Windows' file calls put
+    a 64 KiB path buffer on the stack, which stays committed.** The Windows layer's file calls
+    now take a path in 512 UTF-16 units on the stack (1 KiB) and a longer one, up to Windows'
+    32,767, from the layer's own malloc for the call (`wide_path` and `free_wide`), as its env,
+    spawn and exe_path already did; `working_dir` and `fs::make_absolute` read the working
+    directory the same way. No frame has room for the longest path, so inlining can't put it in
+    the common one, and a `#noinline` attribute isn't needed for this: it would still have left
+    64 KiB committed on every thread that once took a long path. serve's 1,000 idle connections
+    that had each asked for a file take 176 MiB, as many as for /stats, from 238 MiB.
 
 50. **`ctxc exe -o` into a directory that isn't there fails in the linker.** `ctxc exe serve -o
     serve/out/serve.exe` before serve/out existed gave ld's "cannot open output file ...: No

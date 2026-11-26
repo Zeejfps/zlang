@@ -1,0 +1,20 @@
+// Paths longer than the 1 KiB a file call on Windows takes on the stack work, through memory
+// from malloc: a tree ten directories deep, past 1,000 bytes, is made, a file in it written,
+// sized, read, listed, renamed and removed, and the tree removed. Then a directory and a file
+// at each length from 500 to 520 bytes, either side of what fits on the stack, are made,
+// listed, written, sized, renamed, read and removed (21 lengths that passed). tmp is empty at
+// the end. The paths are `\\?\` ones, which Windows takes past MAX_PATH from any program; a
+// listing of one takes `\*` after it, not `/*`, which such a path doesn't read as a separator.
+//# only: windows: `\\?\` paths, which reach past MAX_PATH, are Windows'
+//# make dir tmp
+//# program: main.ctx
+//# args: {dir}/tmp
+//# interp: cannot run
+//# stdout:
+//| true
+//| 4
+//| deep
+//| 1 file.txt
+//| 1 renamed.txt
+//| 21
+//| 0

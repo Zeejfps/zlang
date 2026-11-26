@@ -181,14 +181,16 @@ clients 23,301/s (0.170), 16 clients 22,380/s (0.710), 64 clients 20,908/s (2.90
   62.5 GiB of a 64-bit address space's 128 TiB, and commit what Get-Process calls private. The
   task table holds 65,536 tasks, so at two a connection it stops at 32,768 idle connections;
   serve's own `--connections` (4,096) stops first.
-- **An idle connection costs two threads and about 240 KiB.** Its own task waits in
+- **An idle connection costs two threads and about 176 KiB.** Its own task waits in
   serve_connection, and a second task, the head's deadline (http.md, Decision 15), waits in the
   receive. A task that only sleeps costs 37 KiB (1,000 sleeping tasks: 1,004 threads, 37.7 MiB);
   a connection that has sent nothing, 100 KiB (two threads, the 16 KiB buffer and the fields);
-  one that has asked for /stats once, 176 KiB; one that has asked for a file once, 238 KiB. A
-  thread's stack stays committed at the deepest it has been, so a connection pays for the
-  deepest request its threads ran: 62 KiB of the file's is std's Windows layer putting a 64 KiB
-  UTF-16 path on the stack in each file call (friction.md, 49). Before serve moved its request
+  one that has asked for /stats once, 176 KiB; one that has asked for a file once, 176 KiB too.
+  A thread's stack stays committed at the deepest it has been, so a connection pays for the
+  deepest request its threads ran. A file's cost 238 KiB (the table's 237.9 MiB at 1,000) while
+  std's Windows layer put a 64 KiB UTF-16 path on the stack in each file call: it now takes 1 KiB
+  there and a longer path from malloc (friction.md, 49), and 1,000 idle connections that had
+  each asked for the file measure 175.7 MiB against 237.9 MiB before, in the same run. Before serve moved its request
   buffers (the decoded target, the path, the 64 KiB file chunk) from the stack to the C heap, a
   file's idle connection cost 376 KiB: that move is in site.ctx, with the reason.
 - **The head's deadline costs a thread per waiting connection and 25 to 50 µs per request.** A
@@ -202,13 +204,13 @@ clients 23,301/s (0.170), 16 clients 22,380/s (0.710), 64 clients 20,908/s (2.90
 **The Evented backend: not yet.** At a thousand connections, and at four thousand, the Threaded
 backend's cost is memory and threads, not throughput or latency: serve matches Go's evented
 net/http on the same files, and idle connections don't slow the busy ones. What it costs is about
-240 KiB and two threads per idle connection: 1 GiB at 4,000, about 2.4 GiB and 20,000 threads at
-10,000, where Windows' scheduler and the task table become the limits, and where Evented's
-fibers would be the answer. Two cheaper steps come first, and would halve the cost: a head's
+176 KiB and two threads per idle connection: about 690 MiB at 4,000, about 1.7 GiB and 20,000
+threads at 10,000, where Windows' scheduler and the task table become the limits, and where
+Evented's fibers would be the answer. It was 240 KiB until std's Windows file calls stopped
+putting a 64 KiB path on the stack (friction.md, 49). A cheaper step comes first: a head's
 deadline that doesn't take a second thread (a deadline the blocked receive's own wait observes,
-as a task's cancel object is observed now, instead of a task that is cancelled), and std's
-Windows file calls without a 64 KiB stack buffer. The case for Evented is a server meant for ten
-thousand connections or more, which serve isn't.
+as a task's cancel object is observed now, instead of a task that is cancelled). The case for
+Evented is a server meant for ten thousand connections or more, which serve isn't.
 
 ### 3. Friction
 

@@ -196,12 +196,13 @@ namespace os {
     struct Dir { find: u64, data: FindData, fresh: bool, name: [1040]u8 }
 
     fn file_open { mut fs: Fs, path: []u8, mode: fs::Mode } -> fs::Error!u64 {
-        let mut buf: [32768]u16
-        let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
-        if is_dir{ &fs, path = p } { return fs::is_directory }
+        let mut small: [SMALL_PATH]u16
+        let p = try wide_path{ &fs, path, small = small[..] }
+        defer free_wide{ &fs, wide = p }
+        if is_dir{ &fs, path = p.ptr } { return fs::is_directory }
         let access = match mode { read => { GENERIC_READ } write => { GENERIC_WRITE } append => { FILE_APPEND_DATA } create => { GENERIC_WRITE } }
         let disposition = match mode { read => { OPEN_EXISTING } write => { CREATE_ALWAYS } append => { OPEN_ALWAYS } create => { CREATE_NEW } }
-        let h = CreateFileW{ &fs, name = p, access, share = SHARE_ALL, security = null, disposition, flags = ATTRIBUTE_NORMAL, template = 0 }
+        let h = CreateFileW{ &fs, name = p.ptr, access, share = SHARE_ALL, security = null, disposition, flags = ATTRIBUTE_NORMAL, template = 0 }
         if h == INVALID_HANDLE { return failed{ code = GetLastError{ &fs } } }
         return h
     }
@@ -258,51 +259,75 @@ namespace os {
     }
 
     fn file_size { mut fs: Fs, path: []u8 } -> fs::Error!u64 {
-        let mut buf: [32768]u16
-        let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
+        let mut small: [SMALL_PATH]u16
+        let p = try wide_path{ &fs, path, small = small[..] }
+        defer free_wide{ &fs, wide = p }
         let mut data: FileData
-        if GetFileAttributesExW{ &fs, name = p, level = 0, data = &data } == 0 { return failed{ code = GetLastError{ &fs } } }
+        if GetFileAttributesExW{ &fs, name = p.ptr, level = 0, data = &data } == 0 { return failed{ code = GetLastError{ &fs } } }
         if data.attributes & ATTRIBUTE_DIRECTORY != 0 { return fs::is_directory }
         return (@as(u64, data.size_high) << 32) | @as(u64, data.size_low)
     }
 
     fn remove { mut fs: Fs, path: []u8 } -> fs::Error! {
-        let mut buf: [32768]u16
-        let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
-        if is_dir{ &fs, path = p } { return fs::is_directory }
-        if DeleteFileW{ &fs, name = p } == 0 { return failed{ code = GetLastError{ &fs } } }
+        let mut small: [SMALL_PATH]u16
+        let p = try wide_path{ &fs, path, small = small[..] }
+        defer free_wide{ &fs, wide = p }
+        if is_dir{ &fs, path = p.ptr } { return fs::is_directory }
+        if DeleteFileW{ &fs, name = p.ptr } == 0 { return failed{ code = GetLastError{ &fs } } }
     }
 
     fn make_dir { mut fs: Fs, path: []u8 } -> fs::Error! {
-        let mut buf: [32768]u16
-        let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
-        if CreateDirectoryW{ &fs, name = p, security = null } == 0 { return failed{ code = GetLastError{ &fs } } }
+        let mut small: [SMALL_PATH]u16
+        let p = try wide_path{ &fs, path, small = small[..] }
+        defer free_wide{ &fs, wide = p }
+        if CreateDirectoryW{ &fs, name = p.ptr, security = null } == 0 { return failed{ code = GetLastError{ &fs } } }
     }
 
     fn remove_dir { mut fs: Fs, path: []u8 } -> fs::Error! {
-        let mut buf: [32768]u16
-        let p = wide_path{ &fs, path, buf = buf[..] } ifnull { return too_long{} }
-        if RemoveDirectoryW{ &fs, name = p } == 0 { return failed{ code = GetLastError{ &fs } } }
+        let mut small: [SMALL_PATH]u16
+        let p = try wide_path{ &fs, path, small = small[..] }
+        defer free_wide{ &fs, wide = p }
+        if RemoveDirectoryW{ &fs, name = p.ptr } == 0 { return failed{ code = GetLastError{ &fs } } }
     }
 
     fn rename { mut fs: Fs, from: []u8, to: []u8 } -> fs::Error! {
-        let mut a: [32768]u16
-        let mut b: [32768]u16
-        let p = wide_path{ &fs, path = from, buf = a[..] } ifnull { return too_long{} }
-        let q = wide_path{ &fs, path = to, buf = b[..] } ifnull { return too_long{} }
-        if MoveFileExW{ &fs, from = p, to = q, flags = MOVEFILE_REPLACE_EXISTING } == 0 { return failed{ code = GetLastError{ &fs } } }
+        let mut a: [SMALL_PATH]u16
+        let mut b: [SMALL_PATH]u16
+        let p = try wide_path{ &fs, path = from, small = a[..] }
+        defer free_wide{ &fs, wide = p }
+        let q = try wide_path{ &fs, path = to, small = b[..] }
+        defer free_wide{ &fs, wide = q }
+        if MoveFileExW{ &fs, from = p.ptr, to = q.ptr, flags = MOVEFILE_REPLACE_EXISTING } == 0 { return failed{ code = GetLastError{ &fs } } }
     }
 
-    // The working directory's path, as UTF-8, into `into`. Returns its length.
+    // The working directory's path, as UTF-8, into `into`. Returns its length. It is read into a
+    // small buffer on the stack or, when it is longer, into memory from malloc of the size
+    // GetCurrentDirectoryW asks for, and again until it fits, since another thread may change
+    // the directory between the calls.
     fn working_dir { mut fs: Fs, into: []mut u8 } -> fs::Error!usize {
-        let mut buf: [32768]u16
-        let n = GetCurrentDirectoryW{ &fs, size = @as(u32, buf.len), buf = buf[..].ptr }
-        if n == 0 { return failed{ code = GetLastError{ &fs } } }
-        if @as(usize, n) >= buf.len { return too_long{} }
-        let cap = @min(into.len, 2147483647)
-        let m = WideCharToMultiByte{ &fs, page = UTF8, flags = 0, text = buf[..].ptr, n = @as(i32, n), out = into.ptr, cap = @as(i32, cap), fallback = null, used = null }
-        if m <= 0 { return too_long{} }
-        return @as(usize, m)
+        let mut small: [SMALL_PATH]u16
+        let mut wide = small[..]
+        let mut big: ?*mut u8 = null
+        defer {
+            if let b = big { fs_free{ &fs, p = b } }
+        }
+        while true {
+            let n = GetCurrentDirectoryW{ &fs, size = @as(u32, wide.len), buf = wide.ptr }
+            if n == 0 { return failed{ code = GetLastError{ &fs } } }
+            if @as(usize, n) < wide.len {
+                let cap = @min(into.len, 2147483647)
+                let m = WideCharToMultiByte{ &fs, page = UTF8, flags = 0, text = wide.ptr, n = @as(i32, n), out = into.ptr, cap = @as(i32, cap), fallback = null, used = null }
+                if m <= 0 { return too_long{} }
+                return @as(usize, m)
+            }
+            // Too small: n is the size it needs, its zero included.
+            if let b = big { fs_free{ &fs, p = b } }
+            big = null
+            let b = fs_malloc{ &fs, size = @as(usize, n) * 2 } ifnull { return out_of_memory_for_files{} }
+            big = b
+            wide = @slice(@cast(*mut u16, b), @as(usize, n))
+        }
+        return too_long{}
     }
 
     fn is_absolute { path: []u8 } -> bool {
@@ -310,20 +335,26 @@ namespace os {
     }
 
     fn dir_open { mut fs: Fs, path: []u8 } -> fs::Error!Dir {
-        let mut buf: [32768]u16
-        let p = wide_path{ &fs, path, buf = buf[..buf.len - 2] } ifnull { return too_long{} }
+        let mut small: [SMALL_PATH]u16
+        let p = try wide_path{ &fs, path, small = small[..] }
+        defer free_wide{ &fs, wide = p }
+        // The path and `\*`, or `*` after a separator it ends in: a `\\?\` path takes neither `/`
+        // nor two separators in a row as one.
         let mut n: usize = 0
-        while buf[n] != 0 { n = n + 1 }
-        buf[n] = 47                                             // "/*"
-        buf[n + 1] = 42
-        buf[n + 2] = 0
+        while p[n] != 0 { n = n + 1 }
+        if p[n - 1] != 47 and p[n - 1] != 92 {
+            p[n] = 92
+            n = n + 1
+        }
+        p[n] = 42
+        p[n + 1] = 0
         let mut d = Dir{
             find = 0,
             data = FindData{ attributes = 0, times = [0; 6], size_high = 0, size_low = 0, reserved = [0; 2], name = [0; 260], short_name = [0; 14] },
             fresh = true,
             name = [0; 1040],
         }
-        d.find = FindFirstFileW{ &fs, name = p, &d.data }
+        d.find = FindFirstFileW{ &fs, name = p.ptr, &d.data }
         if d.find == INVALID_HANDLE { return failed{ code = GetLastError{ &fs } } }
         return d
     }
@@ -1197,13 +1228,50 @@ namespace os {
         return @as(usize, n)
     }
 
-    // `path` as UTF-16 with a zero after it, in buf; null if it doesn't fit.
-    fn wide_path { mut fs: Fs, path: []u8, buf: []mut u16 } -> ?*u16 {
-        if path.len >= buf.len { return null }
-        let n = MultiByteToWideChar{ &fs, page = UTF8, flags = 0, text = path.ptr, n = @as(i32, path.len), out = buf.ptr, cap = @as(i32, buf.len - 1) }
-        if n <= 0 { return null }
+    // A path for a file call: `path`, which isn't empty, as UTF-16 with a zero after it and room
+    // for two units more (dir_open's `\*`). It is in the caller's `small`, SMALL_PATH units, when
+    // it fits there, as most paths do, and else in memory from malloc; the caller gives it to
+    // free_wide when done. No frame has room for the longest path Windows takes, 64 KiB: a
+    // thread's stack stays committed at the deepest it has been, so such a frame would stay with
+    // every thread that ever touched a file. Fails with too_long for a path longer than Windows
+    // takes, or one that isn't UTF-8.
+    fn wide_path { mut fs: Fs, path: []u8, small: []mut u16 } -> fs::Error![]mut u16 {
+        if path.len > 3 * LONGEST_PATH { return too_long{} }       // a unit is at most 3 bytes
+        let cap = path.len + 3                                      // a unit is at least 1 byte
+        let mut buf = small
+        if cap <= small.len {
+            buf = small[..cap]
+        } else {
+            let b = fs_malloc{ &fs, size = cap * 2 } ifnull { return out_of_memory_for_files{} }
+            buf = @slice(@cast(*mut u16, b), cap)
+        }
+        let n = MultiByteToWideChar{ &fs, page = UTF8, flags = 0, text = path.ptr, n = @as(i32, path.len), out = buf.ptr, cap = @as(i32, path.len) }
+        if n <= 0 or @as(usize, n) > LONGEST_PATH {
+            free_wide{ &fs, wide = buf }
+            return too_long{}
+        }
         buf[@as(usize, n)] = 0
-        return buf.ptr
+        return buf
+    }
+
+    // Frees what wide_path took from malloc, which is a path longer than SMALL_PATH holds.
+    fn free_wide { mut fs: Fs, wide: []mut u16 } {
+        if wide.len > SMALL_PATH { fs_free{ &fs, p = @cast(*mut u8, wide.ptr) } }
+    }
+
+    // The UTF-16 units of a file call's path on the stack, its zero and dir_open's two more
+    // among them: 1 KiB. And the most units Windows takes in a path, its zero not among them.
+    const SMALL_PATH: usize = 512
+    const LONGEST_PATH: usize = 32767
+
+    // C's malloc and free, for paths too long for SMALL_PATH.
+    #c_symbol{ name = "malloc" }
+    extern fn fs_malloc { mut fs: Fs, size: usize } -> ?*mut u8
+    #c_symbol{ name = "free" }
+    extern fn fs_free { mut fs: Fs, p: *mut u8 }
+
+    fn out_of_memory_for_files(T) {} -> !T {
+        return fs::other{ code = 8 }                                // ERROR_NOT_ENOUGH_MEMORY
     }
 
     fn is_dir { mut fs: Fs, path: *u16 } -> bool {

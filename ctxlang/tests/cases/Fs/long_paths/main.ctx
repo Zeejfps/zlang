@@ -1,0 +1,146 @@
+// The paths are `\\?\` ones, which Windows takes past MAX_PATH from any program, with `\` for
+// each `/` of the directory given.
+
+// Writes `s` into `into` from `at` on. Returns where it ends.
+fn put { into: []mut u8, at: usize, s: []u8 } -> usize {
+    slice::copy(u8){ dst = into[at..at + s.len], src = s }
+    return at + s.len
+}
+
+// Writes `n` of `byte` into `into` from `at` on. Returns where they end.
+fn put_many { into: []mut u8, at: usize, byte: u8, n: usize } -> usize {
+    let mut i: usize = 0
+    while i < n {
+        into[at + i] = byte
+        i = i + 1
+    }
+    return at + n
+}
+
+// `\\?\` and `dir` with `\` for `/`, into `into`. Returns its length.
+fn put_root { into: []mut u8, dir: []u8 } -> usize {
+    let mut at = put{ into, at = 0, s = "\\\\?\\" }
+    let mut i: usize = 0
+    while i < dir.len {
+        into[at] = if dir[i] == '/' { '\\' } else { dir[i] }
+        at = at + 1
+        i = i + 1
+    }
+    return at
+}
+
+// Makes directory `path`, lists it (empty), removes it; then writes file `path`, renames it to
+// `other`, reads it back and removes it. Returns whether each step did what it should. Whatever
+// a failed step left is removed, since the suite's own clean-up can't reach past MAX_PATH.
+fn round_trip { mut fs: Fs, path: []u8, other: []u8 } -> bool {
+    let mut mem: [4096]u8
+    let mut heap = arena::new{ buf = mem[..] }
+    defer {
+        fs::remove_dir{ &fs, path } iferr {}
+        fs::remove{ &fs, path } iferr {}
+        fs::remove{ &fs, path = other } iferr {}
+    }
+    fs::make_dir{ &fs, path } iferr { return false }
+    let names = fs::list{ &fs, &heap, realloc = arena::alloc, path } iferr { return false }
+    if names.len != 0 { return false }
+    fs::remove_dir{ &fs, path } iferr { return false }
+    _ = fs::write_all{ &fs, path, bytes = "text" } iferr { return false }
+    if (fs::size{ &fs, path } iferr { return false }) != 4 { return false }
+    fs::rename{ &fs, from = path, to = other } iferr { return false }
+    let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = other } iferr { return false }
+    if not slice::eq_bytes{ a = text, b = "text" } { return false }
+    let gone = match fs::size{ &fs, path } { ok => { false } fs::not_found => { true } else => { false } }
+    fs::remove{ &fs, path = other } iferr { return false }
+    return gone
+}
+
+// Removes what is left of the tree from its deepest directory up, if anything is: a failed step
+// leaves it, and the suite's own clean-up can't reach past MAX_PATH.
+fn remove_tree { mut fs: Fs, tree: []u8, ends: []usize, file: []u8, renamed: []u8 } {
+    fs::remove{ &fs, path = file } iferr {}
+    fs::remove{ &fs, path = renamed } iferr {}
+    let mut level = ends.len
+    while level > 0 {
+        level = level - 1
+        fs::remove_dir{ &fs, path = tree[..ends[level]] } iferr {}
+    }
+}
+
+fn main { mut io: Io, mut fs: Fs, args: Args } -> i32 {
+    let mut mem: [65536]u8
+    let mut heap = arena::new{ buf = mem[..] }
+
+    // A tree ten directories deep, each name 99 bytes: past 1,000 bytes, and past the 1 KiB a
+    // file call's path takes on the stack.
+    let mut tree: [2048]u8
+    let mut moved: [2048]u8
+    let mut ends: [10]usize = [0; 10]
+    let root = put_root{ into = tree[..], dir = args[0] }
+    let mut at = root
+    let mut level: usize = 0
+    while level < 10 {
+        at = put{ into = tree[..], at, s = "\\" }
+        at = put_many{ into = tree[..], at, byte = 'a' + @trunc(u8, level), n = 99 }
+        ends[level] = at
+        level = level + 1
+    }
+    let deep = at
+    let file = put{ into = tree[..], at = deep, s = "\\file.txt" }
+    slice::copy(u8){ dst = moved[..deep], src = tree[..deep] }
+    let renamed = put{ into = moved[..], at = deep, s = "\\renamed.txt" }
+    defer remove_tree{ &fs, tree = tree[..], ends = ends[..], file = tree[..file], renamed = moved[..renamed] }
+
+    _ = @fmt(&io, "{}\n", deep > 1000)
+    level = 0
+    while level < 10 {
+        fs::make_dir{ &fs, path = tree[..ends[level]] } iferr { return 1 }
+        level = level + 1
+    }
+    _ = fs::write_all{ &fs, path = tree[..file], bytes = "deep" } iferr { return 2 }
+    _ = @fmt(&io, "{}\n", fs::size{ &fs, path = tree[..file] } iferr { return 3 })
+    let text = fs::read_all{ &fs, &heap, realloc = arena::alloc, path = tree[..file] } iferr { return 4 }
+    _ = @fmt(&io, "{}\n", text)
+    let names = fs::list{ &fs, &heap, realloc = arena::alloc, path = tree[..deep] } iferr { return 5 }
+    _ = @fmt(&io, "{} {}\n", names.len, names[0])
+    fs::rename{ &fs, from = tree[..file], to = moved[..renamed] } iferr { return 6 }
+    let again = fs::list{ &fs, &heap, realloc = arena::alloc, path = tree[..deep] } iferr { return 7 }
+    _ = @fmt(&io, "{} {}\n", again.len, again[0])
+    fs::remove{ &fs, path = moved[..renamed] } iferr { return 8 }
+    while level > 0 {
+        level = level - 1
+        fs::remove_dir{ &fs, path = tree[..ends[level]] } iferr { return 9 }
+    }
+
+    // Paths of each length from 500 to 520 bytes, either side of the most a file call's path
+    // takes on the stack (509 bytes, 512 units with its zero and dir_open's two more): a
+    // directory and a file at each, under a directory padded so that the longest name is 250
+    // bytes, since a name takes at most 255 whatever the checkout's path is.
+    let mut near: [2048]u8
+    let mut other: [2048]u8
+    _ = put_root{ into = near[..], dir = args[0] }
+    at = put{ into = near[..], at = root, s = "\\" }
+    let parent = put_many{ into = near[..], at, byte = 'p', n = 520 - 1 - 250 - at }
+    slice::copy(u8){ dst = other[..parent], src = near[..parent] }
+    fs::make_dir{ &fs, path = near[..parent] } iferr { return 10 }
+    defer fs::remove_dir{ &fs, path = near[..parent] } iferr {}
+    let mut length: usize = 500
+    let mut passed: usize = 0
+    while length <= 520 {
+        let name = length - parent - 1
+        at = put{ into = near[..], at = parent, s = "\\" }
+        _ = put_many{ into = near[..], at, byte = 'x', n = name }
+        at = put{ into = other[..], at = parent, s = "\\" }
+        _ = put_many{ into = other[..], at, byte = 'y', n = name }
+        if round_trip{ &fs, path = near[..length], other = other[..length] } {
+            passed = passed + 1
+        } else {
+            _ = @fmt(&io, "{} failed\n", length)
+        }
+        length = length + 1
+    }
+    _ = @fmt(&io, "{}\n", passed)
+    fs::remove_dir{ &fs, path = near[..parent] } iferr { return 11 }
+    let left = fs::list{ &fs, &heap, realloc = arena::alloc, path = args[0] } iferr { return 12 }
+    _ = @fmt(&io, "{}\n", left.len)
+    return 0
+}
