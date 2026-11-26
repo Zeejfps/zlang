@@ -11,6 +11,8 @@ struct Tally { run: u32, failed: u32 }
 fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     let game: []u8 = if args.len >= 2 and slice::eq_bytes{ a = args[0], b = "--game" } { args[1] } else { DEFAULT_GAME }
     let mut t = Tally{ run = 0, failed = 0 }
+    // What std's heap held before the checks: they must give back all they take.
+    let start = heap::count_live{ mem }
     let mut h = heap::new{ &mem }
     let pages = mem::pages{ &mem, size = 16777216 } ifnull { return 1 }
     let mut scratch = arena::new{ buf = pages }
@@ -23,9 +25,10 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, args: Args } -> i32 {
     check_vis{ &io, &t, &scratch }
     arena::reset{ heap = &scratch }
     check_real_tables{ &io, &fs, &t, &h, &scratch, game }
-    _ = @fmt(&io, "fmttest: {} checks, {} failed; heap {} bytes live\n", t.run, t.failed, h.live)
+    let left = heap::count_live{ mem }.bytes -% start.bytes
+    _ = @fmt(&io, "fmttest: {} checks, {} failed; heap {} bytes live\n", t.run, t.failed, left)
     io::flush{ &io }
-    return if t.failed == 0 and h.live == 0 { 0 } else { 1 }
+    return if t.failed == 0 and left == 0 { 0 } else { 1 }
 }
 
 fn expect { mut io: Io, mut t: Tally, ok: bool, what: strlit } {

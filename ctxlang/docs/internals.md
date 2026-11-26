@@ -290,7 +290,8 @@ blocking call in the table that a cancel stops, a deadline stops (Deadlines).
 std's arena is one thread's at a time: tasks that allocate from arenas each have their own, from
 pages of their own or from a buffer their starter gives them, or share one behind a mutex. std's
 heap is the platform's, which any thread may use: each task makes a `heap::Heap` of its own from
-its `Mem`, and a block one task's Heap gave out may be freed through another's.
+its `Mem`, and a block one task's Heap gave out may be freed through another's. Its counters
+(`heap::count_live`) are the program's, in `Mem`'s statics, kept with relaxed atomics.
 
 ### The backend
 

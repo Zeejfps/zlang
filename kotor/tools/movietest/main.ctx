@@ -87,7 +87,7 @@ fn run { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut heap: arena::Arena, mut 
 // Opens the movie, runs it to its end (or a skip), and prints what happened.
 fn play { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut dev: gpu::Device, mut frame: render::Frame, mut h: heap::Heap,
           mut tables: bink_tables::Tables, mixer: ?*mut mix::Mixer, adev: ?*mut audio::Device, rate: u32, pixels: []mut u8, o: Options } -> ! {
-    let baseline = h.live
+    let baseline = heap::count_live{ mem = h.mem }.bytes
     let mut p = try movie::open{ &fs, &dev, realloc = heap::alloc, heap = &h, tables = &tables, mixer, game = o.game, name = o.name }
     let head = p.movie.header
     let sound_rate = p.movie.audio_rate
@@ -163,7 +163,7 @@ fn play { mut io: Io, mut fs: Fs, mut sdl: sdl::Sdl, mut dev: gpu::Device, mut f
     }
     _ = @fmt(&io, "time: clock {} s in {} updates ({} s each); ended by itself: {}; skipped: {}; failed: {} at frame {}\n",
         clock, updates, o.dt, ended, skipped, failed, failed_at)
-    _ = @fmt(&io, "memory: {} bytes live before open, {} after close\n", baseline, h.live)
+    _ = @fmt(&io, "memory: {} bytes live before open, {} after close\n", baseline, heap::count_live{ mem = h.mem }.bytes)
 }
 
 // Keeps the sound going: the device's queue topped up (--show), or, headless, the mixer rendered

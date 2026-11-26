@@ -203,8 +203,8 @@ fn check_twoda { mut io: Io, t: *mut Twoda, mut scratch: arena::Arena, copy: cor
 }
 
 // Mounts and unmounts every module in modules/, checking that each mount finds the module's
-// .ifo and that the heap returns to the same live bytes afterwards (no leak across hours of
-// module changes).
+// .ifo and that std's heap returns to the same live bytes afterwards (no leak across hours of
+// module changes). This program has one thread, so the process-wide count is this work's.
 fn check_modules { mut io: Io, mut fs: Fs, mut h: heap::Heap, game: []u8, verbose: bool } -> u64 {
     let mut rm = res::open{ &fs, heap = &h, game } iferr err{ error } {
         _ = @fmt(&io, "res FAIL: open: {}\n", error)
@@ -238,14 +238,16 @@ fn check_modules { mut io: Io, mut fs: Fs, mut h: heap::Heap, game: []u8, verbos
             failed = failed + 1
         }
         res::unmount_module{ &fs, &rm }
-        let expected = base ifnull h.live
+        let live = heap::count_live{ mem = h.mem }.bytes
+        let expected = base ifnull live
         base = expected
-        if h.live != expected {
-            _ = @fmt(&io, "res FAIL: {} left the heap at {} bytes, not {}\n", name, h.live, expected)
+        if live != expected {
+            _ = @fmt(&io, "res FAIL: {} left the heap at {} bytes, not {}\n", name, live, expected)
             failed = failed + 1
         }
     }
-    _ = @fmt(&io, "res: {} modules mounted and unmounted, {} failures; heap {} bytes live, peak {}\n", mounted, failed, h.live, h.peak)
+    let counts = heap::count_live{ mem = h.mem }
+    _ = @fmt(&io, "res: {} modules mounted and unmounted, {} failures; heap {} bytes live, peak {}\n", mounted, failed, counts.bytes, counts.peak)
     return failed
 }
 

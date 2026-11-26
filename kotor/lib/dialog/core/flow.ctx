@@ -851,7 +851,7 @@ namespace dlg {
         free{ &w, d = &w.conversation.d }
         if w.log.dialog {
             world::prefix{ &w }
-            _ = @fmt(&w.io, "dialog heap live {} bytes after {}\n", w.heap.live, w.conversation.name)
+            _ = @fmt(&w.io, "dialog heap live {} bytes after {}\n", heap::count_live{ mem = w.heap.mem }.bytes, w.conversation.name)
         }
         w.conversation.d = Dialog{ .. }
         w.conversation.active = false

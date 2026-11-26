@@ -17,9 +17,46 @@
 // platform's heap handed the memory out before. Its address is a multiple of `align`, any power
 // of two: up to 16, the platform heap's own alignment on 64-bit platforms, directly; above it,
 // from a block `align` bytes larger, with that block's address just before the one handed out.
+//
+// Every Heap counts into the same process-wide counters, which any code with a Mem reads:
+//
+//   let before = heap::count_live{ mem }
+//   ...                                                       // work that should give back all it took
+//   if heap::count_live{ mem }.bytes != before.bytes { ... }   // a leak, or another thread's blocks
+//
+// They count what callers asked for: a block's requested size, not the platform's rounding or
+// an over-aligned block's padding. Being process-wide, a difference measured around some work
+// counts every other thread's allocations made meanwhile too. The interpreter's layer counts
+// the same way, since the counting is here: its heap_free gives no memory back, but a freed
+// block still leaves the counts.
 
 namespace heap {
     struct Heap { mem: Mem }
+
+    // The heap's counters (spec §15, rule 13), which std's Mem includes: one set for the program,
+    // updated by every Heap on every thread. Relaxed atomics are enough: each counter is one
+    // atomic variable whose read-modify-writes are never lost whatever their order, and nothing
+    // else is published through them, so no ordering with other memory is needed. A reader that
+    // wants other threads' work counted waits for it by other means (a join, a mutex), which
+    // orders it.
+    capability State {
+        static heap_bytes: usize,               // bytes live: the sizes asked for and not freed
+        static heap_blocks: usize,              // blocks live
+        static heap_peak: usize,                // the most heap_bytes has been
+    }
+
+    // What count_live reads: bytes and blocks live now, and the most bytes there have been.
+    struct Live { bytes: usize, blocks: usize, peak: usize }
+
+    // The process-wide counts of every Heap's blocks (above). Each is read alone, so while
+    // other threads allocate the three may be from slightly different moments.
+    fn count_live { mem: Mem } -> Live {
+        return Live{
+            bytes = @atomic_load_relaxed(&mem.heap_bytes),
+            blocks = @atomic_load_relaxed(&mem.heap_blocks),
+            peak = @atomic_load_relaxed(&mem.heap_peak),
+        }
+    }
 
     // The alignment every block of the platform's heap has: malloc's and HeapAlloc's on 64-bit
     // platforms (MEMORY_ALLOCATION_ALIGNMENT on Windows).
@@ -40,16 +77,21 @@ namespace heap {
     fn alloc { mut heap: Heap, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
         if align == 0 or align & (align - 1) != 0 { return null }
         if new == 0 {
-            if mem.len > 0 { free_block{ &heap, mem, align } }
+            if mem.len > 0 {
+                free_block{ &heap, mem, align }
+                count{ &heap, old = mem.len, new = 0 }
+            }
             return slice::empty(u8){}
         }
         if new > MAX_SIZE { return null }
         if align <= ALIGN {
             if mem.len == 0 {
                 let p = os::heap_allocate{ mem = &heap.mem, size = new } ifnull { return null }
+                count{ &heap, old = 0, new }
                 return @slice(p, new)
             }
             let q = os::heap_resize{ mem = &heap.mem, p = mem.ptr, old = mem.len, size = new } ifnull { return null }
+            count{ &heap, old = mem.len, new }
             return @slice(q, new)
         }
         // Over-aligned: a new block, what is kept copied into it, and the old one freed.
@@ -59,7 +101,24 @@ namespace heap {
             slice::copy(u8){ dst = out[..kept], src = mem[..kept] }
             free_block{ &heap, mem, align }
         }
+        count{ &heap, old = mem.len, new }
         return out
+    }
+
+    // Counts a block of `old` bytes becoming `new` bytes: 0 for `old` is one made, 0 for `new`
+    // one freed. The peak is raised to what this add made heap_bytes, a value it really had.
+    fn count { mut heap: Heap, old: usize, new: usize } {
+        if old == 0 { _ = @atomic_add_relaxed(&heap.mem.heap_blocks, 1) }
+        if new == 0 { _ = @atomic_subtract_relaxed(&heap.mem.heap_blocks, 1) }
+        if new <= old {
+            _ = @atomic_subtract_relaxed(&heap.mem.heap_bytes, old - new)
+            return
+        }
+        let now = @atomic_add_relaxed(&heap.mem.heap_bytes, new - old) + (new - old)
+        let mut peak = @atomic_load_relaxed(&heap.mem.heap_peak)
+        while now > peak {
+            peak = @atomic_compare_exchange_relaxed(&heap.mem.heap_peak, peak, now) ifnull { return }
+        }
     }
 
     // `size` bytes aligned to `align`, more than ALIGN: in a block of the platform's of

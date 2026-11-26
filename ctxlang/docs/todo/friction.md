@@ -205,12 +205,6 @@ as the write-ups gave them.
     response head too large for the buffer) would be logged twice. A callback for refusals, or
     the status in the error, would say it. *Hit by 1:* serve.
 
-43. **std has no general-purpose heap.** A server's memory per request is decided by its input
-    (a directory's listing, a path as long as the target) and freed when the request is
-    answered; an arena only grows, and `mem::pages` is never given back. Written: C's calloc,
-    realloc and free behind `alloc::Fn` (serve/src/heap/heap.ctx), which kotor wrote first
-    (kotor/lib/base/heap.ctx). *Hit by 2:* kotor, serve.
-
 44. **A task's standard output is its thread's own buffer.** What a task prints comes out when
     its worker's 64 KiB fills or its thread ends (10 seconds after its last task), so lines from
     many tasks come out late and in any order. Flushing after each line makes each one a write

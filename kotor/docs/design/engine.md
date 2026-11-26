@@ -69,12 +69,12 @@ struct World {
 The `nwvm::Vm` is **not** in the World: routines get both (`mut w`, `mut vm`), and a Vm inside the
 World would alias. `game/main` owns the Vm and binds the engine once (Scripts, below).
 
-**Memory.** Three lifetimes: the session heap (`heap::Heap`, malloc: the World, objects, their
-lists and strings, freed one by one); the module arena (reset when the module is left: parsed
-layout, walkmeshes, path points, NCS programs, template bytes); the frame (a scratch arena reset
-every frame, for temporary text). Everything an object owns is freed by `obj::free_object`, so a
-destroyed object gives its memory back; `w.heap.live` must return to the same number after a
-module is left (as fmtcheck checks for res).
+**Memory.** Three lifetimes: the session heap (std's `heap::Heap`, the platform's heap: the
+World, objects, their lists and strings, freed one by one); the module arena (reset when the
+module is left: parsed layout, walkmeshes, path points, NCS programs, template bytes); the frame
+(a scratch arena reset every frame, for temporary text). Everything an object owns is freed by
+`obj::free_object`, so a destroyed object gives its memory back; `heap::count_live`'s bytes must
+return to the same number after a module is left (as fmtcheck checks for res).
 
 ## Objects
 

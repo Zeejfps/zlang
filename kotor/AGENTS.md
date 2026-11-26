@@ -139,7 +139,7 @@ Gaps in the shell, the test tools and the game's framework that cost time: [docs
 What the quick reference leaves to the program, as the game does it.
 
 - **Code to imitate:** `lib/formats/`, `lib/res/`, `lib/mdl/`, `tools/resls/main.ctx`.
-- **Memory:** the game's general heap is `lib/base`'s, over C's allocator:
+- **Memory:** the game's general heap is std's `heap`, over the platform's allocator:
   `let mut h = heap::new{ &mem }`, then `realloc = heap::alloc, heap = &h` wherever std takes an
   allocator (`list::new(u32){ realloc = heap::alloc, heap = &h }`). Arenas as std has them.
 - **`math` is the game's** (`lib/base/math.ctx`: vectors, matrices, quaternions), and hides std's
@@ -187,7 +187,7 @@ Planned subsystems (namespace in brackets):
 
 | Directory | What |
 |---|---|
-| `lib/base` | math (`math`: vectors, matrices, quaternions), a general allocator, small helpers |
+| `lib/base` | math (`math`: vectors, matrices, quaternions), small helpers |
 | `lib/res` | resource types, KEY/BIF, ERF/MOD/SAV, RIM, Override, the resource manager (`res`) |
 | `lib/formats` | GFF read/write (`gff`), 2DA (`twoda`), TLK (`tlk`), LYT, VIS, SSF, LIP, TXI, LTR, PTH |
 | `lib/tex` | TPC, TGA, DXT and cube maps to images (`tex`) |

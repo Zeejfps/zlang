@@ -47,7 +47,7 @@ fn build { mut b: Build } {
     build::deny_unchecked{ &b, exe, except = [
         "lib/platform",     // SDL2's binding: its extern fns, the event union, C's buffers as slices
         "lib/render_gl",    // OpenGL's binding: the loader's casts, the debug callback, vertex and uniform data as bytes
-        "lib/base",         // the C heap behind heap::alloc, libm's functions, float bits, and le's reads after one bounds check
+        "lib/base",         // libm's functions, float bits, and le's reads after one bounds check
         "lib/script",       // the NCS VM: its stack through pointers, and its untagged Cell
         "lib/video",        // the Bink decoder's inner loops
         "lib/audio",        // the mixer's and the MP3 decoder's inner loops

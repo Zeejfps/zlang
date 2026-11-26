@@ -20,8 +20,8 @@
 //   ...
 //   mem::release{ &mem, pages = buf }       // scratch, and all it handed out, is gone
 
-// Permission to take memory from the system.
-capability Mem
+// Permission to take memory from the system, and to read std's heap's counters (heap::State).
+capability Mem { ..heap::State }
 
 namespace mem {
     const PAGE: usize = 4096

@@ -1,0 +1,75 @@
+// std's heap counts every Heap's blocks in process-wide counters (heap::count_live): bytes live,
+// the sizes callers asked for, blocks live, and the most bytes there have been. An allocate, a
+// resize either way and a free move them by what was asked; an over-aligned block counts its
+// requested size, not its padding; a block freed through another Heap leaves them; and 8
+// threads allocating, resizing and freeing at once leave them where they started.
+
+// Takes and frees blocks of sizes and alignments from `seed`, through a Heap of its own, and
+// leaves nothing behind.
+fn churn { mut mem: Mem, seed: u64 } -> u64 {
+    let mut h = heap::new{ &mem }
+    let aligns: [4]usize = [1, 8, 16, 64]
+    let mut x = seed
+    for i in 0..2000 {
+        x = x * 6364136223846793005 + 1442695040888963407 ifoverflow x
+        let size = @as(usize, (x >> 33) % 300) + 1
+        let align = aligns[@as(usize, (x >> 20) % 4)]
+        let a = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = size, align } ifnull { return 1 }
+        let b = heap::alloc{ heap = &h, mem = a, new = size * 2, align } ifnull { return 1 }
+        _ = heap::alloc{ heap = &h, mem = b, new = 0, align }
+    }
+    return 0
+}
+
+fn show { mut io: Io, mem: Mem, start: heap::Live, what: strlit } {
+    let now = heap::count_live{ mem }
+    _ = @fmt(&io, "{}: {} bytes, {} blocks\n", what, now.bytes - start.bytes, now.blocks - start.blocks)
+}
+
+fn main { mut io: Io, mut threads: Threads } -> ! {
+    let start = heap::count_live{ mem = threads }
+    let mut h = heap::new{ mem = &threads }
+    let a = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 100, align = 8 } ifnull slice::empty(u8){}
+    show{ &io, mem = threads, start, what = "allocated 100" }
+    let peak = heap::count_live{ mem = threads }.peak
+    _ = @fmt(&io, "peak covers it: {}\n", peak >= start.bytes + 100)
+    let b = heap::alloc{ heap = &h, mem = a, new = 250, align = 8 } ifnull slice::empty(u8){}
+    show{ &io, mem = threads, start, what = "grown to 250" }
+    let c = heap::alloc{ heap = &h, mem = b, new = 40, align = 8 } ifnull slice::empty(u8){}
+    show{ &io, mem = threads, start, what = "shrunk to 40" }
+    let big = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 100, align = 4096 } ifnull slice::empty(u8){}
+    show{ &io, mem = threads, start, what = "and 100 aligned to 4096" }
+    let bigger = heap::alloc{ heap = &h, mem = big, new = 300, align = 4096 } ifnull slice::empty(u8){}
+    show{ &io, mem = threads, start, what = "grown to 300" }
+    _ = @fmt(&io, "peak no lower: {}\n", heap::count_live{ mem = threads }.peak >= start.bytes + 340)
+
+    // Freed through another Heap, as any Heap may.
+    let mut other = heap::new{ mem = &threads }
+    _ = heap::alloc{ heap = &other, mem = c, new = 0, align = 8 }
+    _ = heap::alloc{ heap = &other, mem = bigger, new = 0, align = 4096 }
+    show{ &io, mem = threads, start, what = "both freed" }
+
+    // A failed request counts nothing.
+    _ = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 10, align = 3 }
+    show{ &io, mem = threads, start, what = "align 3 refused" }
+
+    let mut hs: [8]thread::Handle(u64)
+    for i in 0..8 { try thread::spawn{ &threads, handle = &hs[i], run = churn{ mem = &threads, seed = @as(u64, i) * 7919 + 1, _ } } }
+    let mut failed: u64 = 0
+    for i in 0..8 { failed = failed + thread::join{ &threads, handle = &hs[i] } }
+    _ = @fmt(&io, "threads failed: {}\n", failed)
+    show{ &io, mem = threads, start, what = "after 8 threads" }
+}
+
+//# stdout:
+//| allocated 100: 100 bytes, 1 blocks
+//| peak covers it: true
+//| grown to 250: 250 bytes, 1 blocks
+//| shrunk to 40: 40 bytes, 1 blocks
+//| and 100 aligned to 4096: 140 bytes, 2 blocks
+//| grown to 300: 340 bytes, 2 blocks
+//| peak no lower: true
+//| both freed: 0 bytes, 0 blocks
+//| align 3 refused: 0 bytes, 0 blocks
+//| threads failed: 0
+//| after 8 threads: 0 bytes, 0 blocks

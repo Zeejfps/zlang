@@ -113,6 +113,7 @@ fn check_resref { mut io: Io, mut t: Tally } {
 }
 
 fn check_heap { mut io: Io, mut mem: Mem, mut t: Tally } {
+    let start = heap::count_live{ mem }
     let mut h = heap::new{ &mem }
     let mut xs = list::new(u64){ realloc = heap::alloc, heap = &h }
     let mut i: u64 = 0
@@ -121,14 +122,20 @@ fn check_heap { mut io: Io, mut mem: Mem, mut t: Tally } {
         i = i + 1
     }
     let items = list::items{ list = xs }
-    expect{ &io, &t, ok = items.len == 100000 and items[99999] == 99999 and h.blocks == 1, what = "heap list growth" }
+    let grown = heap::count_live{ mem }
+    expect{ &io, &t, ok = items.len == 100000 and items[99999] == 99999 and grown.blocks == start.blocks + 1 and grown.bytes >= start.bytes + 800000, what = "heap list growth" }
     list::free{ list = &xs }
-    expect{ &io, &t, ok = h.live == 0 and h.blocks == 0 and h.peak >= 800000, what = "heap frees" }
+    let freed = heap::count_live{ mem }
+    expect{ &io, &t, ok = freed.bytes == start.bytes and freed.blocks == start.blocks and freed.peak >= start.bytes + 800000, what = "heap frees" }
     let mut m = map::new(resref::ResRef, u32){ realloc = heap::alloc, heap = &h, hash = resref::hash, eq = resref::eq }
     map::put{ m = &m, key = resref::truncate{ name = "Module" }, value = 7 } iferr {}
     let got = map::get{ m, key = resref::truncate{ name = "module" } } ifnull 0
     expect{ &io, &t, ok = got == 7, what = "map with resref keys" }
     map::free{ m = &m }
-    let big = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 64, align = 32 }
-    expect{ &io, &t, ok = big == null and h.live == 0, what = "alignment over 16 fails" }
+    // std's heap gives alignments above 16 too, zeroed like the rest.
+    let big = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 64, align = 32 } ifnull slice::empty(u8){}
+    expect{ &io, &t, ok = big.len == 64 and @addr(big.ptr) % 32 == 0 and big[0] == 0 and big[63] == 0 and heap::count_live{ mem }.bytes == start.bytes + 64, what = "alignment over 16" }
+    _ = heap::alloc{ heap = &h, mem = big, new = 0, align = 32 }
+    let end = heap::count_live{ mem }
+    expect{ &io, &t, ok = end.bytes == start.bytes and end.blocks == start.blocks, what = "heap back where it started" }
 }

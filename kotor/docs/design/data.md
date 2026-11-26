@@ -6,7 +6,7 @@ library directories, in dependency order:
 
 | Directory | Namespaces | What |
 |---|---|---|
-| `lib/base` | `heap`, `le`, `resref`, `ci`, `text`, `path`, `lists` (and the render agent's `math`, `png`) | a general allocator, bounds-checked little-endian reads and writes, resource names, case-insensitive compares, the C-style text scanning the formats need, paths |
+| `lib/base` | `le`, `resref`, `ci`, `text`, `path`, `lists` (and the render agent's `math`, `png`) | bounds-checked little-endian reads and writes, resource names, case-insensitive compares, the C-style text scanning the formats need, paths |
 | `lib/formats` | `gff`, `gffw`, `twoda`, `tlk`, `ssf`, `lip`, `ltr`, `lyt`, `vis`, `txi`, `pth`, `ini` | parsers of bytes, and the GFF writer; no IO |
 | `lib/res` | `restype`, `key`, `erf`, `rim`, `res`, `corpus` | resource types, the archive formats, the resource manager, the corpus walk for tests |
 
@@ -27,12 +27,14 @@ its format in the install by `tools/fmtcheck` (see [Verification](#verification)
 
 Two allocators cover the game's lifetimes, both std `alloc::Fn`s:
 
-- **`heap::Heap`** (`lib/base/heap.ctx`): the C library's malloc, realloc and free, holding the
-  `Mem` capability. For memory whose lifetime isn't one arena's: the resource manager's index,
-  tables loaded at start-up and kept, a module's data that lives until the module is left. It
-  counts live bytes and blocks (`h.live`, `h.blocks`, `h.peak`), so a leak shows as a number that
-  grows; fmtcheck mounts and unmounts every module and checks it comes back to the same count.
-  Alignment up to 16 bytes (malloc's); more fails.
+- **`heap::Heap`** (std's `heap`): the platform's general-purpose heap (HeapAlloc on Windows,
+  the C library's calloc and realloc on Linux and macOS), holding the `Mem` capability. For
+  memory whose lifetime isn't one arena's: the resource manager's index, tables loaded at
+  start-up and kept, a module's data that lives until the module is left. Every Heap counts into std's
+  process-wide counters, read with `heap::count_live{ mem }` (bytes and blocks live, peak
+  bytes), so a leak shows as a number that grows; fmtcheck mounts and unmounts every module and
+  checks it comes back to the same count. Any Heap frees a block another gave out; a block is
+  resized and freed with the alignment it was made with.
 
   ```
   let mut h = heap::new{ &mem }
@@ -60,7 +62,6 @@ The rules every reader here follows:
 
 | Namespace | API |
 |---|---|
-| `heap` | `Heap { mem, live, blocks, peak }`, `new{ &mem }`, `alloc` (an `alloc::Fn(Heap)`), `MAX_ALIGN` |
 | `le` | reading at an offset: `get_u8/u16/u32/u64/i16/i32/i64/f32/f64{ data, at } -> !T`, `get_bytes{ data, at, len }`, `fits`; in sequence: `Reader`, `reader{ data }`, `read_u8/.../f32{ &r }`, `read_bytes`, `skip`, `remaining`; error `truncated{ at, want }`; writing into a `list::List(u8, S)`: `put_u8/u16/u32/u64/i32/f32/bytes/zeros/padded`, and patching: `set_u16/u32` |
 | `resref` | `ResRef { len, chars: [16]u8 }`, lower-cased, a value usable as a map key: `from{ name } -> !ResRef` (error `too_long`), `truncate` (directory names: the first 16), `from_field{ raw }` (a NUL-padded 16-byte archive field), `bytes{ r = &r }`, `eq`, `hash`, `matches{ r, name }`, `empty`, `is_empty` |
 | `ci` | ASCII case-insensitive: `eq`, `starts_with`, `ends_with`, `find`, `compare`, `hash`, `lower` |

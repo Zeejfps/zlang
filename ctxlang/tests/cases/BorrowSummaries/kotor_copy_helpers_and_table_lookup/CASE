@@ -17,7 +17,7 @@
 
 // The program builds: ctxc gives its C without an error, and the
 // C compiles and links. It isn't run: its `main` is empty.
-//# $ ctxc build probe.c {std} -- {repo}/kotor/lib/base/heap.ctx {repo}/kotor/lib/base/ci.ctx {repo}/kotor/lib/base/le.ctx {repo}/kotor/lib/base/text.ctx {repo}/kotor/lib/formats/twoda.ctx copies.ctx kotor-probe.ctx
+//# $ ctxc build probe.c {std} -- {repo}/kotor/lib/base/ci.ctx {repo}/kotor/lib/base/le.ctx {repo}/kotor/lib/base/text.ctx {repo}/kotor/lib/formats/twoda.ctx copies.ctx kotor-probe.ctx
 //# exit: 0
 //# $ cc {cflags} -I {home}/ctxc/rt probe.c {home}/ctxc/rt/ctxrt.c -lm -o probe{exe} {stack}
 //# exit: 0
