@@ -51,10 +51,11 @@ namespace stop {
 
     // What `wait`, `wait_for` and `ask` may fail with, on every platform (spec §8, Errors,
     // rule 14).
-    type Error = error(other, task::cancelled)
+    type Error = error(other, task::cancelled, task::deadline_passed)
 
     // Waits until the program is asked to stop, and returns who asked. In a task asked to stop
-    // it fails with task::cancelled.
+    // it fails with task::cancelled, and under a deadline that passes first with
+    // task::deadline_passed (task::run_within).
     fn wait { mut stop: Stop } -> Error!Reason {
         while true {
             let code = try os::stop_wait{ &stop, cancel = &stop, nanoseconds = FOREVER }

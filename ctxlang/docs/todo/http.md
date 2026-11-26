@@ -526,8 +526,8 @@ freed before `fetch` returns, also when a redirect leads from http to https. Mak
 distribution's bundle on Linux, some milliseconds; on Windows and macOS the OS verifies each chain, so
 a config costs little. A program that fetches often makes one config and passes it.
 
-**Deadlines** are a task's, as for every blocking call: fetch in a task and `task::wait_for`, then
-`task::cancel` (internals.md, Tasks, Cancellation, whose example is a fetch).
+**Deadlines** are the caller's, as for every blocking call: `task::run_within` around `fetch`
+(internals.md, Tasks, Deadlines, whose example is a fetch).
 
 ## Serving
 
@@ -546,21 +546,20 @@ namespace http {
     // Answers one connection's requests, each with `handle`, until the peer closes, a response
     // ends the connection, a limit is reached, or `handle` fails. A request it can't parse gets
     // 400 (431 for a head larger than the buffer, 501 for an unknown transfer coding, 505 for the
-    // version) and ends the connection. The head's deadline runs the read in a task of its own,
-    // started with start_concurrent and waited for with wait_for.
-    fn serve_connection { mut net: Net, mut threads: Threads, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, mut exchange: Exchange } -> ! } -> !
+    // version) and ends the connection. The head's deadline is put on its read with
+    // task::run_within, on the caller's thread, as everything here runs.
+    fn serve_connection { mut net: Net, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, mut exchange: Exchange } -> ! } -> !
 
     // A whole response, for a handler: status, headers, and the body as bytes.
     fn respond { mut net: Net, mut exchange: Exchange, status: u16, headers: []Header, body: []u8 } -> !
 }
 ```
 
-**A head's deadline takes a task.** A server must not wait forever for a client that opened a
-connection and sends nothing, or sends a head a byte a minute. Deadlines are cancellation (net.md,
-Timeouts), so `serve_connection` reads each head in a task, borrowing `conn`, and waits for it with
-`wait_for`; at the deadline it cancels the read and closes the connection. On the Threaded backend
-that is a worker woken per request (idle workers are reused; nothing is created per request when the
-server is busy), on Evented a fiber. A handler that reads a body slowly is the handler's to bound the
+**A head's deadline is the read's.** A server must not wait forever for a client that opened a
+connection and sends nothing, or sends a head a byte a minute. Deadlines are cancellation at a time
+(net.md, Timeouts), so `serve_connection` reads each head under one, `task::run_within`, on the
+connection's own thread: the receive that is waiting when it passes stops, and the connection
+ends. A connection holds one thread, its own, whether it is busy or idle between requests. A handler that reads a body slowly is the handler's to bound the
 same way; `serve_connection` doesn't time a body, whose size and pace only the handler knows.
 
 **The accept loop is the program's**, a task per connection in a `task::Group`, as net.md's server
@@ -577,13 +576,13 @@ and what each connection costs.
 // A connection's task. Its error is dropped: a group's task that fails cancels the group's
 // others, and a client's misstep (a reset, a head that didn't arrive) is no reason to end
 // every connection.
-fn connection { mut net: Net, mut threads: Threads, socket: net::Socket, site: *Site } -> ! {
+fn connection { mut net: Net, socket: net::Socket, site: *Site } -> ! {
     defer net::close{ &net, socket }
     let mut buffer: [16384]u8
     let mut fields: [100]http::Header
     let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-    http::serve_connection{ &net, &threads, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } } iferr {}
+    http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } } iferr {}
 }
 
 fn answer { site: *Site, mut net: Net, exchange: http::Exchange } -> ! {
@@ -612,7 +611,7 @@ fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, site: *S
                 else => { return error }
             }
         }
-        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, &threads, socket, site, _ } } iferr {
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, socket, site, _ } } iferr {
             net::close{ &net, socket }                                // no thread for it: refuse it
         }
     }
@@ -639,7 +638,7 @@ accept loop, so it can stop accepting first and then give the connections a grac
 fn accept_into { mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site, mut connections: task::Group } -> ! {
     while true {
         let socket = try net::accept{ &net, listener }
-        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, &threads, socket, site, _ } } iferr {
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, socket, site, _ } } iferr {
             net::close{ &net, socket }
         }
     }
@@ -685,7 +684,7 @@ namespace http {
     struct Exchange { conn: *mut Connection, request: Incoming }
     const DISCARD_MOST: u64 = 65536
     const LINGER_NS: u64 = 2000000000
-    fn serve_connection { mut net: Net, mut threads: Threads, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, exchange: Exchange } -> ! } -> !
+    fn serve_connection { mut net: Net, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, exchange: Exchange } -> ! } -> !
     fn respond { mut net: Net, exchange: Exchange, status: u16, headers: []Header, body: []u8 } -> !
 }
 ```
@@ -694,21 +693,22 @@ The design predates `&thread fn` (spec §5, rule 5; §15, Tasks), which replaced
 
 - **The handler is a plain `&fn`**, `handle: &fn{ mut net: Net, exchange: Exchange } -> !`. It
   runs in `serve_connection`, on the thread of the connection's task, which the program started
-  with a bind it wrote, where `&thread fn` checked it (rule 1). Only the head's read runs in a task
-  `serve_connection` starts, and that bind holds no handler. A `&thread fn` handler would refuse
+  with a bind it wrote, where `&thread fn` checked it (rule 1). `serve_connection` starts no task
+  (the head's deadline is `run_within`'s, below). A `&thread fn` handler would refuse
   one that holds a thread-bound capability for no reason, and a program's handler binds what it
   wants (`answer{ site, _ }`, or `&threads` to sleep), as a `&fn` local may.
-- **The head's deadline task borrows `serve_connection`'s own `mut` fields.** A helper,
-  `read_request_within`, declares `let mut reading: task::Task(!?Incoming)` and starts
-  `run = read_request{ &net, &conn, &headers, _ }`, a bind written in the call (rule 3) whose
-  places are the `conn` and `headers` its caller passed through `mut` fields (rule 8). While the
-  loan lasts the helper touches neither (rule 9); `task::wait` after a `wait_for` that saw the end,
-  or `task::cancel` at the deadline, ends it on every path, so the request it gives may be used.
-  The checker accepted this as written. A task that ended just as the deadline came gives its
-  request from `cancel`, and is served. A head the buffer already holds whole, as a pipelined one
-  is, is parsed at once, without a task: the deadline is for waiting, and costs a worker per head
-  only when there is waiting to do. A start that fails (`out_of_resources`) ends the connection
-  with its error, rather than read a head without a deadline.
+- **The head's deadline is `task::run_within`'s, on the connection's thread.** A helper,
+  `read_request_within`, runs `read_request{ &net, &conn, &headers, _ }` under a deadline
+  `head_ns` from now. A receive that is waiting when it passes stops and fails with
+  `task::deadline_passed`, which the helper returns as `timed_out`; one that got bytes as it came
+  gives them, and a head they complete is served. A head the buffer already holds whole, as a
+  pipelined one is, is parsed without a wait. A deadline the program put around
+  `serve_connection` that passed first is the program's: `task::check` after `run_within` tells
+  it from the head's, and it is returned as `deadline_passed`, as a cancel is returned as
+  `cancelled`. This was a task of its own per head (`start_concurrent`, `wait_for`, `cancel` at the
+  deadline), until serve measured what it cost: a second thread for every connection waiting for
+  a head, and 25 to 50 µs per request (serve/PLAN.md, Findings 2). With `run_within`,
+  `serve_connection` takes no `Threads`.
 - **`Exchange` is `{ conn, request }`, and handlers take it read-only.** `responded` moved to the
   connection: a handler that answers with `send_response{ conn = exchange.conn, ... }`, to stream
   a body, never touches the Exchange, so only the connection can know whether a response began.
@@ -731,8 +731,8 @@ And what building it settled:
   leaves no room beside it for the response's head. A peer that finished sending inside a head
   (`ended_early`) or a stream error gets none.
 - **A connection that ends after a response ends in stages** (RFC 9112 §9.6): its sending side is
-  shut, and what the client still sends is read and dropped, in a task of its own, until the
-  client finishes, `LINGER_NS` (2 s) pass or `DISCARD_MOST` bytes came. Closing a socket with
+  shut, and what the client still sends is read and dropped, under a deadline (`run_within`), until
+  the client finishes, `LINGER_NS` (2 s) pass or `DISCARD_MOST` bytes came. Closing a socket with
   bytes unread resets the connection, and a reset can destroy the response before the client reads
   it, as for a 431 to a head larger than the buffer, whose rest is still arriving.
 - **A handler that sends nothing is answered 500 and the connection goes on**, since nothing about
@@ -943,8 +943,9 @@ Each package also updates spec §17's table for what it adds.
 5. **`fetch` follows redirects; connections don't.** Rejected: following at the connection level, where
    the program would lose the 3xx it may want, and a `fetch` that doesn't follow, which would make every
    caller write the rules above.
-6. **Deadlines are tasks**, in `fetch`'s callers and inside `serve_connection`. Rejected: socket
-   deadlines (net.md, Timeouts).
+6. **Deadlines are the caller's** (`task::run_within`), in `fetch`'s callers and inside
+   `serve_connection`, on every call a cancel stops. Rejected: socket deadlines (net.md, Timeouts).
+   They were tasks, cancelled at the time, until serve measured a thread per waiting call.
 7. **The accept loop is the program's** (Serving). Rejected: `http::serve` taking a handler, which
    would call one function value from many tasks at once. Kept with `&thread fn`, which checks a
    value's capabilities and not the places it holds; revisited with a real program's server,
@@ -969,9 +970,12 @@ Each package also updates spec §17's table for what it adds.
    `frame_request`, which has no offsets to give.
 14. **A handler is a `&fn`, run on the connection's task** (Serving, Built). Rejected: a `&thread fn`
    handler, which would refuse thread-bound capabilities in a handler that never leaves its thread.
-15. **A head's deadline task borrows the connection the caller passed**, and runs only when the
-   head isn't already in the buffer (Serving, Built). Rejected: a task per connection that serves
-   it whole, which would put the handler on another thread; and a socket deadline (Decision 6).
+15. **A head's deadline is `run_within`'s, on the connection's own thread** (Serving, Built), so a
+   connection holds one thread, idle or busy, and `serve_connection` takes no `Threads`. Rejected: a
+   task per head, borrowing the connection and cancelled at the deadline, which was built first
+   and held a second thread for each connection waiting for a head (serve/PLAN.md, Findings 2); a
+   task per connection that serves it whole, which would put the handler on another thread; and a
+   socket deadline (Decision 6).
 16. **Whether a response began is the connection's** (Serving, Built). Rejected:
    `Exchange.responded`, which a handler that streams with `send_response` bypasses.
 17. **A connection ends after a response in stages**, a lingering close (Serving, Built).
@@ -984,6 +988,6 @@ Each package also updates spec §17's table for what it adds.
 
 ## Open questions
 
-None: a group's deadline is `task::wait_all_for` (net.md, Order of work, 1), the head's deadline task
-per request stays as designed (Serving), and `fetch` without a config trusts the system's roots for
+None: a group's deadline is `task::wait_all_for` (net.md, Order of work, 1), a head's deadline is
+`task::run_within`'s on the connection's thread (Serving, Decision 15), and `fetch` without a config trusts the system's roots for
 the call (Fetch).

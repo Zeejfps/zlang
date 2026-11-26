@@ -19,14 +19,28 @@
 // The backend is Threaded: each running task has a worker, an operating-system thread, and a
 // blocking call blocks it. Workers wait for their next task for 10 seconds, then end. Nothing
 // waits for a free worker: `start` runs a task at once when it can't run it concurrently.
+//
+// A deadline is cancellation at a time, for the calls a function makes (run_within): every
+// blocking call that a cancel stops fails with deadline_passed once it has passed, in a task or
+// not, without a second task.
+//
+//   fn read_line { mut net: Net, socket: net::Socket, into: []mut u8 } -> !usize { ... }
+//
+//   let n = try task::run_within{ cancel = &net, nanoseconds = 5000000000, run = read_line{ &net, socket, into, _ } }
 
 namespace task {
     // Whether the calling thread runs a task, and which: its slot, null outside a task. What
     // std's blocking calls check (check, get_cancel_object); only namespace task reads it. A
     // task run at once runs as part of its starter, with the starter's.
+    //
+    // And the calling thread's deadline (run_within), on the clock os::read_deadline_clock
+    // reads; 0 for none. A thread's own, so that main's calls have one as a task's do; a
+    // worker's is 0 when it begins a task, and a task run at once runs under its starter's.
     capability Cancel {
         #thread_local
-        static current: ?*mut Slot
+        static current: ?*mut Slot,
+        #thread_local
+        static deadline: u64,
     }
 
     // The backend's state: the table of tasks (Table), made the first time it is needed.
@@ -60,7 +74,12 @@ namespace task {
     const ENDED: u32 = 2
 
     error cancelled             // what a blocking call fails with, in a task that is cancelled
+    error deadline_passed       // what a blocking call fails with once the deadline it runs under has passed (run_within)
     error out_of_resources      // no thread, or no room in the table
+
+    // What a blocking call fails with when it stops before its operation is done: its task
+    // was asked to stop, or its deadline passed. A cancel wins when both are so.
+    type Stopped = error(cancelled, deadline_passed)
 
     // ---- the API
 
@@ -270,10 +289,30 @@ namespace task {
         group.cancelling = false
     }
 
-    // Fails with `cancelled` if the calling task has been asked to stop: for a task that
-    // computes for long between blocking calls. Never fails outside a task.
-    fn check_cancelled { mut threads: Threads } -> ! {
+    // Fails with `cancelled` if the calling task has been asked to stop, and with
+    // `deadline_passed` once the deadline it runs under has passed (run_within): for code that
+    // computes for long between blocking calls.
+    fn check_cancelled { mut threads: Threads } -> Stopped! {
         return check{ cancel = &threads }
+    }
+
+    // Runs `run` with a deadline `nanoseconds` from now on the calling thread's blocking calls,
+    // and gives what it returns. A call still waiting when the deadline passes stops and fails
+    // with deadline_passed, and so does every call made after it, before it blocks, until `run`
+    // returns; then the deadline is gone. A call that completes as it passes returns its
+    // result. Inside another, the earlier of the two deadlines holds, and the outer one is back
+    // once `run` returns. It holds outside a task too, on main's thread. A task `run` starts
+    // concurrently doesn't run under it, but a wait under it that is still waiting when it
+    // passes cancels what it waits for, as a waiter asked to stop does; a task run at once is
+    // part of its starter, and runs under it. A cancel wins over a deadline: in a task asked to
+    // stop, calls fail with `cancelled`.
+    fn run_within(T, E: error) { mut cancel: Cancel, nanoseconds: u64, run: &fn{} -> E!T } -> E!T {
+        let outer = cancel.deadline
+        let now = os::read_deadline_clock{ &cancel }
+        let mine = if nanoseconds > FOREVER - now { FOREVER } else { now + nanoseconds }
+        cancel.deadline = if outer != 0 and outer < mine { outer } else { mine }
+        defer { cancel.deadline = outer }
+        return run{}
     }
 
     // Busy workers past which `start` runs a task at once; 0 makes it always run at once. It
@@ -297,10 +336,40 @@ namespace task {
 
     // ---- what std's blocking calls use (internals.md, Tasks, Capabilities)
 
-    // Fails with `cancelled` if the calling task has been asked to stop. Never outside a task.
-    fn check { mut cancel: Cancel } -> ! {
-        let me = cancel.current ifnull { return }
-        if @atomic_load_acquire(&me.flag) != 0 { return cancelled }
+    // Fails with `cancelled` if the calling task has been asked to stop, and otherwise with
+    // `deadline_passed` if the calling thread's deadline has passed. A thread with no deadline
+    // reads no clock.
+    fn check { mut cancel: Cancel } -> Stopped! {
+        if let me = cancel.current {
+            if @atomic_load_acquire(&me.flag) != 0 { return cancelled }
+        }
+        if cancel.deadline != 0 and os::read_deadline_clock{ &cancel } >= cancel.deadline { return deadline_passed }
+    }
+
+    // What a blocking call fails with once its wait ended for its task's cancel object or its
+    // deadline: `cancelled` if the calling task has been asked to stop, and otherwise
+    // `deadline_passed`.
+    fn get_stop_error { mut cancel: Cancel } -> Stopped {
+        if let me = cancel.current {
+            if @atomic_load_acquire(&me.flag) != 0 { return cancelled }
+        }
+        return deadline_passed
+    }
+
+    // Whether a blocking call of the calling thread's can be stopped while it waits: in a task,
+    // whose cancel object it waits on, or under a deadline, which bounds its wait. A call
+    // waits plainly when neither is so.
+    fn can_stop { mut cancel: Cancel } -> bool {
+        return cancel.current != null or cancel.deadline != 0
+    }
+
+    // The nanoseconds until the calling thread's deadline, which bound a blocking call's wait:
+    // 0 once it has passed, FOREVER without one. A wait that ends for it then calls check,
+    // which says whether it has passed, since a system's wait may end a little early.
+    fn get_time_left { mut cancel: Cancel } -> u64 {
+        if cancel.deadline == 0 { return FOREVER }
+        let now = os::read_deadline_clock{ &cancel }
+        return if cancel.deadline > now { cancel.deadline - now } else { 0 }
     }
 
     // The calling task's cancel object, which is signalled when it is asked to stop: a Windows
@@ -358,6 +427,7 @@ namespace task {
     // How long an idle worker waits for a task before it ends: 10 seconds.
     const IDLE: u64 = 10000000000
 
+    // A wait's time that has no end: get_time_left's without a deadline, and await's.
     const FOREVER: u64 = 18446744073709551615
 
     // Slots per page of the table, and pages at most: 65536 tasks at once.
@@ -686,6 +756,7 @@ namespace task {
         rt::thread_rename{ &threads, name = label[..n] }
         rt::thread_runs{ &threads, record = @cast(*u8, &s.record[0]) }
         threads.current = s
+        threads.deadline = 0
         s.entry{ record = @cast(*mut u8, &s.record[0]), result = s.result }
         threads.current = null
         io::flush{ &io }
@@ -749,17 +820,20 @@ namespace task {
     }
 
     // Waits under the table's mutex for slot s's task to end, at most `nanoseconds`: whether it
-    // has. A waiting task that is asked to stop asks s to stop, then waits to the end.
+    // has. A waiter that is asked to stop, or whose deadline passes (run_within), asks s to
+    // stop, then waits to the end.
     fn await { mut threads: Threads, t: *mut Table, s: *mut Slot, nanoseconds: u64 } -> bool {
         if s.state == ENDED { return true }
         if nanoseconds == 0 and not stopping{ &threads } { return false }
         let mine = me{ &threads }
         let mut left = nanoseconds
+        let mut asked = false
         let mut began = os::now{ &threads }
         while s.state != ENDED {
             if stopping{ &threads } {
                 ask_stop{ &threads, s }
                 left = FOREVER
+                asked = true
             }
             if let m = mine { m.waiting = &s.done }
             if @atomic_load_acquire(&s.flag) != 0 and interrupt{ &threads, s } {
@@ -767,10 +841,14 @@ namespace task {
                 _ = condition::wait_for{ &threads, condition = &s.done, mutex = &t.lock, nanoseconds = 1000000 }
                 continue
             }
-            if left == FOREVER {
+            // Until the deadline too, if there is one and s hasn't been asked to stop yet.
+            let until = if asked { FOREVER } else { get_time_left{ cancel = &threads } }
+            if left == FOREVER and until == FOREVER {
                 condition::wait{ condition = &s.done, mutex = &t.lock }
+            } else if left == FOREVER {
+                _ = condition::wait_for{ &threads, condition = &s.done, mutex = &t.lock, nanoseconds = until }
             } else {
-                _ = condition::wait_for{ &threads, condition = &s.done, mutex = &t.lock, nanoseconds = left }
+                _ = condition::wait_for{ &threads, condition = &s.done, mutex = &t.lock, nanoseconds = @min(left, until) }
                 let now = os::now{ &threads }
                 let spent = now - began
                 began = now
@@ -790,25 +868,30 @@ namespace task {
     }
 
     // Waits under the table's mutex until group g has no task, at most `nanoseconds`: whether it
-    // has none. A task of the group panics: it would wait for itself. A waiting task asked to stop
-    // stops the group, then waits until it has none.
+    // has none. A task of the group panics: it would wait for itself. A waiter asked to stop, or
+    // whose deadline passes, stops the group, then waits until it has none.
     fn await_group { mut threads: Threads, t: *mut Table, g: *mut Group, nanoseconds: u64 } -> bool {
         let mine = me{ &threads }
         if let m = mine { if m.group == g { rt::fail{ msg = "task: a task of a group waits for its own group" } } }
         if g.tasks == 0 { return true }
         if nanoseconds == 0 and not stopping{ &threads } { return false }
         let mut left = nanoseconds
+        let mut asked = false
         let mut began = os::now{ &threads }
         while g.tasks > 0 {
             if stopping{ &threads } {
                 stop_group{ &threads, t, g }
                 left = FOREVER
+                asked = true
             }
             if let m = mine { m.waiting = &t.groups }
-            if left == FOREVER {
+            let until = if asked { FOREVER } else { get_time_left{ cancel = &threads } }
+            if left == FOREVER and until == FOREVER {
                 condition::wait{ condition = &t.groups, mutex = &t.lock }
+            } else if left == FOREVER {
+                _ = condition::wait_for{ &threads, condition = &t.groups, mutex = &t.lock, nanoseconds = until }
             } else {
-                _ = condition::wait_for{ &threads, condition = &t.groups, mutex = &t.lock, nanoseconds = left }
+                _ = condition::wait_for{ &threads, condition = &t.groups, mutex = &t.lock, nanoseconds = @min(left, until) }
                 let now = os::now{ &threads }
                 let spent = now - began
                 began = now
@@ -823,9 +906,9 @@ namespace task {
         return true
     }
 
-    // Whether the calling task has been asked to stop.
+    // Whether the calling task has been asked to stop, or the calling thread's deadline has
+    // passed.
     fn stopping { mut threads: Threads } -> bool {
-        let m = me{ &threads } ifnull { return false }
-        return @atomic_load_acquire(&m.flag) != 0
+        return check{ cancel = &threads } is err
     }
 }

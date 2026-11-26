@@ -38,6 +38,6 @@ fn main { mut threads: Threads } {
 
 //# panic: program: panic: task::start into a handle that holds a task
 //# path:
-//|   at task::start(!u64) (std/task.ctx:71:41)
+//|   at task::start(!u64) (std/task.ctx:90:41)
 //|   at into (01.ctx:31:16)
 //|   at main (01.ctx:36:9)

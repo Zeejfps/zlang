@@ -31,9 +31,10 @@ namespace fs {
 
     // What a file call may fail with, on every platform: the platform's layer (std/os) declares
     // this set for each of its file functions (spec §8, Errors, rule 14), whichever of it the OS
-    // can give, and every call checks first whether its task is cancelled (task::check). It is
+    // can give, and every call checks first whether its task is cancelled or its deadline has
+    // passed (task::check), and only then: a file call isn't stopped while it runs. It is
     // open (rule 15): an OS can fail in new ways, so a match on it has an `else`.
-    type Error = error(not_found, permission_denied, is_directory, exists, not_directory, not_empty, bad_file, other, task::cancelled, ..)
+    type Error = error(not_found, permission_denied, is_directory, exists, not_directory, not_empty, bad_file, other, task::cancelled, task::deadline_passed, ..)
 
     union Mode {
         read,       // an existing file

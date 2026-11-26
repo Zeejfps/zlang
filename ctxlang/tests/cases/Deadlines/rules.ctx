@@ -1,0 +1,152 @@
+// How deadlines (task::run_within) nest, end, stick, and meet cancellation and tasks:
+//   - inside a later one, an earlier outer deadline holds; inside an earlier one, the inner
+//     one holds, and the outer one is back, not passed, once it returns;
+//   - once a deadline has passed, every call under it fails at once, before it blocks, and
+//     once run_within returns, no call sees it;
+//   - a task asked to stop whose deadline has passed too fails with cancelled;
+//   - a wait under a deadline cancels the task it waits for when the deadline passes, and
+//     that task's calls fail with cancelled, not deadline_passed: it doesn't run under it;
+//   - a task run at once (`start` with the limit 0) is part of its starter, and runs under it.
+// Times are checked between half of what is expected (os::now is coarse on Windows) and a
+// second past it.
+//# interp: off: time stands still in the interpreter, where a deadline above 0 never passes
+//# timeout: 120
+//# stdout:
+//| outer earlier: deadline passed in time
+//| inner earlier: deadline passed in time
+//| outer back: ok
+//| sticks: deadline passed, then deadline passed at once
+//| gone: slept in full
+//| cancelled and past the deadline: cancelled, cancelled
+//| wait: the task cancelled at the deadline
+//| at once: deadline passed in time
+
+const MS: u64 = 1000000
+const ONE_SECOND: u64 = 1000000000
+
+// Whether `took` is about `expected`: at least half of it, and less than a second past it.
+fn about { took: u64, expected: u64 } -> bool {
+    return took >= expected / 2 and took < expected + ONE_SECOND
+}
+
+fn name { r: ! } -> []u8 {
+    match r {
+        ok => { return "ok" }
+        err{ error } => {
+            match error {
+                task::deadline_passed => { return "deadline passed" }
+                task::cancelled => { return "cancelled" }
+                else => { return "failed" }
+            }
+        }
+    }
+}
+
+// Sleeps, then says whether its deadline, if any, has passed.
+fn nap { mut threads: Threads, ns: u64 } -> ! {
+    thread::sleep{ &threads, nanoseconds = ns }
+    try task::check_cancelled{ &threads }
+}
+
+fn nap_within { mut threads: Threads, ns: u64, inner: u64 } -> ! {
+    return task::run_within{ cancel = &threads, nanoseconds = inner, run = nap{ &threads, ns, _ } }
+}
+
+// An inner deadline that passes first, then a nap after it, under the outer one only.
+fn inner_then_nap { mut threads: Threads, mut first: !, mut then: ! } -> ! {
+    first = nap_within{ &threads, ns = 10 * ONE_SECOND, inner = 100 * MS }
+    then = nap{ &threads, ns = 50 * MS }
+}
+
+// A deadline that has passed, then two checks: the second fails at once.
+fn twice { mut threads: Threads, mut first: !, mut second: !, mut took: u64 } -> ! {
+    first = nap{ &threads, ns = 10 * ONE_SECOND }
+    let began = os::now{ &threads }
+    second = nap{ &threads, ns = 10 * ONE_SECOND }
+    took = os::now{ &threads } - began
+}
+
+// Computes, without a blocking call, until `until`, then checks twice.
+fn compute_then_check { mut threads: Threads, until: u64, mut first: !, mut second: ! } -> ! {
+    while os::now{ &threads } < until {}
+    first = task::check_cancelled{ &threads }
+    second = task::check_cancelled{ &threads }
+}
+
+fn late_task { mut threads: Threads, until: u64, mut first: !, mut second: ! } -> ! {
+    return task::run_within{ cancel = &threads, nanoseconds = 100 * MS, run = compute_then_check{ &threads, until, &first, &second, _ } }
+}
+
+// Starts a task that naps for 10 s, and waits for it.
+fn start_and_wait { mut threads: Threads } -> ! {
+    let mut t: task::Task(!)
+    try task::start_concurrent{ &threads, task = &t, run = nap{ &threads, ns = 10 * ONE_SECOND, _ } }
+    return task::wait{ &threads, task = &t }
+}
+
+// Starts a nap with the limit 0, so that it runs at once, here.
+fn start_at_once { mut threads: Threads } -> ! {
+    task::set_limit{ &threads, workers = 0 }
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = nap{ &threads, ns = 10 * ONE_SECOND, _ } }
+    let r = task::wait{ &threads, task = &t }
+    task::set_limit{ &threads, workers = 64 }
+    return r
+}
+
+fn main { mut io: Io, mut threads: Threads } -> i32 {
+    // An outer deadline earlier than the inner one holds.
+    let mut began = os::now{ &threads }
+    let r = task::run_within{ cancel = &threads, nanoseconds = 200 * MS, run = nap_within{ &threads, ns = 10 * ONE_SECOND, inner = 5 * ONE_SECOND, _ } }
+    if not about{ took = os::now{ &threads } - began, expected = 200 * MS } { return 1 }
+    _ = @fmt(&io, "outer earlier: {} in time\n", name{ r })
+
+    // An inner deadline earlier than the outer one holds, and the outer one is back after it.
+    let mut first: ! = task::out_of_resources
+    let mut then: ! = task::out_of_resources
+    began = os::now{ &threads }
+    let outer = task::run_within{ cancel = &threads, nanoseconds = 5 * ONE_SECOND, run = inner_then_nap{ &threads, &first, &then, _ } }
+    if not about{ took = os::now{ &threads } - began, expected = 150 * MS } { return 2 }
+    if outer is err { return 2 }
+    _ = @fmt(&io, "inner earlier: {} in time\n", name{ r = first })
+    _ = @fmt(&io, "outer back: {}\n", name{ r = then })
+
+    // A deadline sticks while it is set: the next call fails at once.
+    let mut second: ! = task::out_of_resources
+    let mut took: u64 = 0
+    _ = task::run_within{ cancel = &threads, nanoseconds = 100 * MS, run = twice{ &threads, &first, &second, &took, _ } }
+    if took > 50 * MS { return 3 }
+    _ = @fmt(&io, "sticks: {}, then {} at once\n", name{ r = first }, name{ r = second })
+
+    // Once run_within has returned, nothing sees it.
+    began = os::now{ &threads }
+    if nap{ &threads, ns = 300 * MS } is err { return 4 }
+    if os::now{ &threads } - began < 280 * MS { return 4 }
+    io::println{ &io, s = "gone: slept in full" }
+
+    // A task past its deadline and asked to stop: cancelled wins.
+    let mut t: task::Task(!)
+    task::start_concurrent{ &threads, task = &t, run = late_task{ &threads, until = os::now{ &threads } + 400 * MS, &first, &second, _ } } iferr { return 5 }
+    thread::sleep{ &threads, nanoseconds = 200 * MS }
+    _ = task::cancel{ &threads, task = &t }
+    _ = @fmt(&io, "cancelled and past the deadline: {}, {}\n", name{ r = first }, name{ r = second })
+
+    // A wait under a deadline cancels the task it waits for.
+    began = os::now{ &threads }
+    let w = task::run_within{ cancel = &threads, nanoseconds = 200 * MS, run = start_and_wait{ &threads, _ } }
+    if not about{ took = os::now{ &threads } - began, expected = 200 * MS } { return 6 }
+    match w {
+        ok => { return 6 }
+        err{ error } => {
+            if not (error is task::cancelled) { return 6 }
+            io::println{ &io, s = "wait: the task cancelled at the deadline" }
+        }
+    }
+
+    // A task run at once runs under its starter's deadline.
+    began = os::now{ &threads }
+    let o = task::run_within{ cancel = &threads, nanoseconds = 200 * MS, run = start_at_once{ &threads, _ } }
+    if not about{ took = os::now{ &threads } - began, expected = 200 * MS } { return 7 }
+    _ = @fmt(&io, "at once: {} in time\n", name{ r = o })
+    return 0
+}

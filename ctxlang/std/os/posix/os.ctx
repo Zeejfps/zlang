@@ -34,16 +34,22 @@ namespace os {
 
     // Reads some of standard input into `into`, which isn't empty. Returns how many; 0 at the end
     // or after an error.
-    // In a task it first waits until standard input is readable or the task is asked to stop
-    // (std/task.ctx), and then returns 0 as at the end. Descriptor 0 stays blocking: other
-    // programs share it.
+    // In a task, or under a deadline, it first waits until standard input is readable, the task
+    // is asked to stop or the deadline passes (std/task.ctx), and then returns 0 as at the end.
+    // Descriptor 0 stays blocking: other programs share it.
     fn read { mut io: Io, into: []mut u8 } -> usize {
-        let object = task::get_cancel_object{ cancel = &io }
-        if object != 0 {
+        if task::can_stop{ cancel = &io } {
             if task::check{ cancel = &io } is err { return 0 }
-            let mut fds: [2]PollFd = [PollFd{ fd = 0, events = POLLIN, revents = 0 }, PollFd{ fd = @as(i32, object), events = POLLIN, revents = 0 }]
-            while poll_io{ &io, fds = &fds[0], count = 2, ms = -1 } < 0 {}
-            if fds[1].revents != 0 { return 0 }
+            let object = task::get_cancel_object{ cancel = &io }
+            let mut fds: [2]PollFd = [PollFd{ fd = 0, events = POLLIN, revents = 0 }, PollFd{ fd = if object != 0 { @as(i32, object) } else { -1 }, events = POLLIN, revents = 0 }]
+            while true {
+                let r = poll_io{ &io, fds = &fds[0], count = 2, ms = deadline_poll_millis{ cancel = &io } }
+                if r > 0 {
+                    if fds[1].revents != 0 { return 0 }
+                    break
+                }
+                if r == 0 and task::check{ cancel = &io } is err { return 0 }
+            }
         }
         let r = c_read{ &io, fd = 0, buf = into.ptr, count = into.len }
         return if r > 0 { @as(usize, r) } else { 0 }
@@ -62,21 +68,45 @@ namespace os {
     #c_symbol{ name = "poll" }
     extern fn poll_threads { mut threads: Threads, fds: *mut PollFd, count: u64, ms: i32 } -> i32
 
-    // Waits until descriptor fd has `events`, or, with a cancel object (task::get_cancel_object),
-    // until it is signalled: then it fails with task::cancelled.
-    fn ready { mut proc: Proc, fd: i32, events: i16, object: u64 } -> proc::Error! {
+    // Waits until descriptor fd has `events`; in a task, until its cancel object is signalled,
+    // and then fails with task::cancelled; and until the calling thread's deadline, if it has
+    // one, and then fails with task::deadline_passed.
+    fn ready { mut proc: Proc, mut cancel: task::Cancel, fd: i32, events: i16 } -> proc::Error! {
+        let object = task::get_cancel_object{ &cancel }
         let mut fds: [2]PollFd = [PollFd{ fd, events, revents = 0 }, PollFd{ fd = if object != 0 { @as(i32, object) } else { -1 }, events = POLLIN, revents = 0 }]
         while true {
-            let r = poll_proc{ &proc, fds = &fds[0], count = 2, ms = -1 }
+            let r = poll_proc{ &proc, fds = &fds[0], count = 2, ms = deadline_poll_millis{ &cancel } }
             if r > 0 {
                 if fds[1].revents != 0 { return task::cancelled }
                 return
             }
+            if r == 0 { try task::check{ &cancel } }
             if r < 0 {
                 let e = sys::proc_errno{ &proc }.*
                 if e != EINTR { return proc_failed{ code = e } }
             }
         }
+    }
+
+    #c_symbol{ name = "clock_gettime" }
+    extern fn deadline_clock_gettime { mut cancel: task::Cancel, clock: i32, mut now: Timespec } -> i32
+
+    // The deadlines' clock (task::run_within): CLOCK_MONOTONIC in nanoseconds, as std's clock
+    // reads it, which a Cancel reads without a Clock. Never 0, which is no deadline: the
+    // clock counts from the system's start.
+    fn read_deadline_clock { mut cancel: task::Cancel } -> u64 {
+        let mut t = Timespec{ sec = 0, nsec = 0 }
+        _ = deadline_clock_gettime{ &cancel, clock = sys::CLOCK_MONOTONIC, now = &t }
+        return @as(u64, t.sec) * 1000000000 + @as(u64, t.nsec) + 1
+    }
+
+    // How long a poll may wait before the calling thread's deadline, as poll's timeout takes
+    // it: -1 without one. Every blocking call of this layer that a cancel stops polls with it,
+    // and asks task::check when a poll ends with nothing.
+    fn deadline_poll_millis { mut cancel: task::Cancel } -> i32 {
+        let left = task::get_time_left{ &cancel }
+        if left == task::FOREVER { return -1 }
+        return poll_millis{ nanoseconds = left }
     }
 
     // What sys::await_exit found: the time ran out, the process ended, or the calling task was
@@ -579,16 +609,23 @@ namespace os {
     // `cleanup` is its process group has the group ended first (end_leftovers).
     //
     // An interruptible wait in a task waits on the child and the task's cancel object, and fails
-    // with task::cancelled when the task is asked to stop, leaving the child as it was.
+    // with task::cancelled when the task is asked to stop; under a deadline it waits until then,
+    // and fails with task::deadline_passed. Either leaves the child as it was.
     fn wait { mut proc: Proc, mut cancel: task::Cancel, child: proc::Child, interruptible: bool } -> proc::Error!i32 {
         let pid = @as(i32, child.id)
-        let object = if interruptible { task::get_cancel_object{ &cancel } } else { 0 }
-        if object != 0 {
+        let stoppable = interruptible and task::can_stop{ &cancel }
+        if stoppable {
             try task::check{ &cancel }
-            if try sys::await_exit{ &proc, pid, nanoseconds = FOREVER, cancel = object } == STOPPED { return task::cancelled }
+            let object = task::get_cancel_object{ &cancel }
+            while true {
+                let r = try sys::await_exit{ &proc, pid, nanoseconds = task::get_time_left{ &cancel }, cancel = object }
+                if r == STOPPED { return task::cancelled }
+                if r == EXITED { break }
+                try task::check{ &cancel }
+            }
         }
         if child.cleanup != 0 {
-            if object == 0 { _ = try sys::await_exit{ &proc, pid, nanoseconds = FOREVER, cancel = 0 } }
+            if not stoppable { _ = try sys::await_exit{ &proc, pid, nanoseconds = FOREVER, cancel = 0 } }
             try end_leftovers{ &proc, group = child.cleanup }
         }
         let code = try reap{ &proc, pid, options = 0 }
@@ -603,21 +640,32 @@ namespace os {
     // looked at without reaping it, as wait does.
     fn wait_for { mut proc: Proc, mut cancel: task::Cancel, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 {
         try task::check{ &cancel }
-        let object = task::get_cancel_object{ &cancel }
         let pid = @as(i32, child.id)
         if child.cleanup != 0 {
-            let r = try sys::await_exit{ &proc, pid, nanoseconds, cancel = object }
-            if r == STOPPED { return task::cancelled }
-            if r == TIMED_OUT { return null }
+            if not try await_exit_within{ &proc, &cancel, pid, nanoseconds } { return null }
             try end_leftovers{ &proc, group = child.cleanup }
             return try reap{ &proc, pid, options = 0 }
         }
         let code = try reap{ &proc, pid, options = WNOHANG }
         if code != null or nanoseconds == 0 { return code }
-        let r = try sys::await_exit{ &proc, pid, nanoseconds, cancel = object }
-        if r == STOPPED { return task::cancelled }
-        if r == TIMED_OUT { return null }
+        if not try await_exit_within{ &proc, &cancel, pid, nanoseconds } { return null }
         return try reap{ &proc, pid, options = 0 }
+    }
+
+    // Waits for child pid to end (sys::await_exit), for at most `nanoseconds`, in a task with
+    // its cancel object, and until the calling thread's deadline: whether it ended, or
+    // task::cancelled or task::deadline_passed.
+    fn await_exit_within { mut proc: Proc, mut cancel: task::Cancel, pid: i32, nanoseconds: u64 } -> proc::Error!bool {
+        let object = task::get_cancel_object{ &cancel }
+        let until = deadline{ &proc, nanoseconds }
+        while true {
+            let r = try sys::await_exit{ &proc, pid, nanoseconds = @min(remaining{ &proc, deadline = until }, task::get_time_left{ &cancel }), cancel = object }
+            if r == STOPPED { return task::cancelled }
+            if r == EXITED { return true }
+            try task::check{ &cancel }
+            if remaining{ &proc, deadline = until } == 0 { return false }
+        }
+        return false
     }
 
     // waitpid for child pid, with `options`: its exit code once it has ended, which reaps it;
@@ -670,14 +718,13 @@ namespace os {
     // in a task with its cancel object too.
     fn pipe_read { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, into: []mut u8 } -> proc::Error!usize {
         try task::check{ &cancel }
-        let object = task::get_cancel_object{ &cancel }
         let fd = descriptor{ file = pipe } ifnull { return proc_failed{ code = EBADF } }
         while true {
             let n = read_fd{ &proc, fd, buf = into.ptr, count = into.len }
             if n >= 0 { return @as(usize, n) }
             let e = sys::proc_errno{ &proc }.*
             if e == sys::EAGAIN {
-                try ready{ &proc, fd, events = POLLIN, object }
+                try ready{ &proc, &cancel, fd, events = POLLIN }
             } else if e != EINTR {
                 return proc_failed{ code = e }
             }
@@ -688,14 +735,13 @@ namespace os {
     // reader has closed its end.
     fn pipe_write { mut proc: Proc, mut cancel: task::Cancel, pipe: u64, bytes: []u8 } -> proc::Error!usize {
         try task::check{ &cancel }
-        let object = task::get_cancel_object{ &cancel }
         let fd = descriptor{ file = pipe } ifnull { return proc_failed{ code = EBADF } }
         while true {
             let n = write_fd{ &proc, fd, buf = bytes.ptr, count = bytes.len }
             if n >= 0 { return @as(usize, n) }
             let e = sys::proc_errno{ &proc }.*
             if e == sys::EAGAIN {
-                try ready{ &proc, fd, events = POLLOUT, object }
+                try ready{ &proc, &cancel, fd, events = POLLOUT }
             } else if e != EINTR {
                 return proc_failed{ code = e }
             }
@@ -796,8 +842,9 @@ namespace os {
     //
     // Every socket is made non-blocking, and exec closes it: SOCK_NONBLOCK and SOCK_CLOEXEC on
     // Linux, fcntl on macOS (sys::make_socket, sys::accept_socket). A call that would wait polls
-    // the descriptor with the calling task's cancel object instead (net_ready), so a task asked
-    // to stop fails with task::cancelled, having done nothing. A send never raises SIGPIPE:
+    // the descriptor with the calling task's cancel object, until the calling thread's deadline,
+    // instead (net_ready), so a task asked to stop fails with task::cancelled, and a call past
+    // its deadline with task::deadline_passed, having done nothing. A send never raises SIGPIPE:
     // Linux sends with MSG_NOSIGNAL, and macOS sets SO_NOSIGPIPE on each socket.
 
     // What std's Net holds on Linux and macOS: nothing, since sockets are the C library's.
@@ -854,7 +901,6 @@ namespace os {
 
     fn tcp_connect { mut net: Net, mut cancel: task::Cancel, address: net::Address } -> net::Error!u64 {
         try task::check{ &cancel }
-        let object = task::get_cancel_object{ &cancel }
         let to = endpoint_of{ address }
         let fd = sys::make_socket{ &net, family = to.family }
         if fd < 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
@@ -866,7 +912,7 @@ namespace os {
             // A connect that EINTR interrupted goes on without the call, as one in progress does.
             let e = sys::net_errno{ &net }.*
             if e != sys::EINPROGRESS and e != EINTR { return net_failed{ code = e } }
-            try net_ready{ &net, fd, events = POLLOUT, object }
+            try net_ready{ &net, &cancel, fd, events = POLLOUT }
             let mut failure: i32 = 0
             let mut size: u32 = 4
             if getsockopt{ &net, fd, level = sys::SOL_SOCKET, name = sys::SO_ERROR, value = &failure, &size } != 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
@@ -896,14 +942,13 @@ namespace os {
     // Waits for a connection on `listener`, polling it while it has none. `family` is Windows'.
     fn tcp_accept { mut net: Net, mut cancel: task::Cancel, listener: u64, family: u8 } -> net::Error!u64 {
         try task::check{ &cancel }
-        let object = task::get_cancel_object{ &cancel }
         let fd = descriptor{ file = listener } ifnull { return net_failed{ code = EBADF } }
         while true {
             let s = sys::accept_socket{ &net, fd }
             if s >= 0 { return @as(u64, s) }
             let e = sys::net_errno{ &net }.*
             if e == sys::EAGAIN {
-                try net_ready{ &net, fd, events = POLLIN, object }
+                try net_ready{ &net, &cancel, fd, events = POLLIN }
             } else if e != EINTR and not sys::accept_again{ code = e } {
                 return net_failed{ code = e }
             }
@@ -914,14 +959,13 @@ namespace os {
     // has finished sending.
     fn tcp_receive { mut net: Net, mut cancel: task::Cancel, socket: u64, into: []mut u8 } -> net::Error!usize {
         try task::check{ &cancel }
-        let object = task::get_cancel_object{ &cancel }
         let fd = descriptor{ file = socket } ifnull { return net_failed{ code = EBADF } }
         while true {
             let n = c_recv{ &net, fd, buf = into.ptr, count = into.len, flags = 0 }
             if n >= 0 { return @as(usize, n) }
             let e = sys::net_errno{ &net }.*
             if e == sys::EAGAIN {
-                try net_ready{ &net, fd, events = POLLIN, object }
+                try net_ready{ &net, &cancel, fd, events = POLLIN }
             } else if e != EINTR {
                 return net_failed{ code = e }
             }
@@ -931,14 +975,13 @@ namespace os {
     // Sends some of `bytes`, which aren't none. Returns how many.
     fn tcp_send { mut net: Net, mut cancel: task::Cancel, socket: u64, bytes: []u8 } -> net::Error!usize {
         try task::check{ &cancel }
-        let object = task::get_cancel_object{ &cancel }
         let fd = descriptor{ file = socket } ifnull { return net_failed{ code = EBADF } }
         while true {
             let n = c_send{ &net, fd, buf = bytes.ptr, count = bytes.len, flags = sys::MSG_NOSIGNAL }
             if n >= 0 { return @as(usize, n) }
             let e = sys::net_errno{ &net }.*
             if e == sys::EAGAIN {
-                try net_ready{ &net, fd, events = POLLOUT, object }
+                try net_ready{ &net, &cancel, fd, events = POLLOUT }
             } else if e != EINTR {
                 return net_failed{ code = e }
             }
@@ -989,17 +1032,20 @@ namespace os {
         if setsockopt{ &net, fd, level, name, value = &value, size = 4 } != 0 { return net_failed{ code = sys::net_errno{ &net }.* } }
     }
 
-    // Waits until socket fd has `events`, or, with a cancel object (task::get_cancel_object),
-    // until it is signalled: then it fails with task::cancelled. A socket with an error is
-    // ready too, and the call that tries it again gets the error. Evented's loop replaces this.
-    fn net_ready { mut net: Net, fd: i32, events: i16, object: u64 } -> net::Error! {
+    // Waits until socket fd has `events`; in a task, until its cancel object is signalled, and
+    // then fails with task::cancelled; and until the calling thread's deadline, if it has one,
+    // and then fails with task::deadline_passed. A socket with an error is ready too, and the
+    // call that tries it again gets the error. Evented's loop replaces this.
+    fn net_ready { mut net: Net, mut cancel: task::Cancel, fd: i32, events: i16 } -> net::Error! {
+        let object = task::get_cancel_object{ &cancel }
         let mut fds: [2]PollFd = [PollFd{ fd, events, revents = 0 }, PollFd{ fd = if object != 0 { @as(i32, object) } else { -1 }, events = POLLIN, revents = 0 }]
         while true {
-            let r = poll_net{ &net, fds = &fds[0], count = 2, ms = -1 }
+            let r = poll_net{ &net, fds = &fds[0], count = 2, ms = deadline_poll_millis{ &cancel } }
             if r > 0 {
                 if fds[1].revents != 0 { return task::cancelled }
                 return
             }
+            if r == 0 { try task::check{ &cancel } }
             if r < 0 {
                 let e = sys::net_errno{ &net }.*
                 if e != EINTR { return net_failed{ code = e } }
@@ -1103,7 +1149,7 @@ namespace os {
 
     // Waits until the program is asked to stop, for at most `nanoseconds` (stop::FOREVER for as
     // long as it takes): what it was asked, or 0 if it wasn't by then. In a task, the task's
-    // cancel object is polled too.
+    // cancel object is polled too, and a deadline bounds the wait (deadline_poll_millis).
     fn stop_wait { mut stop: Stop, mut cancel: task::Cancel, nanoseconds: u64 } -> stop::Error!u32 {
         try begin_stop{ &stop }
         try task::check{ &cancel }
@@ -1112,17 +1158,22 @@ namespace os {
         let mut fds: [2]PollFd = [PollFd{ fd = mine, events = POLLIN, revents = 0 }, PollFd{ fd = if object != 0 { @as(i32, object) } else { -1 }, events = POLLIN, revents = 0 }]
         let start = stop_now{ &stop }
         while true {
-            let mut ms: i32 = -1
+            let mut own: i32 = -1
             if nanoseconds != stop::FOREVER {
                 let spent = stop_now{ &stop } - start
-                ms = if spent >= nanoseconds { 0 } else { poll_millis{ nanoseconds = nanoseconds - spent } }
+                own = if spent >= nanoseconds { 0 } else { poll_millis{ nanoseconds = nanoseconds - spent } }
             }
+            let until = deadline_poll_millis{ &cancel }
+            let ms = if own < 0 { until } else if until < 0 { own } else { @min(own, until) }
             let r = poll_stop{ &stop, fds = &fds[0], count = 2, ms }
             if r > 0 {
                 if fds[0].revents != 0 { return @atomic_load_acquire(&stop.asked) }
                 return task::cancelled
             }
-            if r == 0 and ms == 0 { return 0 }
+            if r == 0 {
+                try task::check{ &cancel }
+                if own == 0 { return 0 }
+            }
             if r < 0 {
                 let e = sys::stop_errno{ &stop }.*
                 if e != EINTR { return stop::other{ code = @as(i64, e) } }

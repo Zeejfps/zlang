@@ -73,27 +73,27 @@
 // stream, a socket, and a buffer of the caller's, which holds a head and what arrived past it;
 // nothing is allocated. A server's connection, in a task of the program's per connection:
 //
-//   fn connection { mut net: Net, mut threads: Threads, socket: net::Socket } -> ! {
+//   fn connection { mut net: Net, socket: net::Socket } -> ! {
 //       defer net::close{ &net, socket }
 //       let mut buffer: [16384]u8
 //       let mut fields: [100]http::Header
 //       let mut headers = fields[..]
 //       let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-//       http::serve_connection{ &net, &threads, &conn, &headers, limits = http::Limits{ .. }, handle = answer } iferr {}
+//       http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer } iferr {}
 //   }
 //
 //   fn answer { mut net: Net, exchange: http::Exchange } -> ! {
 //       return http::respond{ &net, exchange, status = 200, headers = [], body = "hello\n" }
 //   }
 //
-// serve_connection reads each request's head (read_request) with a deadline, a task it
-// cancels; the handler reads the body (read_body, discard_body) and answers (respond, or
-// send_response, write_body and finish_body for a body it streams); a request it can't read is
-// answered 400, 431, 501 or 505. Keep-alive, pipelining, HTTP/1.0 and Expect: 100-continue
-// are the connection's. A connection's calls block, and fail with task::cancelled in a task
-// asked to stop. The connection's misuse panics, as a task handle's does: a second response
-// to a request, a body written that the response said it hadn't, a request read while the
-// last one's body is unread.
+// serve_connection reads each request's head (read_request) under a deadline (run_within);
+// the handler reads the body (read_body, discard_body) and answers (respond, or send_response,
+// write_body and finish_body for a body it streams); a request it can't read is answered 400,
+// 431, 501 or 505. Keep-alive, pipelining, HTTP/1.0 and Expect: 100-continue are the
+// connection's. A connection's calls block, and fail with task::cancelled in a task asked to
+// stop, and with task::deadline_passed past a deadline. The connection's misuse panics, as a
+// task handle's does: a second response to a request, a body written that the response said it
+// hadn't, a request read while the last one's body is unread.
 
 namespace http {
     // A header field: a name and a value, slices of the buffer the head was read into or of the
@@ -728,15 +728,14 @@ namespace http {
     // ends after a response does so in stages (linger), so that the client reads the response
     // whatever it was still sending.
     //
-    // A head's deadline is a task's (Limits.head_ns): when the buffer doesn't already hold the
-    // next head whole, the head is read in a task of its own (task::start_concurrent), which is
-    // waited for with task::wait_for and cancelled at the deadline. `handle` runs here, on the
-    // caller's thread, as a plain function value.
-    fn serve_connection { mut net: Net, mut threads: Threads, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, exchange: Exchange } -> ! } -> ! {
+    // A head's deadline (Limits.head_ns) is put on its read with task::run_within, here on the
+    // caller's thread: no task of its own. Everything runs on the caller's thread, `handle` too,
+    // as a plain function value, so a connection takes one thread, the caller's.
+    fn serve_connection { mut net: Net, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, exchange: Exchange } -> ! } -> ! {
         let mut served: u32 = 0
         while true {
-            let got = read_request_within{ &net, &threads, &conn, &headers, nanoseconds = limits.head_ns } iferr err{ error } {
-                if refuse{ &net, &conn, error } { linger{ &net, &threads, &conn } }
+            let got = read_request_within{ &net, &conn, &headers, nanoseconds = limits.head_ns } iferr err{ error } {
+                if refuse{ &net, &conn, error } { linger{ &net, &conn } }
                 return error
             }
             let request = got ifnull { return }
@@ -746,7 +745,7 @@ namespace http {
                 if not conn.responded {
                     conn.keep = false
                     send_response{ &net, &conn, status = 500, headers = [], body = Body::none, close = true } iferr { return error }
-                    linger{ &net, &threads, &conn }
+                    linger{ &net, &conn }
                 }
                 return error
             }
@@ -762,7 +761,7 @@ namespace http {
                 if conn.continue_due or not try drop_body{ &net, &conn, most = DISCARD_MOST } { conn.keep = false }
             }
             if not conn.keep {
-                linger{ &net, &threads, &conn }
+                linger{ &net, &conn }
                 return
             }
         }
@@ -916,32 +915,21 @@ namespace http {
                          keep_alive = conn.keep, expects_continue = conn.continue_due }
     }
 
-    // read_request, with the head's deadline: a head the buffer already holds whole is read at
-    // once; otherwise it is read in a task, which is cancelled if it hasn't ended within
-    // `nanoseconds`, and then the request is timed_out.
-    fn read_request_within { mut net: Net, mut threads: Threads, mut conn: Connection, mut headers: []mut Header, nanoseconds: u64 } -> !?Incoming {
-        release_head{ &conn }
-        let have = conn.buffer[conn.start..conn.end]
-        if let head = try parse_request_head{ buffer = have, &headers } {
-            return try begin_request{ &conn, head }
-        }
-        let mut reading: task::Task(!?Incoming)
-        try task::start_concurrent{ &threads, task = &reading, run = read_request{ &net, &conn, &headers, _ } }
-        if task::wait_for{ &threads, task = &reading, nanoseconds } {
-            return task::wait{ &threads, task = &reading }
-        }
-        match task::cancel{ &threads, task = &reading } {
-            ok{ value } => { return value }         // it ended as the deadline came
-            err{ error } => {
-                match error {
-                    task::cancelled => {
-                        conn.keep = false
-                        return timed_out
-                    }
-                    else => { return error }
-                }
+    // read_request, under the head's deadline, `nanoseconds` from now (task::run_within): a
+    // head that hasn't arrived whole by then is timed_out. A head the buffer already holds
+    // whole is read without waiting, and a receive that got bytes as the deadline came gives
+    // them. A deadline the caller put on the connection that passed first is its own error, as
+    // a cancel is, not this one's.
+    fn read_request_within { mut net: Net, mut conn: Connection, mut headers: []mut Header, nanoseconds: u64 } -> !?Incoming {
+        let got = task::run_within{ cancel = &net, nanoseconds, run = read_request{ &net, &conn, &headers, _ } }
+        if got is err{ error } {
+            if error is task::deadline_passed {
+                try task::check{ cancel = &net }
+                conn.keep = false
+                return timed_out
             }
         }
+        return got
     }
 
     // The response to a request that couldn't be read, by what was wrong with it, which ends
@@ -976,18 +964,12 @@ namespace http {
     // Ends a connection whose client may still be sending, as RFC 9112 §9.6 asks: closing a
     // socket with bytes unread resets the connection, and a reset can destroy the response
     // before the client has read it. So this end's sending side is shut, which the client
-    // reads as the response's end, and what arrives is read and dropped, in a task of its own,
-    // until the client finishes sending, LINGER_NS pass or DISCARD_MOST bytes have come. The
-    // program then closes the stream.
-    fn linger { mut net: Net, mut threads: Threads, mut conn: Connection } {
+    // reads as the response's end, and what arrives is read and dropped, under a deadline
+    // (task::run_within), until the client finishes sending, LINGER_NS pass or DISCARD_MOST
+    // bytes have come. The program then closes the stream.
+    fn linger { mut net: Net, mut conn: Connection } {
         finish_sending{ &net, stream = conn.stream } iferr { return }
-        let mut draining: task::Task(!)
-        task::start_concurrent{ &threads, task = &draining, run = drain{ &net, stream = conn.stream, _ } } iferr { return }
-        if task::wait_for{ &threads, task = &draining, nanoseconds = LINGER_NS } {
-            _ = task::wait{ &threads, task = &draining }
-        } else {
-            _ = task::cancel{ &threads, task = &draining }
-        }
+        task::run_within{ cancel = &net, nanoseconds = LINGER_NS, run = drain{ &net, stream = conn.stream, _ } } iferr {}
     }
 
     // Reads and drops what arrives until the peer finishes sending, or DISCARD_MOST bytes came.

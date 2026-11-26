@@ -18,6 +18,7 @@ fn main { mut io: Io, mut stop: Stop, mut threads: Threads } {
         err{ error } => {
             match error {
                 task::cancelled => { io::println{ &io, s = "cancelled" } }
+                task::deadline_passed => { io::println{ &io, s = "deadline passed" } }
                 stop::other{ code } => { io::println{ &io, s = "failed" } }
             }
         }

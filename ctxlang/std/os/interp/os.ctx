@@ -247,6 +247,11 @@ namespace os {
     fn event_waitable { event: u64 } -> u64 { return 0 }
     fn event_wait { mut threads: Threads, waitable: u64, nanoseconds: u64 } {}
     fn now { mut threads: Threads } -> u64 { return 0 }
+
+    // The deadlines' clock (task::run_within) stands still here, as thread::sleep returns at
+    // once: a deadline of 0 has passed, and any other never passes. It reads 1, not 0, since a
+    // deadline of 0 is none.
+    fn read_deadline_clock { mut cancel: task::Cancel } -> u64 { return 1 }
     fn thread_handle { mut threads: Threads } -> u64 { return 0 }
     fn cancel_synchronous { mut threads: Threads, thread: u64 } {}
 

@@ -33,13 +33,13 @@ fn site_page { site: *Site, path: []u8 } -> ?[]u8 {
 // A connection's task. Its error is dropped: a group's task that fails cancels the group's
 // others, and a client's misstep (a reset, a head that didn't arrive) is no reason to end
 // every connection.
-fn connection { mut net: Net, mut threads: Threads, socket: net::Socket, site: *Site } -> ! {
+fn connection { mut net: Net, socket: net::Socket, site: *Site } -> ! {
     defer net::close{ &net, socket }
     let mut buffer: [16384]u8
     let mut fields: [100]http::Header
     let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-    http::serve_connection{ &net, &threads, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } } iferr {}
+    http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } } iferr {}
 }
 
 fn answer { site: *Site, mut net: Net, exchange: http::Exchange } -> ! {
@@ -68,7 +68,7 @@ fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, site: *S
                 else => { return error }
             }
         }
-        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, &threads, socket, site, _ } } iferr {
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, socket, site, _ } } iferr {
             net::close{ &net, socket }                                // no thread for it: refuse it
         }
     }
@@ -77,7 +77,7 @@ fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, site: *S
 fn accept_into { mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site, mut connections: task::Group } -> ! {
     while true {
         let socket = try net::accept{ &net, listener }
-        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, &threads, socket, site, _ } } iferr {
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, socket, site, _ } } iferr {
             net::close{ &net, socket }
         }
     }

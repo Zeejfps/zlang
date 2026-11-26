@@ -1,0 +1,44 @@
+// A deadline (task::run_within) outside any task, which the interpreter runs too, where time
+// stands still (std/os/interp): a deadline of 0 has passed at once, and a longer one, which
+// nothing here waits out, hasn't. Nested, the earlier holds, and the outer one is back once the
+// inner returns; once run_within returns, no check sees it.
+//# stdout:
+//| 0: deadline passed
+//| 1 s: ok
+//| nested 0 inside 1 s: deadline passed
+//| then the outer 1 s: ok
+//| nested 1 s inside 0: deadline passed
+//| after: ok
+
+const ONE_SECOND: u64 = 1000000000
+
+fn look { mut threads: Threads } -> ! {
+    try task::check_cancelled{ &threads }
+}
+
+fn name { r: ! } -> []u8 {
+    match r {
+        ok => { return "ok" }
+        task::deadline_passed => { return "deadline passed" }
+        task::cancelled => { return "cancelled" }
+        else => { return "failed" }
+    }
+}
+
+fn nested { mut threads: Threads, inner: u64, mut first: !, mut then: ! } -> ! {
+    first = task::run_within{ cancel = &threads, nanoseconds = inner, run = look{ &threads, _ } }
+    then = look{ &threads }
+}
+
+fn main { mut io: Io, mut threads: Threads } {
+    _ = @fmt(&io, "0: {}\n", name{ r = task::run_within{ cancel = &threads, nanoseconds = 0, run = look{ &threads, _ } } })
+    _ = @fmt(&io, "1 s: {}\n", name{ r = task::run_within{ cancel = &threads, nanoseconds = ONE_SECOND, run = look{ &threads, _ } } })
+    let mut first: ! = task::out_of_resources
+    let mut then: ! = task::out_of_resources
+    _ = task::run_within{ cancel = &threads, nanoseconds = ONE_SECOND, run = nested{ &threads, inner = 0, &first, &then, _ } }
+    _ = @fmt(&io, "nested 0 inside 1 s: {}\n", name{ r = first })
+    _ = @fmt(&io, "then the outer 1 s: {}\n", name{ r = then })
+    _ = task::run_within{ cancel = &threads, nanoseconds = 0, run = nested{ &threads, inner = ONE_SECOND, &first, &then, _ } }
+    _ = @fmt(&io, "nested 1 s inside 0: {}\n", name{ r = first })
+    _ = @fmt(&io, "after: {}\n", name{ r = look{ &threads } })
+}

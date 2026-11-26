@@ -1,0 +1,49 @@
+// Every kind of blocking call under a deadline (task::run_within), so that each layer's waits
+// with a deadline, and its deadlines' clock, are checked and lowered: a receive, a pipe read, a
+// child's wait and wait_for, a sleep, stop's wait, and standard input.
+
+const MS: u64 = 1000000
+
+fn receive_some { mut net: Net, socket: net::Socket } -> !usize {
+    let mut buf: [16]u8
+    return net::receive{ &net, socket, into = buf[..] }
+}
+
+fn read_some { mut proc: Proc, pipe: proc::Pipe } -> !usize {
+    let mut buf: [16]u8
+    return proc::read{ &proc, pipe, into = buf[..] }
+}
+
+fn wait_child { mut proc: Proc, mut child: proc::Child } -> !?i32 {
+    _ = try proc::wait_for{ &proc, &child, nanoseconds = 1000 * MS }
+    return try proc::wait{ &proc, &child }
+}
+
+fn nap { mut threads: Threads } -> ! {
+    thread::sleep{ &threads, nanoseconds = 1000 * MS }
+}
+
+fn wait_stop { mut stop: Stop } -> stop::Error!?stop::Reason {
+    return stop::wait_for{ &stop, nanoseconds = 1000 * MS }
+}
+
+fn read_input { mut io: Io } -> !usize {
+    let mut buf: [16]u8
+    return io::read{ &io, into = buf[..] }
+}
+
+fn main { mut io: Io, mut net: Net, mut proc: Proc, mut threads: Threads, mut stop: Stop, args: Args } -> i32 {
+    let listener = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 1 }
+    let at = net::listener_address{ &net, listener } iferr { return 1 }
+    let client = net::connect{ &net, address = at } iferr { return 1 }
+    _ = task::run_within{ cancel = &net, nanoseconds = 100 * MS, run = receive_some{ &net, socket = client, _ } }
+    let options = proc::Options{ stdout = proc::Stdio::pipe, .. }
+    let mut child = proc::spawn{ &proc, argv = args, options } iferr { return 2 }
+    let out = child.stdout ifnull { return 2 }
+    _ = task::run_within{ cancel = &proc, nanoseconds = 100 * MS, run = read_some{ &proc, pipe = out, _ } }
+    _ = task::run_within{ cancel = &proc, nanoseconds = 100 * MS, run = wait_child{ &proc, &child, _ } }
+    _ = task::run_within{ cancel = &threads, nanoseconds = 100 * MS, run = nap{ &threads, _ } }
+    _ = task::run_within{ cancel = &stop, nanoseconds = 100 * MS, run = wait_stop{ &stop, _ } }
+    _ = task::run_within{ cancel = &io, nanoseconds = 100 * MS, run = read_input{ &io, _ } }
+    return 0
+}

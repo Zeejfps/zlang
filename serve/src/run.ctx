@@ -121,7 +121,7 @@ fn accept_into { mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, m
             net::close{ &net, socket }                                  // too many: refuse it
             continue
         }
-        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &fs, &mem, &net, &threads, &clock, socket, site, _ } } iferr {
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &fs, &mem, &net, &clock, socket, site, _ } } iferr {
             _ = @atomic_add_relaxed(&site.stats.refused, 1)
             net::close{ &net, socket }                                  // no thread for it: refuse it
         }
@@ -132,7 +132,7 @@ fn accept_into { mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, m
 // (docs/todo/friction.md, 40), and one client's reset is no reason to end every connection.
 // What serve_connection refused before a request line is logged here, since no handler saw it,
 // with the connection's age for its duration, since when that head began isn't known.
-fn connection { mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, mut clock: Clock, socket: net::Socket, site: *mut site::Site } -> ! {
+fn connection { mut fs: Fs, mut mem: Mem, mut net: Net, mut clock: Clock, socket: net::Socket, site: *mut site::Site } -> ! {
     defer net::close{ &net, socket }
     _ = @atomic_add_relaxed(&site.stats.open, 1)
     defer _ = @atomic_subtract_relaxed(&site.stats.open, 1)
@@ -142,7 +142,7 @@ fn connection { mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, mu
     let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
     let began = clock::read_monotonic{ &clock }
-    http::serve_connection{ &net, &threads, &conn, &headers, limits = http::Limits{ .. }, handle = site::answer{ &fs, &mem, &clock, site, peer, _ } } iferr err{ error } {
+    http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = site::answer{ &fs, &mem, &clock, site, peer, _ } } iferr err{ error } {
         let status = find_refusal{ error } ifnull { return }
         site::record{ site, line = access::Line{
             unix_ns = clock::read_wall{ &clock }, peer, method = "", target = "", version = 11, status, bytes = 0,

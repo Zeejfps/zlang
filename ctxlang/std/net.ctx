@@ -19,9 +19,11 @@
 //   }
 //
 // Calls block: `connect`, `accept`, `receive` and `send` wait, and in a task asked to stop they
-// fail with task::cancelled (std/task.ctx), which is how a deadline is put on one. A socket is
-// a number, as a file is, which the program closes once, when no task uses it. A socket may
-// be used by two tasks at once, one receiving and one sending.
+// fail with task::cancelled (std/task.ctx). A deadline is put on them with task::run_within,
+// past which they fail with task::deadline_passed: a deadline is cancellation at a time, the
+// caller's, not the socket's. A socket is a number, as a file is, which the program closes
+// once, when no task uses it. A socket may be used by two tasks at once, one receiving and one
+// sending.
 //
 // Addresses: IPv4 and IPv6 addresses and ports, read from text and written to it. They are
 // pure, with no capability, so they run in the interpreter and while compiling, where a
@@ -172,12 +174,13 @@ namespace net {
 
     // What the platform's layer (std/os) may fail with, on every platform: each of its socket
     // functions declares this set (spec §8, Errors, rule 14), whichever of it its OS gives, and
-    // every blocking call checks first whether its task is asked to stop (task::check). It is
+    // every blocking call checks first whether its task is asked to stop or its deadline has
+    // passed (task::check). It is
     // open, as proc::Error is. A server's accept loop goes on after `aborted`, a client that gave
     // up while it waited, and pauses after `too_many_open`, rather than return.
     type Error = error(refused, reset, aborted, closed, unreachable, timed_out, address_in_use,
                        address_unavailable, unsupported_address, permission_denied, too_many_open,
-                       message_too_large, not_found, lookup_failed, other, bad_address, task::cancelled, ..)
+                       message_too_large, not_found, lookup_failed, other, bad_address, task::cancelled, task::deadline_passed, ..)
 
     // ---- TCP
 

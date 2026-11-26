@@ -44,7 +44,7 @@ namespace proc {
     // What the platform's layer (std/os) may fail with, on every platform, starting a program,
     // waiting for it, ending it, or using its pipes: each of those declares this set (spec §8,
     // Errors, rule 14). It is open, as fs::Error is.
-    type Error = error(not_found, permission_denied, broken_pipe, other, task::cancelled, ..)
+    type Error = error(not_found, permission_denied, broken_pipe, other, task::cancelled, task::deadline_passed, ..)
 
     // Where one of a child's standard streams goes.
     union Stdio {
@@ -111,7 +111,7 @@ namespace proc {
         let mut child = try spawn{ &proc, argv, options = Options{ env, .. } }
         let code = os::wait{ &proc, cancel = &proc, child, interruptible = true }
         if stopped(i32){ r = code } {
-            // A task asked to stop: the child it owns ends, at once, and is waited for.
+            // A cancel or a deadline: the child it owns ends, at once, and is waited for.
             kill{ &proc, child } iferr {}
             _ = os::wait{ &proc, cancel = &proc, child, interruptible = false }
         }
@@ -119,12 +119,12 @@ namespace proc {
         return try code
     }
 
-    // Whether r is a stop's: a task's wait that was asked to stop, which leaves its child as it
-    // was (std/task.ctx).
+    // Whether r is a stop's: a task's wait that was asked to stop, or a wait whose deadline
+    // passed (task::run_within), which leaves its child as it was (std/task.ctx).
     fn stopped(T) { r: Error!T } -> bool {
         match r {
             ok => { return false }
-            err{ error } => { return match error { task::cancelled => { true } else => { false } } }
+            err{ error } => { return match error { task::cancelled | task::deadline_passed => { true } else => { false } } }
         }
     }
 
@@ -166,7 +166,8 @@ namespace proc {
     // closes and sets to null. Read what a child writes to a pipe before waiting for it: a child
     // that fills a pipe waits for it to be read.
     //
-    // In a task asked to stop it fails with task::cancelled, and leaves the child as it was: not
+    // In a task asked to stop it fails with task::cancelled, and once a deadline has passed
+    // with task::deadline_passed (task::run_within); either leaves the child as it was: not
     // released, its pipes open, to be waited for or killed.
     fn wait { mut proc: Proc, mut child: Child } -> !i32 {
         let code = os::wait{ &proc, cancel = &proc, child, interruptible = true }

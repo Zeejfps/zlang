@@ -237,17 +237,8 @@ as the write-ups gave them.
     what it waits for comes, so its handle's scope end waits for that too. Written: serve's
     log writer waits with `condition::wait_for` and wakes every 100 ms to ask
     `task::check_cancelled`. A wait that also waits on the task's cancel object, as
-    `thread::sleep` does, would say it. *Hit by 1:* serve.
-
-49. *Resolved by COMMIT (fill in the hash, then remove this entry):* **Windows' file calls put
-    a 64 KiB path buffer on the stack, which stays committed.** The Windows layer's file calls
-    now take a path in 512 UTF-16 units on the stack (1 KiB) and a longer one, up to Windows'
-    32,767, from the layer's own malloc for the call (`wide_path` and `free_wide`), as its env,
-    spawn and exe_path already did; `working_dir` and `fs::make_absolute` read the working
-    directory the same way. No frame has room for the longest path, so inlining can't put it in
-    the common one, and a `#noinline` attribute isn't needed for this: it would still have left
-    64 KiB committed on every thread that once took a long path. serve's 1,000 idle connections
-    that had each asked for a file take 176 MiB, as many as for /stats, from 238 MiB.
+    `thread::sleep` does, would say it, and would stop at a deadline (task::run_within) as the
+    other waits do. *Hit by 1:* serve.
 
 50. **`ctxc exe -o` into a directory that isn't there fails in the linker.** `ctxc exe serve -o
     serve/out/serve.exe` before serve/out existed gave ld's "cannot open output file ...: No
@@ -261,3 +252,18 @@ as the write-ups gave them.
     Written: the accept loop and the connection's task in the program (serve/src/run.ctx,
     `accept_into` and `connection`, about 45 lines with the program's own counting and
     logging). *Hit by 1:* serve.
+
+52. **A test's expected panic pins std's line numbers.** A case that checks a panic's call path
+    names the line of std it panicked on (`std/task.ctx:71:41`, `std/http.ctx:657:46`), so a
+    comment added to std above it breaks the case: deadlines (task::run_within) moved four of
+    them, and a comment in http.ctx was rewrapped to as many lines as before to keep nine more.
+    Written: the numbers updated by hand. A path whose std frames match by function name alone
+    would say the same. *Hit by 1:* deadlines.
+
+53. **A local passed to a `mut` field that only writes it must have a value first.** A
+    function that gives its caller two results (`first` and `then`, each a `!`) through `mut`
+    fields needs the caller's locals assigned before the call (`may be read before it is
+    assigned` otherwise), and a `!` has no zero value, so none fits: written
+    `let mut first: ! = task::out_of_resources`, an error that means nothing there. A field
+    marked as written before it is read, as `let x: T` is checked (spec §11, Initialization),
+    would say it. *Hit by 1:* deadlines' tests.

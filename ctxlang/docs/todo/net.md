@@ -81,8 +81,8 @@ fn main { mut net: Net, mut threads: Threads } -> i32 {
   `SOCKET`. Copying one copies the number; closing is the program's, once.
 - **Calls block.** `accept`, `connect`, `receive`, `send` and name lookup block the calling task's
   worker on the Threaded backend and its fiber on Evented, and fail with `task::cancelled` when the
-  task is asked to stop. There are no timeout parameters: a deadline is `task::wait_for` and
-  `task::cancel` (Timeouts).
+  task is asked to stop. There are no timeout parameters: a deadline is `task::run_within`'s,
+  past which they fail with `task::deadline_passed` (Timeouts).
 - **TLS is a stream over a socket**, `tls::Stream`, whose engine works on buffers; `net` does its IO,
   so TLS blocks and cancels as sockets do.
 
@@ -616,35 +616,38 @@ reads do. The cost is two system calls per operation; the Evented backend replac
 
 ## Timeouts
 
-There are no timeout parameters and no deadlines on sockets. A deadline is a task's: run the call in
-a task started with `start_concurrent`, and `task::wait_for` then `task::cancel` (internals.md,
-Tasks, Cancellation):
+There are no timeout parameters and no deadlines on sockets. A deadline is the caller's, on every
+blocking call it makes, as a cancel is a task's: `task::run_within` runs a function with a
+deadline on the calling thread's calls, each of which fails with `task::deadline_passed` once it
+has passed (internals.md, Tasks, Deadlines):
 
 ```
 fn dial { mut net: Net, host: []u8, port: u16 } -> !net::Socket {
     return net::connect_host{ &net, host, port }
 }
 
-fn connect_within { mut net: Net, mut threads: Threads, host: []u8, port: u16, nanoseconds: u64 } -> !net::Socket {
-    let mut t: task::Task(!net::Socket)
-    try task::start_concurrent{ &threads, task = &t, run = dial{ &net, host, port, _ } }
-    if task::wait_for{ &threads, task = &t, nanoseconds } {
-        return task::wait{ &threads, task = &t }
-    }
-    return task::cancel{ &threads, task = &t }      // cancelled, or the socket if it connected meanwhile
+fn connect_within { mut net: Net, host: []u8, port: u16, nanoseconds: u64 } -> !net::Socket {
+    return task::run_within{ cancel = &net, nanoseconds, run = dial{ &net, host, port, _ } }
 }
 ```
 
+It needs no task and no `Threads`: main's thread has a deadline as a task's does. A connect,
+accept, receive or send waiting when it passes stops as a cancelled one does (the operation alone
+cancelled, and one that completed meanwhile returns its result), and the next call under it fails
+at once; once `run_within` returns, no call sees it. Inside another, the earlier holds.
+
 The system's own limits still apply without one: a connect to a silent address fails with `timed_out`
 after the system's SYN retries (about 21 s on Windows, about 2 minutes on Linux), and a receive from a
-peer that vanished waits until keep-alive, if set, says it is gone. A program without `Threads`
-gets those and no shorter ones.
+peer that vanished waits until keep-alive, if set, says it is gone.
 
 Considered and rejected: a deadline per socket, as Go has, or a timeout per call. Either is a second
-way to stop a call, beside cancellation, with its own error and its own interaction with it, and
-the tasks' design is that a deadline is a request to stop at a time (internals.md, Tasks,
-Decisions, 9). Its cost is one
-task, which on the Evented backend is a fiber.
+way to stop a call, beside cancellation, for the network's calls alone, with its own interaction
+with a cancel, and the tasks' design is that a deadline is a request to stop at a time
+(internals.md, Tasks, Decisions, 9 and 12). A deadline on the caller's calls keeps that: it stops
+every call a cancel stops (pipes, a child's wait, a sleep, stop's waits, standard input), the same
+way, with `cancelled` winning when both hold. It was a task cancelled at the time, until a
+server's idle connections showed its cost, a second thread for each waiting call
+(serve/PLAN.md, Findings 2).
 
 ## TLS
 
@@ -1078,8 +1081,9 @@ next. "Verified" is what must pass before it is done; every package also runs th
 1. **`Net` is one capability for TCP, UDP, lookup and TLS.** Considered and rejected: `Tls` of its
    own (it reaches nothing but sockets and the trust store, so it would be a permission no program
    holds without `Net`); `Dns` of its own (a program that connects to names needs both, always).
-2. **Blocking calls, cancellation for deadlines**, as tasks decide for all IO (internals.md, Tasks, Decisions, 9). Rejected:
-   timeouts per call and deadlines per socket (Timeouts).
+2. **Blocking calls, cancellation for deadlines**, as tasks decide for all IO (internals.md, Tasks,
+   Decisions, 9 and 12): a deadline is the caller's (`task::run_within`), on every call a cancel
+   stops. Rejected: timeouts per call and deadlines per socket (Timeouts).
 3. **Sockets are numbers, as `proc::Pipe` and `fs::File` are**, closed by the program. Rejected: a
    socket that closes itself when its scope ends, which ctxlang has no destructors for; a handle type
    like `#loan_holder`, which would forbid storing sockets in a server's connection records.

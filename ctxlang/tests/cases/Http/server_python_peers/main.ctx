@@ -56,20 +56,20 @@ fn answer { mut net: Net, exchange: http::Exchange } -> ! {
 }
 
 // A connection's task, whose error is dropped: one client's is no reason to end the others.
-fn connection { mut net: Net, mut threads: Threads, socket: net::Socket, limits: http::Limits } -> ! {
+fn connection { mut net: Net, socket: net::Socket, limits: http::Limits } -> ! {
     defer net::close{ &net, socket }
     let mut buffer: [16384]u8
     let mut fields: [100]http::Header
     let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-    http::serve_connection{ &net, &threads, &conn, &headers, limits, handle = answer } iferr {}
+    http::serve_connection{ &net, &conn, &headers, limits, handle = answer } iferr {}
 }
 
 fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, limits: http::Limits } -> ! {
     let mut connections: task::Group
     while true {
         let socket = try net::accept{ &net, listener }
-        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, &threads, socket, limits, _ } } iferr {
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, socket, limits, _ } } iferr {
             net::close{ &net, socket }
         }
     }

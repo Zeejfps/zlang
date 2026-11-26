@@ -5,6 +5,7 @@ fn main { mut io: Io, mut stop: Stop } -> i32 {
         match error {
             stop::other{ code } => { return 1 }
             task::cancelled => { return 2 }
+            task::deadline_passed => { return 5 }
         }
     }
     let first = stop::wait{ &stop } iferr { return 3 }

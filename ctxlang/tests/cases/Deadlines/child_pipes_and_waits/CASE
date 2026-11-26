@@ -1,0 +1,22 @@
+// A deadline (task::run_within) on proc's blocking calls, on main's thread: a pipe read from a
+// child that writes nothing yet, a pipe write to a child that doesn't read (once the pipe is
+// full), a wait and a wait_for for a child that sleeps, and a run of one, which kills its child.
+// Each fails with deadline_passed, and each is followed by a call without a deadline that must
+// not see a stale one: the read reads what the child wrote once its input ended, the wait_for
+// with 0 looks, and the sleeper is killed and waited for.
+// The children are tests/helpers/child.ctx: `upper` writes its standard input in upper case
+// when it ends; `sleep 30000 0` sleeps.
+//# build child: {home}/tests/helpers/child.ctx
+//# program: main.ctx
+//# args: {child}
+//# interp: cannot run
+//# timeout: 120
+//# stdout:
+//| read: deadline passed
+//| read again: AB
+//| write: deadline passed
+//| wait: deadline passed
+//| wait_for: deadline passed
+//| wait_for 0: still running
+//| run: deadline passed
+//| 137

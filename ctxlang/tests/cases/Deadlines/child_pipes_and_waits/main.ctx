@@ -1,0 +1,78 @@
+const DEADLINE: u64 = 200000000
+const LOTS: usize = 1048576
+
+fn show(T) { mut io: Io, r: !T, what: []u8 } {
+    match r {
+        ok => { _ = @fmt(&io, "{}: ok\n", what) }
+        err{ error } => {
+            match error {
+                task::deadline_passed => { _ = @fmt(&io, "{}: deadline passed\n", what) }
+                task::cancelled => { _ = @fmt(&io, "{}: cancelled\n", what) }
+                else => { _ = @fmt(&io, "{}: failed\n", what) }
+            }
+        }
+    }
+}
+
+fn read_some { mut proc: Proc, pipe: proc::Pipe, into: []mut u8 } -> !usize {
+    return proc::read{ &proc, pipe, into }
+}
+
+// Writes `bytes` again and again, until a write waits for a reader that never comes.
+fn write_lots { mut proc: Proc, pipe: proc::Pipe, bytes: []u8 } -> !usize {
+    let mut total: usize = 0
+    while total < 17179869184 {
+        total = total + try proc::write{ &proc, pipe, bytes }
+    }
+    return total
+}
+
+fn wait_child { mut proc: Proc, mut child: proc::Child } -> !i32 {
+    return proc::wait{ &proc, &child }
+}
+
+fn wait_child_for { mut proc: Proc, mut child: proc::Child, nanoseconds: u64 } -> !?i32 {
+    return proc::wait_for{ &proc, &child, nanoseconds }
+}
+
+fn run_child { mut proc: Proc, argv: [][]u8 } -> !i32 {
+    return proc::run{ &proc, argv, env = [] }
+}
+
+fn main { mut io: Io, mut proc: Proc, mut mem: Mem, args: Args } -> i32 {
+    // A read from a child that writes nothing until its input ends.
+    let options = proc::Options{ stdin = proc::Stdio::pipe, stdout = proc::Stdio::pipe, stderr = proc::Stdio::ignore, .. }
+    let mut upper = proc::spawn{ &proc, argv = [args[0], "upper"], options } iferr { return 1 }
+    let input = upper.stdin ifnull { return 1 }
+    let output = upper.stdout ifnull { return 1 }
+    let mut buf: [64]u8
+    show(usize){ &io, r = task::run_within{ cancel = &proc, nanoseconds = DEADLINE, run = read_some{ &proc, pipe = output, into = buf[..], _ } }, what = "read" }
+    _ = proc::write{ &proc, pipe = input, bytes = "ab" } iferr { return 2 }
+    proc::close{ &proc, pipe = &upper.stdin }
+    let mut n: usize = 0
+    while n < 2 {
+        let got = proc::read{ &proc, pipe = output, into = buf[n..] } iferr { return 2 }
+        if got == 0 { break }
+        n = n + got
+    }
+    _ = @fmt(&io, "read again: {}\n", buf[..n])
+    _ = proc::wait{ &proc, child = &upper } iferr { return 2 }
+
+    // A write to a child that doesn't read, a wait and a wait_for for one that sleeps.
+    let sleeps = proc::Options{ stdin = proc::Stdio::pipe, .. }
+    let mut sleeper = proc::spawn{ &proc, argv = [args[0], "sleep", "30000", "0"], options = sleeps } iferr { return 3 }
+    let feed = sleeper.stdin ifnull { return 3 }
+    let lots = mem::pages{ &mem, size = LOTS } ifnull { return 3 }
+    show(usize){ &io, r = task::run_within{ cancel = &proc, nanoseconds = DEADLINE, run = write_lots{ &proc, pipe = feed, bytes = lots, _ } }, what = "write" }
+    show(i32){ &io, r = task::run_within{ cancel = &proc, nanoseconds = DEADLINE, run = wait_child{ &proc, child = &sleeper, _ } }, what = "wait" }
+    show(?i32){ &io, r = task::run_within{ cancel = &proc, nanoseconds = DEADLINE, run = wait_child_for{ &proc, child = &sleeper, nanoseconds = 10000000000, _ } }, what = "wait_for" }
+    let now = proc::wait_for{ &proc, child = &sleeper, nanoseconds = 0 } iferr { return 4 }
+    io::println{ &io, s = if now == null { "wait_for 0: still running" } else { "wait_for 0: ended" } }
+
+    // A run, whose child is killed at the deadline and waited for.
+    show(i32){ &io, r = task::run_within{ cancel = &proc, nanoseconds = DEADLINE, run = run_child{ &proc, argv = [args[0], "sleep", "30000", "0"], _ } }, what = "run" }
+
+    proc::kill{ &proc, child = sleeper } iferr {}
+    io::println_i64{ &io, n = proc::wait{ &proc, child = &sleeper } iferr { -1 } }
+    return 0
+}

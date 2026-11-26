@@ -39,22 +39,23 @@ namespace os {
     }
 
     // Reads some of standard input into `into`, which isn't empty. Returns how many; 0 at the end
-    // or after an error, and in a task asked to stop (std/task.ctx). There a console is waited
-    // on with the task's cancel object, and its events that aren't key presses are dropped,
-    // until a key press begins the read, which then waits for its line; an inherited pipe can't
-    // be overlapped, so its read is a synchronous call that a stop interrupts; a file is read.
+    // or after an error, and in a task asked to stop or once a deadline has passed
+    // (std/task.ctx). There a console is waited on with the task's cancel object and until the
+    // deadline (await_handle), and its events that aren't key presses are dropped, until a key
+    // press begins the read, which then waits for its line; an inherited pipe can't be
+    // overlapped, so its read is a synchronous call that a stop interrupts, and that a deadline
+    // can't (no other thread is there at the deadline to interrupt it: it is checked before
+    // only); a file is read.
     fn read { mut io: Io, into: []mut u8 } -> usize {
-        let object = task::get_cancel_object{ cancel = &io }
-        if object == 0 { return read_stdin{ &io, into } }
+        if not task::can_stop{ cancel = &io } { return read_stdin{ &io, into } }
         if task::check{ cancel = &io } is err { return 0 }
         let h = std_handle{ &io, which = STD_HANDLES[0] }
         let kind = file_type{ &io, file = h }
         if kind == FILE_TYPE_CHAR {
-            let handles: [2]u64 = [h, object]
             while true {
-                let r = wait_any_io{ &io, count = 2, handles = &handles[0], all = 0, ms = INFINITE }
-                if r == WAIT_OBJECT_0 + 1 { return 0 }
-                if r != WAIT_OBJECT_0 { break }
+                let r = await_handle{ cancel = &io, handle = h, nanoseconds = task::FOREVER }
+                if r == AWAIT_STOPPED { return 0 }
+                if r != AWAIT_DONE { break }
                 let mut rec = InputRecord{ kind = 0, pad = 0, key_down = 0, rest = [0; 3] }
                 let mut n: u32 = 0
                 if peek_console{ &io, input = h, &rec, count = 1, &n } == 0 { break }
@@ -83,8 +84,6 @@ namespace os {
     extern fn std_handle { mut io: Io, which: u32 } -> u64
     #c_symbol{ name = "GetFileType" }
     extern fn file_type { mut io: Io, file: u64 } -> u32
-    #c_symbol{ name = "WaitForMultipleObjects" }
-    extern fn wait_any_io { mut io: Io, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
     #c_symbol{ name = "PeekConsoleInputW" }
     extern fn peek_console { mut io: Io, input: u64, mut rec: InputRecord, count: u32, mut n: u32 } -> i32
     #c_symbol{ name = "ReadConsoleInputW" }
@@ -1013,15 +1012,14 @@ namespace os {
     // Waits for a child to end. Then it releases the child's handle and its Job Object
     // (release): with `leftovers = kill` that ends whatever of the group is still running
     // (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE), and otherwise leaves it running. An interruptible
-    // wait in a task asked to stop fails with task::cancelled and leaves the child as it was.
+    // wait in a task asked to stop, or past its deadline, fails with task::cancelled or
+    // task::deadline_passed and leaves the child as it was.
     fn wait { mut proc: Proc, mut cancel: task::Cancel, child: proc::Child, interruptible: bool } -> proc::Error!i32 {
-        let object = if interruptible { task::get_cancel_object{ &cancel } } else { 0 }
-        if object != 0 {
+        if interruptible and task::can_stop{ &cancel } {
             try task::check{ &cancel }
-            let handles: [2]u64 = [child.id, object]
-            let r = wait_any{ &proc, count = 2, handles = &handles[0], all = 0, ms = INFINITE }
-            if r == WAIT_OBJECT_0 + 1 { return task::cancelled }
-            if r == WAIT_FAILED { return proc_failed{ code = last_error{ &proc } } }
+            let r = await_handle{ &cancel, handle = child.id, nanoseconds = task::FOREVER }
+            if r == AWAIT_STOPPED { return task::get_stop_error{ &cancel } }
+            if r == AWAIT_FAILED { return proc_failed{ code = last_error{ &proc } } }
         } else if WaitForSingleObject{ &proc, handle = child.id, ms = INFINITE } == WAIT_FAILED {
             defer release{ &proc, child }
             return proc_failed{ code = last_error{ &proc } }
@@ -1030,8 +1028,6 @@ namespace os {
         return exit_code{ &proc, id = child.id }
     }
 
-    #c_symbol{ name = "WaitForMultipleObjects" }
-    extern fn wait_any { mut proc: Proc, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
     #c_symbol{ name = "CancelIoEx" }
     extern fn cancel_io { mut proc: Proc, file: u64, overlapped: *Overlapped } -> i32
 
@@ -1042,22 +1038,13 @@ namespace os {
     // if the child is still running, which then keeps its handles.
     fn wait_for { mut proc: Proc, mut cancel: task::Cancel, child: proc::Child, nanoseconds: u64 } -> proc::Error!?i32 {
         try task::check{ &cancel }
-        let object = task::get_cancel_object{ &cancel }
-        let handles: [2]u64 = [child.id, object]
-        let mut ms = millis{ nanoseconds }
-        while true {
-            let now: u32 = if ms >= @as(u64, INFINITE) { INFINITE - 1 } else { @as(u32, ms) }
-            let r = wait_any{ &proc, count = if object != 0 { 2 } else { 1 }, handles = &handles[0], all = 0, ms = now }
-            if r == WAIT_OBJECT_0 + 1 { return task::cancelled }
-            if r == WAIT_OBJECT_0 {
-                let code = exit_code{ &proc, id = child.id }
-                release{ &proc, child }
-                return try code
-            }
-            if r == WAIT_FAILED { return proc_failed{ code = last_error{ &proc } } }
-            ms = ms - @as(u64, now)
-            if ms == 0 { return null }
-        }
+        let r = await_handle{ &cancel, handle = child.id, nanoseconds = if nanoseconds == task::FOREVER { nanoseconds - 1 } else { nanoseconds } }
+        if r == AWAIT_STOPPED { return task::get_stop_error{ &cancel } }
+        if r == AWAIT_FAILED { return proc_failed{ code = last_error{ &proc } } }
+        if r == AWAIT_TIMED_OUT { return null }
+        let code = exit_code{ &proc, id = child.id }
+        release{ &proc, child }
+        return try code
     }
 
     // The exit code of child `id`, which has ended.
@@ -1122,26 +1109,24 @@ namespace os {
         if not end.ok {
             let e = last_error{ &proc }
             if e == ERROR_BROKEN_PIPE { return 0 }
-            if end.stopped and e == ERROR_OPERATION_ABORTED { return task::cancelled }
+            if end.stopped and e == ERROR_OPERATION_ABORTED { return task::get_stop_error{ &cancel } }
             return proc_failed{ code = e }
         }
-        if end.stopped and done == 0 { return task::cancelled }
+        if end.stopped and done == 0 { return task::get_stop_error{ &cancel } }
         return @as(usize, done)
     }
 
     // How an overlapped operation ended: GetOverlappedResult's success, and whether the calling
-    // task was asked to stop meanwhile.
+    // task was asked to stop meanwhile, or its deadline passed (task::get_stop_error says which).
     struct Finish { ok: bool, stopped: bool }
 
     // Waits for overlapped operation o on `file` to finish, in a task with its cancel object
-    // too: asked to stop, it cancels this operation alone (CancelIoEx), and waits for it to
-    // finish before its buffer is let go. An operation that completes meanwhile stands.
+    // too, and until the calling thread's deadline (await_handle): stopped, it cancels this
+    // operation alone (CancelIoEx), and waits for it to finish before its buffer is let go. An
+    // operation that completes meanwhile stands.
     fn finish { mut proc: Proc, mut cancel: task::Cancel, file: u64, mut o: Overlapped, mut done: u32 } -> Finish {
-        let object = task::get_cancel_object{ &cancel }
-        if object != 0 {
-            let handles: [2]u64 = [o.event, object]
-            let r = wait_any{ &proc, count = 2, handles = &handles[0], all = 0, ms = INFINITE }
-            if r == WAIT_OBJECT_0 + 1 {
+        if task::can_stop{ &cancel } {
+            if await_handle{ &cancel, handle = o.event, nanoseconds = task::FOREVER } == AWAIT_STOPPED {
                 _ = cancel_io{ &proc, file, overlapped = &o }
                 let ok = GetOverlappedResult{ &proc, file, overlapped = &o, &done, wait = 1 } != 0
                 return Finish{ ok, stopped = true }
@@ -1165,12 +1150,12 @@ namespace os {
         let end = finish{ &proc, &cancel, file = pipe, &o, &done }
         if not end.ok {
             let e = last_error{ &proc }
-            if end.stopped and e == ERROR_OPERATION_ABORTED { return task::cancelled }
+            if end.stopped and e == ERROR_OPERATION_ABORTED { return task::get_stop_error{ &cancel } }
             return proc_failed{ code = e }
         }
         // Cancelled after some of its bytes went: how many is known here, but the caller's
         // write as a whole fails, and the stream's state is unknown.
-        if end.stopped { return task::cancelled }
+        if end.stopped { return task::get_stop_error{ &cancel } }
         return @as(usize, done)
     }
 
@@ -1326,8 +1311,6 @@ namespace os {
     extern fn net_event { mut net: Net, security: ?*u8, manual: i32, initial: i32, name: ?*u16 } -> u64
     #c_symbol{ name = "CloseHandle" }
     extern fn net_close_handle { mut net: Net, handle: u64 } -> i32
-    #c_symbol{ name = "WaitForMultipleObjects" }
-    extern fn net_wait_any { mut net: Net, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
     #c_symbol{ name = "CancelIoEx" }
     extern fn net_cancel_io { mut net: Net, file: u64, overlapped: *Overlapped } -> i32
 
@@ -1438,7 +1421,7 @@ namespace os {
         let mut done: u32 = 0
         let end = net_finish{ &net, &cancel, socket = s, &o, &done }
         if not end.ok {
-            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::cancelled }
+            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::get_stop_error{ &cancel } }
             return net_failed{ code = end.code }
         }
         if setsockopt{ &net, s, level = SOL_SOCKET, name = SO_UPDATE_CONNECT_CONTEXT, value = null, size = 0 } != 0 { return net_failed{ code = WSAGetLastError{ &net } } }
@@ -1485,7 +1468,7 @@ namespace os {
         }
         let end = net_finish{ &net, &cancel, socket = listener, &o, done = &received }
         if not end.ok {
-            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::cancelled }
+            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::get_stop_error{ &cancel } }
             return accept_failed{ code = end.code }
         }
         if setsockopt{ &net, s, level = SOL_SOCKET, name = SO_UPDATE_ACCEPT_CONTEXT, value = @cast(*u8, &listener), size = 8 } != 0 { return net_failed{ code = WSAGetLastError{ &net } } }
@@ -1499,8 +1482,9 @@ namespace os {
     }
 
     // Receives at most into.len bytes, which aren't none, with an overlapped WSARecv. Returns
-    // how many; 0 once the peer has finished sending. Cancelled after it received nothing, it
-    // fails with task::cancelled; one that received something returns it.
+    // how many; 0 once the peer has finished sending. Stopped after it received nothing, it
+    // fails with task::cancelled or task::deadline_passed; one that received something returns
+    // it.
     fn tcp_receive { mut net: Net, mut cancel: task::Cancel, socket: u64, into: []mut u8 } -> net::Error!usize {
         try task::check{ &cancel }
         let buf = WsaBuf{ len = @as(u32, @min(into.len, CHUNK)), buf = into.ptr }
@@ -1514,16 +1498,16 @@ namespace os {
         let mut done: u32 = 0
         let end = net_finish{ &net, &cancel, socket, &o, &done }
         if not end.ok {
-            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::cancelled }
+            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::get_stop_error{ &cancel } }
             return net_failed{ code = end.code }
         }
-        if end.stopped and done == 0 { return task::cancelled }
+        if end.stopped and done == 0 { return task::get_stop_error{ &cancel } }
         return @as(usize, done)
     }
 
     // Sends some of `bytes`, which aren't none, with an overlapped WSASend. Returns how many.
-    // Cancelled after some of them went, it fails with task::cancelled all the same: the
-    // stream's state is unknown.
+    // Stopped after some of them went, it fails with task::cancelled or task::deadline_passed
+    // all the same: the stream's state is unknown.
     fn tcp_send { mut net: Net, mut cancel: task::Cancel, socket: u64, bytes: []u8 } -> net::Error!usize {
         try task::check{ &cancel }
         let buf = WsaBuf{ len = @as(u32, @min(bytes.len, CHUNK)), buf = bytes.ptr }
@@ -1536,27 +1520,27 @@ namespace os {
         let mut done: u32 = 0
         let end = net_finish{ &net, &cancel, socket, &o, &done }
         if not end.ok {
-            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::cancelled }
+            if end.stopped and end.code == ERROR_OPERATION_ABORTED { return task::get_stop_error{ &cancel } }
             return net_failed{ code = end.code }
         }
-        if end.stopped { return task::cancelled }
+        if end.stopped { return task::get_stop_error{ &cancel } }
         return @as(usize, done)
     }
 
     // How an overlapped socket operation ended: WSAGetOverlappedResult's success, whether the
-    // calling task was asked to stop meanwhile, and the error it failed with.
+    // calling task was asked to stop meanwhile or its deadline passed (task::get_stop_error
+    // says which), and the error it failed with.
     struct NetFinish { ok: bool, stopped: bool, code: u32 }
 
     // Waits for overlapped operation o on `socket` to finish, in a task with its cancel object
-    // too: asked to stop, it cancels this operation alone (CancelIoEx), and waits for it to
-    // finish before its buffer is let go. An operation that completes meanwhile stands. As
-    // `finish` is for pipes; Evented's completion port replaces it.
+    // too, and until the calling thread's deadline (await_handle): stopped, it cancels this
+    // operation alone (CancelIoEx), and waits for it to finish before its buffer is let go. An
+    // operation that completes meanwhile stands. As `finish` is for pipes; Evented's completion
+    // port replaces it.
     fn net_finish { mut net: Net, mut cancel: task::Cancel, socket: u64, mut o: Overlapped, mut done: u32 } -> NetFinish {
-        let object = task::get_cancel_object{ &cancel }
         let mut stopped = false
-        if object != 0 {
-            let handles: [2]u64 = [o.event, object]
-            if net_wait_any{ &net, count = 2, handles = &handles[0], all = 0, ms = INFINITE } == WAIT_OBJECT_0 + 1 {
+        if task::can_stop{ &cancel } {
+            if await_handle{ &cancel, handle = o.event, nanoseconds = task::FOREVER } == AWAIT_STOPPED {
                 _ = net_cancel_io{ &net, file = socket, overlapped = &o }
                 stopped = true
             }
@@ -1717,8 +1701,6 @@ namespace os {
     extern fn stop_set_event { mut stop: Stop, event: u64 } -> i32
     #c_symbol{ name = "CloseHandle" }
     extern fn stop_close_handle { mut stop: Stop, handle: u64 } -> i32
-    #c_symbol{ name = "WaitForMultipleObjects" }
-    extern fn stop_wait_any { mut stop: Stop, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
     #c_symbol{ name = "GetLastError" }
     extern fn stop_last_error { mut stop: Stop } -> u32
     #c_symbol{ name = "Sleep" }
@@ -1732,22 +1714,16 @@ namespace os {
 
     // Waits until the program is asked to stop, for at most `nanoseconds`, rounded up to
     // milliseconds (stop::FOREVER for as long as it takes): what it was asked, or 0 if it wasn't
-    // by then. In a task, the task's cancel object is waited on too.
+    // by then. In a task, the task's cancel object is waited on too, and a deadline bounds the
+    // wait (await_handle).
     fn stop_wait { mut stop: Stop, mut cancel: task::Cancel, nanoseconds: u64 } -> stop::Error!u32 {
         try begin_stop{ &stop }
         try task::check{ &cancel }
-        let object = task::get_cancel_object{ &cancel }
-        let handles: [2]u64 = [@atomic_load_acquire(&stop.event), object]
-        let mut ms = millis{ nanoseconds }
-        while true {
-            let now: u32 = if ms >= @as(u64, INFINITE) { INFINITE - 1 } else { @as(u32, ms) }
-            let r = stop_wait_any{ &stop, count = if object != 0 { 2 } else { 1 }, handles = &handles[0], all = 0, ms = now }
-            if r == WAIT_OBJECT_0 { return @atomic_load_acquire(&stop.asked) }
-            if r == WAIT_OBJECT_0 + 1 { return task::cancelled }
-            if r == WAIT_FAILED { return stop::other{ code = @as(i64, stop_last_error{ &stop }) } }
-            ms = ms - @as(u64, now)
-            if ms == 0 { return 0 }
-        }
+        let r = await_handle{ &cancel, handle = @atomic_load_acquire(&stop.event), nanoseconds }
+        if r == AWAIT_DONE { return @atomic_load_acquire(&stop.asked) }
+        if r == AWAIT_STOPPED { return task::get_stop_error{ &cancel } }
+        if r == AWAIT_FAILED { return stop::other{ code = @as(i64, stop_last_error{ &stop }) } }
+        return 0
     }
 
     // Asks the program to stop, as the handler does for an event: the first request is kept.
@@ -1891,6 +1867,64 @@ namespace os {
     // Now on a clock that only goes forward, in nanoseconds, to the millisecond.
     fn now { mut threads: Threads } -> u64 {
         return tick_count{ &threads } * 1000000
+    }
+
+    // ---- deadlines (task::run_within) and the waits that observe them
+
+    #c_symbol{ name = "QueryPerformanceCounter" }
+    extern fn deadline_counter { mut cancel: task::Cancel, mut count: i64 } -> i32
+    #c_symbol{ name = "QueryPerformanceFrequency" }
+    extern fn deadline_frequency { mut cancel: task::Cancel, mut frequency: i64 } -> i32
+    #c_symbol{ name = "WaitForMultipleObjects" }
+    extern fn wait_cancellable { mut cancel: task::Cancel, count: u32, handles: *u64, all: i32, ms: u32 } -> u32
+
+    // The deadlines' clock: the performance counter in nanoseconds, as std's clock reads it
+    // (clock_monotonic), which a Cancel reads without a Clock. Never 0, which is no deadline.
+    fn read_deadline_clock { mut cancel: task::Cancel } -> u64 {
+        let mut count: i64 = 0
+        let mut frequency: i64 = 0
+        _ = deadline_counter{ &cancel, &count }
+        _ = deadline_frequency{ &cancel, &frequency }
+        let c = @as(u64, count)
+        let f = @as(u64, frequency)
+        return c / f * 1000000000 + c % f * 1000000000 / f
+    }
+
+    // What await_handle found: the handle signalled; the wait's own time ran out; the calling
+    // task asked to stop or its deadline passed (task::get_stop_error says which); the wait
+    // failed (GetLastError says why).
+    const AWAIT_DONE: u8 = 0
+    const AWAIT_TIMED_OUT: u8 = 1
+    const AWAIT_STOPPED: u8 = 2
+    const AWAIT_FAILED: u8 = 3
+
+    // Waits until `handle` is signalled, for at most `nanoseconds`, rounded up to milliseconds
+    // (task::FOREVER for as long as it takes); in a task, until its cancel object is signalled;
+    // and until the calling thread's deadline, if it has one. Every blocking call of this layer
+    // that a cancel stops waits here. A wait that ends at the deadline asks task::check whether
+    // it has passed, and waits again if Windows woke it early.
+    fn await_handle { mut cancel: task::Cancel, handle: u64, nanoseconds: u64 } -> u8 {
+        let object = task::get_cancel_object{ &cancel }
+        let handles: [2]u64 = [handle, object]
+        let count: u32 = if object != 0 { 2 } else { 1 }
+        let mut ms = if nanoseconds == task::FOREVER { task::FOREVER } else { millis{ nanoseconds } }
+        while true {
+            let own: u32 = if ms >= @as(u64, INFINITE) { if ms == task::FOREVER { INFINITE } else { INFINITE - 1 } } else { @as(u32, ms) }
+            let left = task::get_time_left{ &cancel }
+            let until: u32 = if left == task::FOREVER { INFINITE } else { @as(u32, @min(millis{ nanoseconds = left }, @as(u64, INFINITE - 1))) }
+            let wait = @min(own, until)
+            let r = wait_cancellable{ &cancel, count, handles = &handles[0], all = 0, ms = wait }
+            if r == WAIT_OBJECT_0 { return AWAIT_DONE }
+            if r == WAIT_OBJECT_0 + 1 { return AWAIT_STOPPED }
+            if r == WAIT_FAILED { return AWAIT_FAILED }
+            // WAIT_TIMEOUT: the deadline came, or this wait's own time.
+            if task::check{ &cancel } is err { return AWAIT_STOPPED }
+            if ms != task::FOREVER {
+                ms = if @as(u64, wait) >= ms { 0 } else { ms - @as(u64, wait) }
+                if ms == 0 { return AWAIT_TIMED_OUT }
+            }
+        }
+        return AWAIT_FAILED
     }
 
     // A handle of the calling thread that other threads may use (CancelSynchronousIo).

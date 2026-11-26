@@ -27,15 +27,17 @@ capability Threads { ..os::Threads, ..Mem, ..task::State, ..task::Cancel }
 
 namespace thread {
     // The calling thread waits at least this long, or, in a task asked to stop, until then
-    // (std/task.ctx): it waits on the task's cancel object.
+    // (std/task.ctx): it waits on the task's cancel object. Under a deadline (task::run_within)
+    // it returns at the deadline, if that comes first, and at once once it has passed.
     fn sleep { mut threads: Threads, nanoseconds: u64 } {
+        if task::check{ cancel = &threads } is err { return }
+        let ns = @min(nanoseconds, task::get_time_left{ cancel = &threads })
         let object = task::get_cancel_object{ cancel = &threads }
         if object == 0 {
-            os::thread_sleep{ &threads, nanoseconds }
+            os::thread_sleep{ &threads, nanoseconds = ns }
             return
         }
-        if task::check{ cancel = &threads } is err { return }
-        os::event_wait{ &threads, waitable = object, nanoseconds }
+        os::event_wait{ &threads, waitable = object, nanoseconds = ns }
     }
 
     // Gives the rest of the calling thread's time slice to another thread.

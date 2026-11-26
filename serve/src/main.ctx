@@ -15,8 +15,8 @@
 // period ends. A second Ctrl-C ends the program at once (std's stop).
 //
 // It serves at most N connections at once (--connections, 4096 unless given): one past that is
-// closed as soon as it is accepted, and counted as refused in /stats. Each connection costs two
-// threads while it waits for a request, and about 240 KiB (serve/PLAN.md, Findings).
+// closed as soon as it is accepted, and counted as refused in /stats. Each connection costs one
+// thread while it waits for a request, and about 73 KiB (serve/PLAN.md, Findings).
 //
 // Standard output is the access log (access.ctx), with a line when the server starts and lines
 // as it stops; errors in starting go to standard error, with exit code 2 for a bad command line

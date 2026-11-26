@@ -1,0 +1,147 @@
+// A deadline on net's blocking calls (task::run_within, std/task.ctx): an accept with no client,
+// a receive from a peer that sends nothing, a send to a peer that doesn't read (once the
+// sockets' buffers are full), and a connect to 192.0.2.1, TEST-NET-1, which no host answers.
+// They run on main's thread, in no task: a deadline is the calling thread's. Each fails with
+// deadline_passed between half the deadline (os::now is coarse on Windows) and a second after
+// it, and each is followed by a second blocking call on the same listener or socket, without a
+// deadline, which must not see a stale one. Then a receive under a deadline in a task.
+// The connect's line says `deadline passed`, or that this host has no route there, where it
+// fails at once with `unreachable`; anything else exits with 9.
+//# interp: cannot run
+//# timeout: 120
+//# stdout:
+//| accept: deadline passed in time
+//| accept again: a connection
+//| receive: deadline passed in time
+//| receive again: x
+//| send: deadline passed in time
+//| receive after it: y
+//| connect: {any}
+//| connect again: connected
+//| receive in a task: deadline passed in time
+//| receive in a task again: z
+
+const ONE_SECOND: u64 = 1000000000
+const DEADLINE: u64 = 200000000
+const LOTS: usize = 1048576
+
+fn accept_one { mut net: Net, listener: net::Listener } -> !net::Socket {
+    return net::accept{ &net, listener }
+}
+
+fn receive_some { mut net: Net, socket: net::Socket } -> !usize {
+    let mut buf: [64]u8
+    return net::receive{ &net, socket, into = buf[..] }
+}
+
+fn receive_some_within { mut net: Net, socket: net::Socket } -> !usize {
+    return task::run_within{ cancel = &net, nanoseconds = DEADLINE, run = receive_some{ &net, socket, _ } }
+}
+
+// Sends `bytes` again and again: what the systems buffer for a peer that doesn't read differs
+// (Windows takes tens of MiB at once on loopback), so it goes on until a send waits. Past
+// 16 GiB it gives up, as a send that never waits.
+fn send_lots { mut net: Net, socket: net::Socket, bytes: []u8 } -> !usize {
+    let mut total: usize = 0
+    while total < 17179869184 {
+        total = total + try net::send{ &net, socket, bytes }
+    }
+    return total
+}
+
+fn connect_to { mut net: Net, address: net::Address } -> !net::Socket {
+    return net::connect{ &net, address }
+}
+
+// Whether r is deadline_passed, and came between half the deadline and a second after it from
+// `began`.
+fn timely(T) { mut threads: Threads, r: !T, began: u64 } -> bool {
+    let took = os::now{ &threads } - began
+    let in_time = took >= DEADLINE / 2 and took < DEADLINE + ONE_SECOND
+    match r {
+        ok => { return false }
+        err{ error } => { return in_time and match error { task::deadline_passed => { true } else => { false } } }
+    }
+}
+
+fn receive_one { mut net: Net, socket: net::Socket } -> !u8 {
+    let mut one: [1]u8
+    if try net::receive{ &net, socket, into = one[..] } != 1 { return net::closed }
+    return one[0]
+}
+
+fn main { mut io: Io, mut net: Net, mut mem: Mem, mut threads: Threads } -> i32 {
+    let listener = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 1 }
+    defer net::close_listener{ &net, listener }
+    let at = net::listener_address{ &net, listener } iferr { return 1 }
+
+    // accept
+    let mut began = os::now{ &threads }
+    let a = task::run_within{ cancel = &net, nanoseconds = DEADLINE, run = accept_one{ &net, listener, _ } }
+    if not timely(net::Socket){ &threads, r = a, began } { return 2 }
+    io::println{ &io, s = "accept: deadline passed in time" }
+    let client = net::connect{ &net, address = at } iferr { return 3 }
+    defer net::close{ &net, socket = client }
+    let server = net::accept{ &net, listener } iferr { return 3 }
+    defer net::close{ &net, socket = server }
+    io::println{ &io, s = "accept again: a connection" }
+
+    // receive
+    began = os::now{ &threads }
+    let r = task::run_within{ cancel = &net, nanoseconds = DEADLINE, run = receive_some{ &net, socket = client, _ } }
+    if not timely(usize){ &threads, r, began } { return 4 }
+    io::println{ &io, s = "receive: deadline passed in time" }
+    _ = net::send{ &net, socket = server, bytes = "x" } iferr { return 5 }
+    let x = receive_one{ &net, socket = client } iferr { return 5 }
+    let xs: [1]u8 = [x]
+    _ = @fmt(&io, "receive again: {}\n", xs[..])
+
+    // send, to a peer that doesn't read: it waits once the buffers are full
+    let lots = mem::pages{ &mem, size = LOTS } ifnull { return 6 }
+    began = os::now{ &threads }
+    let s = task::run_within{ cancel = &net, nanoseconds = DEADLINE, run = send_lots{ &net, socket = client, bytes = lots, _ } }
+    // A send that filled the buffers takes its time before it waits: only that it passed.
+    match s {
+        ok => { return 6 }
+        err{ error } => { if not (error is task::deadline_passed) { return 6 } }
+    }
+    io::println{ &io, s = "send: deadline passed in time" }
+    _ = net::send{ &net, socket = server, bytes = "y" } iferr { return 7 }
+    let y = receive_one{ &net, socket = client } iferr { return 7 }
+    let ys: [1]u8 = [y]
+    _ = @fmt(&io, "receive after it: {}\n", ys[..])
+
+    // connect, to an address no host answers
+    began = os::now{ &threads }
+    match task::run_within{ cancel = &net, nanoseconds = DEADLINE, run = connect_to{ &net, address = "192.0.2.1:9", _ } } {
+        ok => { return 9 }
+        net::unreachable => { io::println{ &io, s = "connect: no route to TEST-NET-1 here" } }
+        task::deadline_passed => {
+            if os::now{ &threads } - began >= DEADLINE + ONE_SECOND { return 9 }
+            io::println{ &io, s = "connect: deadline passed in time" }
+        }
+        else => { return 9 }
+    }
+    let again = net::connect{ &net, address = at } iferr { return 10 }
+    let taken = net::accept{ &net, listener } iferr { return 10 }
+    net::close{ &net, socket = taken }
+    net::close{ &net, socket = again }
+    io::println{ &io, s = "connect again: connected" }
+
+    // A receive under a deadline, in a task of its own, on a new connection: the server's end
+    // of the first holds what the sends above sent.
+    let near = net::connect{ &net, address = at } iferr { return 11 }
+    defer net::close{ &net, socket = near }
+    let far = net::accept{ &net, listener } iferr { return 11 }
+    defer net::close{ &net, socket = far }
+    let mut t: task::Task(!usize)
+    began = os::now{ &threads }
+    task::start_concurrent{ &threads, task = &t, run = receive_some_within{ &net, socket = far, _ } } iferr { return 11 }
+    if not timely(usize){ &threads, r = task::wait{ &threads, task = &t }, began } { return 11 }
+    io::println{ &io, s = "receive in a task: deadline passed in time" }
+    _ = net::send{ &net, socket = near, bytes = "z" } iferr { return 12 }
+    let z = receive_one{ &net, socket = far } iferr { return 12 }
+    let zs: [1]u8 = [z]
+    _ = @fmt(&io, "receive in a task again: {}\n", zs[..])
+    return 0
+}

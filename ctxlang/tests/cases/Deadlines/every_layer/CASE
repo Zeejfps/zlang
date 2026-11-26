@@ -1,0 +1,41 @@
+// Deadlines over each platform's layer (std/os/PLATFORM, spec §17), as Net/tcp_every_layer
+// builds net's: main.ctx puts a deadline on every kind of blocking call that observes one, and
+// is built here for each layer from any machine; the C written for Linux and macOS is compiled
+// as far as C's syntax and types go, without their system headers, since the generated C
+// declares each C function itself.
+
+// linux: the deadlines' clock is clock_gettime's CLOCK_MONOTONIC, and the waits poll until it.
+//# $ ctxc build linux.c {std:linux} -- main.ctx
+//# exit: 0
+//# file linux.c has:
+//| CTX_SYMBOL("clock_gettime")
+//# file linux.c has:
+//| CTX_SYMBOL("poll")
+//# $ cc {cflags} -fsyntax-only -I {home}/ctxc/rt linux.c
+//# exit: 0
+
+// macos: the same, with kqueue for a child's wait.
+//# $ ctxc build macos.c {std:macos} -- main.ctx
+//# exit: 0
+//# file macos.c has:
+//| CTX_SYMBOL("clock_gettime")
+//# file macos.c has:
+//| CTX_SYMBOL("kevent")
+//# $ cc {cflags} -fsyntax-only -I {home}/ctxc/rt macos.c
+//# exit: 0
+
+// windows: the performance counter, and WaitForMultipleObjects with a time.
+//# $ ctxc build windows.c {std:windows} -- main.ctx
+//# exit: 0
+//# file windows.c has:
+//| CTX_SYMBOL("QueryPerformanceCounter")
+//# file windows.c has:
+//| CTX_SYMBOL("WaitForMultipleObjects")
+
+// interp: its clock stands still, and is no C function.
+//# $ ctxc build interp.c {std:interp} -- main.ctx
+//# exit: 0
+//# file interp.c lacks:
+//| CTX_SYMBOL("clock_gettime")
+//# file interp.c lacks:
+//| CTX_SYMBOL("QueryPerformanceCounter")

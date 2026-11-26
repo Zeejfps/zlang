@@ -1,0 +1,53 @@
+// A deadline (task::run_within) on thread::sleep and on stop's waits, on main's thread: a sleep
+// returns at the deadline, having no error, and a wait and a wait_for that nothing asked fail
+// with deadline_passed. Each is followed by the same call without a deadline, which must not see
+// a stale one: a sleep sleeps in full, and a wait_for with 0 looks.
+//# interp: off: time stands still in the interpreter, where a deadline above 0 never passes
+//# timeout: 60
+//# stdout:
+//| sleep: returned at the deadline
+//| sleep again: in full
+//| wait: deadline passed
+//| wait_for: deadline passed
+//| wait_for 0: not asked
+
+const MS: u64 = 1000000
+const ONE_SECOND: u64 = 1000000000
+
+fn nap { mut threads: Threads, ns: u64 } -> ! {
+    thread::sleep{ &threads, nanoseconds = ns }
+}
+
+fn wait_stop { mut stop: Stop } -> stop::Error!stop::Reason {
+    return stop::wait{ &stop }
+}
+
+fn wait_stop_for { mut stop: Stop, ns: u64 } -> stop::Error!?stop::Reason {
+    return stop::wait_for{ &stop, nanoseconds = ns }
+}
+
+fn main { mut io: Io, mut threads: Threads, mut stop: Stop } -> i32 {
+    let mut began = os::now{ &threads }
+    _ = task::run_within{ cancel = &threads, nanoseconds = 200 * MS, run = nap{ &threads, ns = 10 * ONE_SECOND, _ } }
+    let took = os::now{ &threads } - began
+    if took < 100 * MS or took > ONE_SECOND { return 1 }
+    io::println{ &io, s = "sleep: returned at the deadline" }
+    began = os::now{ &threads }
+    thread::sleep{ &threads, nanoseconds = 300 * MS }
+    if os::now{ &threads } - began < 280 * MS { return 2 }
+    io::println{ &io, s = "sleep again: in full" }
+
+    match task::run_within{ cancel = &stop, nanoseconds = 200 * MS, run = wait_stop{ &stop, _ } } {
+        ok => { return 3 }
+        task::deadline_passed => { io::println{ &io, s = "wait: deadline passed" } }
+        task::cancelled | stop::other => { return 3 }
+    }
+    match task::run_within{ cancel = &stop, nanoseconds = 200 * MS, run = wait_stop_for{ &stop, ns = 10 * ONE_SECOND, _ } } {
+        ok => { return 4 }
+        task::deadline_passed => { io::println{ &io, s = "wait_for: deadline passed" } }
+        task::cancelled | stop::other => { return 4 }
+    }
+    let now = stop::wait_for{ &stop, nanoseconds = 0 } iferr { return 5 }
+    io::println{ &io, s = if now == null { "wait_for 0: not asked" } else { "wait_for 0: asked" } }
+    return 0
+}

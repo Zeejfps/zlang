@@ -144,14 +144,16 @@ behaves, and why.
 
 ### Capabilities
 
-`Io`, `Fs`, `Proc` (through `Io`) and `Threads` include `task::Cancel`, whose `#thread_local` static
-`current` is the running task's slot, and so do `Net` (net.md) and `Stop`. `Threads` is
+`Io`, `Fs`, `Proc` (through `Io`) and `Threads` include `task::Cancel`, whose `#thread_local` statics
+are `current`, the running task's slot, and `deadline`, the calling thread's deadline (Deadlines,
+below), and so do `Net` (net.md) and `Stop`. `Threads` is
 `{ ..os::Threads, ..Mem, ..task::State, ..task::Cancel }`: permission to run tasks, with the
 backend's state, and `Mem` because the table lives in pages. Each is a capability without fields, so
 `main` receives them. Everything a capability std hands out reaches is safe from many threads at
 once: per-thread (`io`'s output buffer), behind a lock, or atomic. Only namespace `task` reads
-`current`; the platform's layers call `task::check`, `get_cancel_object`, `begin_synchronous` and
-`end_synchronous`, passing the capability they hold. `proc`'s layer functions take `os::Proc`, which
+`current` and `deadline`; the platform's layers call `task::check`, `get_stop_error`, `can_stop`,
+`get_time_left`, `get_cancel_object`, `begin_synchronous` and `end_synchronous`, passing the
+capability they hold, and give `task` its clock, `os::read_deadline_clock`. `proc`'s layer functions take `os::Proc`, which
 doesn't include `Io`, so `os::pipe_read`, `pipe_write`, `wait` and `wait_for` take a
 `mut cancel: task::Cancel`, passed as `cancel = &proc`; `net`'s blocking layer functions take
 `os::Net` and one too, passed as `cancel = &net`, and `os::stop_wait` takes `os::Stop` and one, passed
@@ -180,7 +182,7 @@ they block:
 | `net`'s | overlapped, as pipes | `poll`, as pipes | as Linux |
 | `stop::wait`, `wait_for` | `WaitForMultipleObjects` on stop's event and the cancel event | `poll` on stop's eventfd and the task's | `poll` on stop's pipe and the task's |
 
-**Checked before only**, by decision, each with its reason: `fs`'s calls (regular files, and
+**Checked before only**, by decision, each with its reason, for a deadline too: `fs`'s calls (regular files, and
 metadata: `open`, `list`, `remove`, renames), since disk IO can't be waited on with poll or kqueue
 and Windows doesn't promise to cancel file system calls (`MoveFileEx` among them), and they finish
 in disk time; reading standard input that is a file, for the same reason; name lookup on POSIX, since
@@ -210,17 +212,64 @@ under that mutex before every wait, so neither can be missed.
 
 `check_cancelled` is for loops that compute without blocking.
 
-A deadline is a task's: run the call with `start_concurrent`, then `wait_for` and `cancel`:
+### Deadlines
+
+A deadline is cancellation at a time: the calls a function makes stop when it passes, as a
+cancel stops them, without a second task.
 
 ```
-let mut t: task::Task(!Response)
-try task::start_concurrent{ &threads, task = &t, run = fetch{ &net, request = &request, _ } }
-let response = if task::wait_for{ &threads, task = &t, nanoseconds = 5000000000 } {
-    task::wait{ &threads, task = &t }
-} else {
-    task::cancel{ &threads, task = &t }      // task::cancelled, or what came first
-}
+let response = task::run_within{ cancel = &net, nanoseconds = 5000000000, run = fetch{ &net, request = &request, _ } }
 ```
+
+**What it is.** `run_within` sets the calling thread's `deadline` (`Cancel`'s second
+`#thread_local` static, a time on `os::read_deadline_clock`'s monotonic clock, 0 for none) to
+`nanoseconds` from now, or keeps the outer one if that is earlier, runs `run`, and puts the outer
+one back when `run` returns, by a `defer`. It is the calling thread's, not a task's: main's calls
+have one as a task's do, and a program without `Threads` can bound a connect or a receive. A
+worker's is 0 when it begins a task, so a task `run` starts concurrently doesn't run under its
+starter's; a task run at once is part of its starter (spec §17, `task`), and does.
+
+**What it stops.** Every call that a cancel stops, the same way, failing with
+`task::deadline_passed` instead of `cancelled`, `io::read` returning 0 and `thread::sleep`
+returning at the deadline: `check` fails with `cancelled` if the task was asked to stop and
+otherwise with `deadline_passed` once the deadline has passed, so a call made after it fails at
+once, before it blocks, and each wait that the table above has on the cancel object waits no
+longer than the deadline. `fs`'s calls and the other calls checked before only are checked
+before only for a deadline too, for the same reasons, and so are Windows' synchronous reads of an
+inherited pipe: a cancel interrupts one from the thread that cancels, and a deadline has no
+other thread there when it passes. A wait for a task (`wait`, `wait_for`, `wait_all`,
+`wait_all_for`) that is still waiting when its waiter's deadline passes cancels what it waits
+for and waits to the end, as a waiter asked to stop does: its result is the task's, usually
+`cancelled`, since those waits have no error of their own.
+
+| Wait | Windows | Linux | macOS |
+|---|---|---|---|
+| the clock | QueryPerformanceCounter over its frequency, as std's clock reads it | `clock_gettime(CLOCK_MONOTONIC)`, plus 1 so it is never 0 | as Linux |
+| a call's wait | `await_handle`: `WaitForMultipleObjects` on the operation's handle and, in a task, the cancel event, for the time left in milliseconds, rounded up (INFINITE without a deadline); a wait that times out asks `check`, and waits again if Windows woke it early | `poll` with the time left in milliseconds, rounded up (-1 without one); a poll that ends with nothing asks `check` | as Linux |
+| a child's wait | `await_handle` on the child's handle | `sys::await_exit` (pidfd and `poll`) for the time left, again until `check` fails | `sys::await_exit` (`kevent`) for the time left |
+| `thread::sleep` | the cancel event, or `Sleep`, for the lesser of its time and the time left | `poll` on the eventfd, or `nanosleep`, for the lesser | as Linux |
+| a task's wait | `condition::wait_for` until the deadline, then the waiter asks the task to stop | the same | the same |
+
+**Stopped mid-operation.** A call that stopped waits as a cancelled one does: on Windows it
+cancels its operation alone (CancelIoEx) and waits for it to finish before its buffer is let go,
+and an operation that completed meanwhile returns its result. The error is `get_stop_error`'s:
+`cancelled` if the task was asked to stop, else `deadline_passed`.
+
+**A cancel and a deadline at once.** The cancel wins: the flag is checked first, so a task that
+was asked to stop fails with `cancelled` whether or not its deadline has passed, and the program
+leaves through the task's usual error paths.
+
+**It sticks while it is set, and only then.** A deadline that has passed fails every call under
+it at once, as a cancel's flag does, so a loop of calls ends at the first that sees it. Once
+`run_within` returns, nothing of it is left: the outer deadline, or none, holds again.
+
+**The interpreter** has no clock (std's clock stops the run there), and its `thread::sleep`
+returns at once: its deadlines' clock stands still at 1, so a deadline of 0 has passed and any
+other never passes, which is the same each run.
+
+**What it costs.** Without a deadline, `check` reads `deadline` and branches: one load, beside
+the flag's. Under one, each blocking call reads the clock (QueryPerformanceCounter, or
+`clock_gettime` through the vDSO) once to check and once for the time left.
 
 ### How std's IO takes part
 
@@ -229,13 +278,14 @@ let response = if task::wait_for{ &threads, task = &t, nanoseconds = 5000000000 
 | `Fs` | `open`, `read`, `write`, `read_all`, `list`, ... | block the worker; checked before (Cancellation) |
 | `Io` | `read` (standard input), `flush` and writes that fill the buffer | block the worker. Each worker has its own output buffer (it is `#thread_local`), which it writes out when a task ends and before the end is published, ignoring the flag, so a cancelled task's output isn't lost; output that can't be written blocks it, as it would block the program without tasks. A task run at once shares its starter's buffer |
 | `Proc` | `read`, `write` (pipes), `wait`, `wait_for`, `run` | block the worker. A cancelled `wait` or `wait_for` leaves the `Child` as it was: not released, its pipes open, to be waited on or killed. A cancelled `run`, which owns its child, kills it, waits for it uninterruptibly (a killed child ends at once), and fails with `cancelled` |
-| `Threads` | `sleep` | waits on the cancel object |
+| `Threads` | `sleep` | waits on the cancel object, and no longer than a deadline |
 | `Net` | connect, accept, send, receive, name lookup | block the worker |
 | `Stop` | `wait`, `wait_for` | block the worker, and wait on the cancel object (Asked to stop, below) |
 
 `Net` and HTTP are designed in their own documents (net.md, http.md), with TLS: they are a protocol
 and a library, not concurrency. What this design fixes for them: blocking calls, `..task::Cancel` in
-`Net`, `cancelled` among their errors, and the table's row above.
+`Net`, `cancelled` and `deadline_passed` among their errors, and the table's row above. Every
+blocking call in the table that a cancel stops, a deadline stops (Deadlines).
 
 std's allocators are one thread's at a time: tasks that allocate each have their own arena, from
 pages of their own or from a buffer their starter gives them, or share one behind a mutex.
@@ -283,9 +333,9 @@ prints; it detects no deadlock beyond what it already stops on (a mutex another 
 ### What a program without tasks pays
 
 A program that doesn't take `Threads` starts no worker and links nothing of the backend. Its blocking
-calls check `task::Cancel`'s `current`, which stays 0: a plain global in a program that isn't
-threaded (spec §15, Entry point, rule 8), a thread-local in one that is. One load and a branch per
-blocking call. A function with a task handle pays for its scope's end only where the handle might
+calls check `task::Cancel`'s `current` and `deadline`, which stay 0 unless it puts a deadline on
+them: plain globals in a program that isn't threaded (spec §15, Entry point, rule 8),
+thread-locals in one that is. Two loads and a branch per blocking call. A function with a task handle pays for its scope's end only where the handle might
 still hold a task.
 
 ### Decisions
@@ -334,6 +384,22 @@ still hold a task.
    interrupts every call that can be waited on; a signal would add a reserved signal, an
    async-signal-safe handler, and a re-send protocol for no call that the cancel object doesn't
    already reach.
+12. **A deadline is the calling thread's, set for a call's extent** (`task::run_within`), and every
+   call a cancel stops observes it: their waits are bounded by it as they already wait on the
+   cancel object, so a deadline is cancellation at a time, as Decision 9 has it, without a task.
+   It was a task cancelled at the time (`start_concurrent`, `wait_for`, `cancel`), which held a
+   second thread for every waiting call: two threads per idle kept-alive connection in a server,
+   and 25 to 50 µs per request (serve/PLAN.md, Findings 2). Considered and rejected: a deadline
+   per socket or a timeout per call (net.md, Timeouts), which covers one kind of call and not the
+   others; a deadline that `set` and `clear` change, which a missed `clear` leaves on calls it
+   wasn't meant for, where a call's extent restores it on every path; a deadline per task, which
+   main's thread wouldn't have, and which a concurrent task would inherit, though structured
+   tasks already end with their starter's waits.
+13. **A deadline fails calls with its own error, `deadline_passed`**, not `cancelled`: a caller
+   tells its own deadline from a request to stop (a server's head deadline closes a connection,
+   a stop cancels the server), and neither is the system's `net::timed_out`. A cancel wins when
+   both hold, since it stops the whole task while a deadline bounds a part of it. Rejected: a
+   passed deadline that sets the task's flag, which would make it stick past the call it was for.
 
 ### Decisions made building it
 
