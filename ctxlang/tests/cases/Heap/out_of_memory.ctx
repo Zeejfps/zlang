@@ -1,0 +1,30 @@
+// std's heap returns null for a size no platform gives, more than the largest object C allows,
+// so typed allocation fails with alloc::out_of_memory, and the heap goes on as before.
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let mut h = heap::new{ &mem }
+    let sizes: [3]usize = [9223372036854775808, 18446744073709551615, 9223372036854779903]
+    for i in 0..3 {
+        match alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &h, count = sizes[i] } {
+            ok                    => { io::println{ &io, s = "ok" } }
+            alloc::out_of_memory  => { io::println{ &io, s = "out of memory" } }
+        }
+    }
+    // A resize that fails leaves the block as it was.
+    let mut a = alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &h, count = 3 } iferr { return 1 }
+    a[2] = 5
+    match alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = a, count = 18446744073709551615 } {
+        ok                    => { io::println{ &io, s = "ok" } }
+        alloc::out_of_memory  => { io::println{ &io, s = "out of memory" } }
+    }
+    _ = @fmt(&io, "{} {}\n", a.len, a[2])
+    a = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = a, count = 0 } iferr { return 2 }
+    return 0
+}
+
+//# stdout:
+//| out of memory
+//| out of memory
+//| out of memory
+//| out of memory
+//| 3 5

@@ -1,0 +1,32 @@
+// std's lists and maps over std's heap: they grow by resizing their blocks, and free them.
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let mut h = heap::new{ &mem }
+    let mut xs = list::new(u64){ realloc = heap::alloc, heap = &h }
+    for i in 0..20000 { list::push{ list = &xs, item = @as(u64, i) * 3 } iferr { return 1 } }
+    let items = list::items{ list = xs }
+    let mut sum: u64 = 0
+    for i in 0..items.len { sum = sum + items[i] }
+    _ = @fmt(&io, "{} {}\n", xs.len, sum)
+    list::free{ list = &xs }
+
+    let mut m = map::make(u32, u32){ realloc = heap::alloc, heap = &h }
+    for i in 0..5000 { map::put{ &m, key = @as(u32, i), value = @as(u32, i) * 2 } iferr { return 2 } }
+    for i in 0..2500 { _ = map::remove{ &m, key = @as(u32, i) * 2 } }
+    let v = map::get{ m, key = 4001 } ifnull { return 3 }
+    _ = @fmt(&io, "{} {} {}\n", map::len{ m }, v, map::has{ m, key = 4000 })
+    map::free{ &m }
+
+    let mut names = map::make([]u8, usize){ realloc = heap::alloc, heap = &h }
+    map::put{ m = &names, key = "one", value = 1 } iferr { return 4 }
+    map::put{ m = &names, key = "two", value = 2 } iferr { return 5 }
+    let two = map::get{ m = names, key = "two" } ifnull { return 6 }
+    _ = @fmt(&io, "{}\n", two)
+    map::free{ m = &names }
+    return 0
+}
+
+//# stdout:
+//| 20000 599970000
+//| 2500 8002 false
+//| 2

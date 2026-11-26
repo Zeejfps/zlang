@@ -1930,6 +1930,16 @@ namespace eval {
             }
             return try store{ &m, a = res, n = 8, v = try aligned_bytes{ &m, n = size, align = 4096 } }
         }
+        if slice::eq_bytes{ a = s, b = "ctx_interp_heap" } {
+            // std/heap.ctx's blocks: 16-byte aligned, as the platforms' heaps give them, and
+            // never freed (std/os/interp).
+            let size = try arg_bits{ &m, f, base, name = "size" }
+            if size > PAGES_LIMIT {
+                unsupported{ &m, what = "a heap block of more than 64 MiB" }
+                return halt
+            }
+            return try store{ &m, a = res, n = 8, v = try heap_bytes{ &m, n = size } }
+        }
         if slice::eq_bytes{ a = s, b = "ctx_interp_environment" } {
             if m.environ == 0 {
                 let items = try heap_bytes{ &m, n = 16 * @as(u64, m.env.len) }

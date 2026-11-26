@@ -285,7 +285,9 @@ let p = try alloc::new(Point, arena::Arena){ realloc = arena::alloc, &heap, valu
 ```
 
 - An allocator is a function, `alloc::Fn(S)`, over state `S` the caller holds (§14, rule 3).
-  std's is the arena; a general heap is a program's own `alloc::Fn` over C's `realloc`.
+  std has two: the arena, and the heap, the platform's general-purpose allocator
+  (`let mut h = heap::new{ &mem }`, then `realloc = heap::alloc, heap = &h`), whose blocks any
+  `Heap` frees, from any thread: each task makes its own.
 - Lists and maps keep a pointer to their allocator state: the state must outlive them.
 - New memory is zero: every allocator hands out zeros past what a resize keeps, an arena after a
   `reset` or `restore` too.

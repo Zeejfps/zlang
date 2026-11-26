@@ -1,0 +1,55 @@
+// std's heap over each platform's layer (std/os/PLATFORM, spec §17). A build checks and lowers
+// only its own layer's heap functions, so main.ctx, which reaches each of them, is built here
+// for each layer from any machine, and the C written for Linux and macOS is compiled as far as
+// C's syntax and types go, without their system headers: the generated C declares each C
+// function itself.
+
+// linux and macos: the C library's calloc, realloc and free.
+//# $ ctxc build linux.c {std:linux} -- main.ctx
+//# exit: 0
+//# file linux.c has:
+//| CTX_SYMBOL("calloc")
+//# file linux.c has:
+//| CTX_SYMBOL("realloc")
+//# file linux.c has:
+//| CTX_SYMBOL("free")
+//# $ cc {cflags} -fsyntax-only -I {home}/ctxc/rt linux.c
+//# exit: 0
+
+//# $ ctxc build macos.c {std:macos} -- main.ctx
+//# exit: 0
+//# file macos.c has:
+//| CTX_SYMBOL("calloc")
+//# file macos.c has:
+//| CTX_SYMBOL("realloc")
+//# file macos.c has:
+//| CTX_SYMBOL("free")
+//# $ cc {cflags} -fsyntax-only -I {home}/ctxc/rt macos.c
+//# exit: 0
+
+// windows: the process heap, kernel32's.
+//# $ ctxc build windows.c {std:windows} -- main.ctx
+//# exit: 0
+//# file windows.c has:
+//| CTX_SYMBOL("GetProcessHeap")
+//# file windows.c has:
+//| CTX_SYMBOL("HeapAlloc")
+//# file windows.c has:
+//| CTX_SYMBOL("HeapReAlloc")
+//# file windows.c has:
+//| CTX_SYMBOL("HeapFree")
+//# file windows.c lacks:
+//| CTX_SYMBOL("realloc")
+
+// interp: the interpreter's own memory, through its one extern for it.
+//# $ ctxc build interp.c {std:interp} -- main.ctx
+//# exit: 0
+//# file interp.c has:
+//| CTX_SYMBOL("ctx_interp_heap")
+//# file interp.c lacks:
+//| CTX_SYMBOL("realloc")
+
+// And it runs, here and in the interpreter.
+//# program: main.ctx
+//# stdout:
+//| ok

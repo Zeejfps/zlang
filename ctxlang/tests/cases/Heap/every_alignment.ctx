@@ -1,0 +1,54 @@
+// std's heap gives every power-of-two alignment, 1 to 4096: a block's address is a multiple of
+// it after it is allocated and after each resize, which keeps its bytes and zeroes the rest. An
+// alignment that isn't a power of two, and one whose room doesn't fit in a usize, is null.
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let mut h = heap::new{ &mem }
+    let mut align: usize = 1
+    while align <= 4096 {
+        let mut ok = true
+        let a = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 100, align } ifnull { return 1 }
+        if @addr(a.ptr) % align != 0 or a.len != 100 or a[0] != 0 or a[99] != 0 { ok = false }
+        for i in 0..100 { a[i] = @trunc(u8, i) }
+        let b = heap::alloc{ heap = &h, mem = a, new = 5000, align } ifnull { return 2 }
+        if @addr(b.ptr) % align != 0 or b[1] != 1 or b[99] != 99 or b[100] != 0 or b[4999] != 0 { ok = false }
+        b[4999] = 9
+        let c = heap::alloc{ heap = &h, mem = b, new = 10, align } ifnull { return 3 }
+        if @addr(c.ptr) % align != 0 or c[9] != 9 { ok = false }
+        let d = heap::alloc{ heap = &h, mem = c, new = 0, align } ifnull { return 4 }
+        _ = @fmt(&io, "{} {} {}\n", align, ok, d.len)
+        align = align * 2
+    }
+
+    let bad: [5]usize = [0, 3, 24, 48, 4097]
+    for i in 0..5 {
+        let r = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 8, align = bad[i] }
+        _ = @fmt(&io, "align {}: {}\n", bad[i], r == null)
+    }
+    // 2^62 bytes of alignment, and a size whose room past it wraps around
+    let big: usize = 4611686018427387904
+    let r = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 9223372036854775807 - 100, align = big }
+    _ = @fmt(&io, "room: {}\n", r == null)
+    return 0
+}
+
+//# stdout:
+//| 1 true 0
+//| 2 true 0
+//| 4 true 0
+//| 8 true 0
+//| 16 true 0
+//| 32 true 0
+//| 64 true 0
+//| 128 true 0
+//| 256 true 0
+//| 512 true 0
+//| 1024 true 0
+//| 2048 true 0
+//| 4096 true 0
+//| align 0: true
+//| align 3: true
+//| align 24: true
+//| align 48: true
+//| align 4097: true
+//| room: true

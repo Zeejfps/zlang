@@ -1,0 +1,15 @@
+// Every path of std's heap: a block allocated, grown, shrunk and freed, at the platform heap's
+// alignment and above it.
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let mut h = heap::new{ &mem }
+    let aligns: [2]usize = [8, 64]
+    for i in 0..2 {
+        let a = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 10, align = aligns[i] } ifnull { return 1 }
+        let b = heap::alloc{ heap = &h, mem = a, new = 1000, align = aligns[i] } ifnull { return 2 }
+        let c = heap::alloc{ heap = &h, mem = b, new = 5, align = aligns[i] } ifnull { return 3 }
+        _ = heap::alloc{ heap = &h, mem = c, new = 0, align = aligns[i] }
+    }
+    io::println{ &io, s = "ok" }
+    return 0
+}

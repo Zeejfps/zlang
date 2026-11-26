@@ -1,0 +1,93 @@
+// std: heap. A general-purpose allocator over the platform's own: memory taken and given back
+// in any order, for data whose lifetime is no one arena's, as a request's buffers in a server or
+// a game's loaded resources. On Windows it is the process heap (HeapAlloc), on Linux and macOS
+// the C library's calloc, realloc and free (std/os's heap_allocate, heap_resize and heap_free).
+//
+//   let mut h = heap::new{ &mem }
+//   let mut xs = list::new(u32){ realloc = heap::alloc, heap = &h }
+//   let bytes = try alloc::make(u8, heap::Heap){ realloc = heap::alloc, heap = &h, count = 100 }
+//   defer _ = alloc::resize(u8, heap::Heap){ realloc = heap::alloc, heap = &h, mem = bytes, count = 0 }
+//
+// A Heap holds the Mem capability, since taking memory from the system is an effect (spec §15),
+// and nothing else: every Heap hands out blocks of the one platform heap, so any Heap frees or
+// resizes a block any other gave out. The platform's heap is safe from any thread, so each task
+// or thread makes a Heap of its own from its Mem, and a block may move between them.
+//
+// What it hands out past the bytes a resize keeps is zero, as alloc::Fn promises, even where the
+// platform's heap handed the memory out before. Its address is a multiple of `align`, any power
+// of two: up to 16, the platform heap's own alignment on 64-bit platforms, directly; above it,
+// from a block `align` bytes larger, with that block's address just before the one handed out.
+
+namespace heap {
+    struct Heap { mem: Mem }
+
+    // The alignment every block of the platform's heap has: malloc's and HeapAlloc's on 64-bit
+    // platforms (MEMORY_ALLOCATION_ALIGNMENT on Windows).
+    const ALIGN: usize = 16
+
+    // The most bytes one block may have: the largest object C allows, PTRDIFF_MAX. A request
+    // for more, as a count of elements that wrapped around would be, returns null at once.
+    const MAX_SIZE: usize = 9223372036854775807
+
+    fn new { mut mem: Mem } -> Heap {
+        return Heap{ mem }
+    }
+
+    // Has type alloc::Fn(Heap). `mem` must be empty or a block a Heap gave out, at the length it
+    // was given out with, and `align` the one it was given out with. Null, with `mem` as it was,
+    // if the platform's heap has no room, if `new` is more than MAX_SIZE, or if `align` isn't a
+    // power of two or the room an alignment above 16 needs doesn't fit in a usize.
+    fn alloc { mut heap: Heap, mem: alloc::Bytes, new: usize, align: usize } -> ?alloc::Bytes {
+        if align == 0 or align & (align - 1) != 0 { return null }
+        if new == 0 {
+            if mem.len > 0 { free_block{ &heap, mem, align } }
+            return slice::empty(u8){}
+        }
+        if new > MAX_SIZE { return null }
+        if align <= ALIGN {
+            if mem.len == 0 {
+                let p = os::heap_allocate{ mem = &heap.mem, size = new } ifnull { return null }
+                return @slice(p, new)
+            }
+            let q = os::heap_resize{ mem = &heap.mem, p = mem.ptr, old = mem.len, size = new } ifnull { return null }
+            return @slice(q, new)
+        }
+        // Over-aligned: a new block, what is kept copied into it, and the old one freed.
+        let out = allocate_aligned{ &heap, size = new, align } ifnull { return null }
+        if mem.len > 0 {
+            let kept = @min(mem.len, new)
+            slice::copy(u8){ dst = out[..kept], src = mem[..kept] }
+            free_block{ &heap, mem, align }
+        }
+        return out
+    }
+
+    // `size` bytes aligned to `align`, more than ALIGN: in a block of the platform's of
+    // size + align bytes, at the first multiple of `align` past its start. The block's start is
+    // a multiple of 16 and `align` of 32 at least, so that is 16 to `align` bytes in, and the
+    // block's address goes in the 8 bytes just before it.
+    fn allocate_aligned { mut heap: Heap, size: usize, align: usize } -> ?alloc::Bytes {
+        if size > MAX_SIZE - align { return null }
+        let block = os::heap_allocate{ mem = &heap.mem, size = size + align } ifnull { return null }
+        let start = @addr(block)
+        let skip = ((start | (align - 1)) + 1) - start
+        @cast(*mut *mut u8, block + (skip - 8)).* = block
+        return @slice(block + skip, size)
+    }
+
+    // Gives back block `mem`, which isn't empty, given out with `align`.
+    fn free_block { mut heap: Heap, mem: alloc::Bytes, align: usize } {
+        if align <= ALIGN {
+            os::heap_free{ mem = &heap.mem, p = mem.ptr }
+            return
+        }
+        os::heap_free{ mem = &heap.mem, p = @cast(**mut u8, pointer_at{ address = @addr(mem.ptr) - 8 }).* }
+    }
+
+    // A pointer to `address`, for the 8 bytes before an over-aligned block, which `q + n` can't
+    // reach from the block: an address read back as the pointer it is.
+    fn pointer_at { address: usize } -> *mut u8 {
+        let a = address
+        return @cast(**mut u8, &a).*
+    }
+}

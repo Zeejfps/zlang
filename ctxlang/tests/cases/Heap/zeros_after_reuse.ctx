@@ -1,0 +1,42 @@
+// std's heap hands out zeros where the platform's heap handed the memory out before: blocks
+// filled and freed, then taken again at the same sizes, hold zeros, and so do the bytes a
+// resize adds to a block taken again, small and over-aligned blocks alike.
+
+fn check_zero { bytes: []u8 } -> bool {
+    for i in 0..bytes.len { if bytes[i] != 0 { return false } }
+    return true
+}
+
+fn round { mut h: heap::Heap, align: usize } -> u32 {
+    let mut blocks: [64]alloc::Bytes
+    let mut bad: u32 = 0
+    for i in 0..64 {
+        let size = (i + 1) * 37
+        blocks[i] = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = size, align } ifnull { return 1000 }
+        if not check_zero{ bytes = blocks[i] } { bad = bad + 1 }
+        slice::fill(u8){ s = blocks[i], v = 0xAB }
+    }
+    for i in 0..64 {
+        // grown: the bytes it adds are zero, though the heap may hand back what it just had
+        let grown = heap::alloc{ heap = &h, mem = blocks[i], new = blocks[i].len * 2, align } ifnull { return 1000 }
+        if grown[0] != 0xAB or grown[blocks[i].len - 1] != 0xAB { bad = bad + 1 }
+        if not check_zero{ bytes = grown[blocks[i].len..] } { bad = bad + 1 }
+        slice::fill(u8){ s = grown, v = 0xCD }
+        _ = heap::alloc{ heap = &h, mem = grown, new = 0, align }
+    }
+    return bad
+}
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let mut h = heap::new{ &mem }
+    for r in 0..4 {
+        _ = @fmt(&io, "round {}: {} {} {}\n", r, round{ &h, align = 1 }, round{ &h, align = 16 }, round{ &h, align = 256 })
+    }
+    return 0
+}
+
+//# stdout:
+//| round 0: 0 0 0
+//| round 1: 0 0 0
+//| round 2: 0 0 0
+//| round 3: 0 0 0

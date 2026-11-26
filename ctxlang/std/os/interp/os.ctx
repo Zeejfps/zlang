@@ -146,6 +146,31 @@ namespace os {
         return true
     }
 
+    // ---- the heap (std/heap.ctx): blocks of the interpreter's own memory, which a run never
+    // gives back, as it never gives back pages: a run is short, its steps bounded, and what it
+    // takes goes back when it ends. So freeing a block does nothing, and a resize that grows
+    // takes a new block and copies; one that shrinks keeps the block, whose bytes past the new
+    // size no resize hands out again, since growing always takes a new one. A program sees the
+    // heap's contract either way: what it frees it doesn't use again.
+
+    // Zeroed memory of `size` bytes, which isn't 0, aligned to 16; null if the interpreter
+    // can't give it.
+    #c_symbol{ name = "ctx_interp_heap" }
+    extern fn host_heap { mut mem: Mem, size: usize } -> ?*mut u8
+
+    fn heap_allocate { mut mem: Mem, size: usize } -> ?*mut u8 {
+        return host_heap{ &mem, size }
+    }
+
+    fn heap_resize { mut mem: Mem, p: *mut u8, old: usize, size: usize } -> ?*mut u8 {
+        if size <= old { return p }
+        let q = host_heap{ &mem, size } ifnull { return null }
+        slice::copy(u8){ dst = @slice(q, old), src = @slice(p, old) }
+        return q
+    }
+
+    fn heap_free { mut mem: Mem, p: *mut u8 } {}
+
     // ---- for std's proc: not supported by interp
 
     // Stops the run, as no_files does, for proc's errors.

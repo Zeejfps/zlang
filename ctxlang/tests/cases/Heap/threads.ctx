@@ -1,0 +1,67 @@
+// std's heap from 8 threads at once, each with a Heap of its own over the one platform heap:
+// each takes, checks, fills, resizes and frees thousands of blocks, and keeps some, which
+// another thread then checks and frees through its own Heap.
+
+const KEPT: usize = 100
+
+struct Slot { blocks: [KEPT]alloc::Bytes, fill: u8 }
+
+fn check_bytes { bytes: []u8, v: u8 } -> bool {
+    for i in 0..bytes.len { if bytes[i] != v { return false } }
+    return true
+}
+
+// Takes and frees blocks of sizes and alignments from `seed`, and keeps KEPT of them in
+// `slot`, filled with slot.fill. Returns how many blocks weren't as the heap promises.
+fn churn { mut mem: Mem, slot: *mut Slot, seed: u64 } -> u64 {
+    let mut h = heap::new{ &mem }
+    let aligns: [4]usize = [1, 8, 16, 64]
+    let mut x = seed
+    let mut bad: u64 = 0
+    for i in 0..3000 {
+        x = x * 6364136223846793005 + 1442695040888963407 ifoverflow x
+        let size = @as(usize, (x >> 33) % 300) + 1
+        let align = aligns[@as(usize, (x >> 20) % 4)]
+        let a = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = size, align } ifnull { return 100000 }
+        if not check_bytes{ bytes = a, v = 0 } or @addr(a.ptr) % align != 0 { bad = bad + 1 }
+        slice::fill(u8){ s = a, v = 0xEE }
+        let b = heap::alloc{ heap = &h, mem = a, new = size * 2, align } ifnull { return 100000 }
+        if not check_bytes{ bytes = b[..size], v = 0xEE } or not check_bytes{ bytes = b[size..], v = 0 } { bad = bad + 1 }
+        _ = heap::alloc{ heap = &h, mem = b, new = 0, align }
+        if i < KEPT {
+            let kept = heap::alloc{ heap = &h, mem = slice::empty(u8){}, new = 64, align = 8 } ifnull { return 100000 }
+            slice::fill(u8){ s = kept, v = slot.fill }
+            slot.blocks[i] = kept
+        }
+    }
+    return bad
+}
+
+// Checks and frees the blocks another thread kept, through this thread's own Heap.
+fn release { mut mem: Mem, slot: *mut Slot } -> u64 {
+    let mut h = heap::new{ &mem }
+    let mut bad: u64 = 0
+    for i in 0..KEPT {
+        if not check_bytes{ bytes = slot.blocks[i], v = slot.fill } { bad = bad + 1 }
+        _ = heap::alloc{ heap = &h, mem = slot.blocks[i], new = 0, align = 8 }
+    }
+    return bad
+}
+
+fn main { mut io: Io, mut threads: Threads } -> ! {
+    let mut slots: [8]Slot
+    for i in 0..8 { slots[i].fill = @trunc(u8, i + 1) }
+    let mut hs: [8]thread::Handle(u64)
+    for i in 0..8 { try thread::spawn{ &threads, handle = &hs[i], run = churn{ mem = &threads, slot = &slots[i], seed = @as(u64, i) * 7919 + 1, _ } } }
+    let mut bad: u64 = 0
+    for i in 0..8 { bad = bad + thread::join{ &threads, handle = &hs[i] } }
+    _ = @fmt(&io, "churned: {} bad\n", bad)
+    for i in 0..8 { try thread::spawn{ &threads, handle = &hs[i], run = release{ mem = &threads, slot = &slots[(i + 1) % 8], _ } } }
+    bad = 0
+    for i in 0..8 { bad = bad + thread::join{ &threads, handle = &hs[i] } }
+    _ = @fmt(&io, "released: {} bad\n", bad)
+}
+
+//# stdout:
+//| churned: 0 bad
+//| released: 0 bad

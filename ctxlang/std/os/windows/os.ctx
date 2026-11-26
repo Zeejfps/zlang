@@ -102,6 +102,40 @@ namespace os {
         return VirtualAlloc{ &mem, address = null, size, kind = MEM_COMMIT | MEM_RESERVE, protect = PAGE_READWRITE }
     }
 
+    // ---- the heap (std/heap.ctx): the process heap, kernel32's, which any thread may use
+    // (it is made without HEAP_NO_SERIALIZE). What it hands out is aligned to 16 bytes,
+    // MEMORY_ALLOCATION_ALIGNMENT on 64-bit Windows.
+
+    #c_symbol{ name = "GetProcessHeap" }
+    extern fn process_heap { mut mem: Mem } -> u64
+    #c_symbol{ name = "HeapAlloc" }
+    extern fn heap_alloc { mut mem: Mem, heap: u64, flags: u32, size: usize } -> ?*mut u8
+    #c_symbol{ name = "HeapReAlloc" }
+    extern fn heap_realloc { mut mem: Mem, heap: u64, flags: u32, p: *mut u8, size: usize } -> ?*mut u8
+    #c_symbol{ name = "HeapFree" }
+    extern fn heap_release { mut mem: Mem, heap: u64, flags: u32, p: *mut u8 } -> i32
+
+    // HeapAlloc's flag that zeroes a new block, and HeapReAlloc's that zeroes what a grown
+    // block adds past its size.
+    const HEAP_ZERO_MEMORY: u32 = 0x8
+
+    // `size` bytes, which isn't 0, zeroed and aligned to 16. Null if there isn't enough memory.
+    fn heap_allocate { mut mem: Mem, size: usize } -> ?*mut u8 {
+        return heap_alloc{ &mem, heap = process_heap{ &mem }, flags = HEAP_ZERO_MEMORY, size }
+    }
+
+    // Block p, of `old` bytes as heap_allocate or heap_resize gave it, resized to `size`, which
+    // isn't 0: its first bytes kept, and the rest zero, which HEAP_ZERO_MEMORY makes the bytes
+    // past the block's size, `old`. Null if there isn't enough memory, and p is as it was.
+    fn heap_resize { mut mem: Mem, p: *mut u8, old: usize, size: usize } -> ?*mut u8 {
+        return heap_realloc{ &mem, heap = process_heap{ &mem }, flags = HEAP_ZERO_MEMORY, p, size }
+    }
+
+    // Gives block p back.
+    fn heap_free { mut mem: Mem, p: *mut u8 } {
+        _ = heap_release{ &mem, heap = process_heap{ &mem }, flags = 0, p }
+    }
+
     // The value of environment variable `name`, or null if it isn't set. It lives until the
     // program ends, in memory from malloc.
     fn env { mut proc: Proc, name: []u8 } -> ?[]u8 {

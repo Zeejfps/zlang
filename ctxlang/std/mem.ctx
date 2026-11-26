@@ -1,8 +1,9 @@
 // std: mem. Memory beyond the stack.
 //
 // `pages` and `reserve` take `mut mem: Mem`. Only `main` receives a `Mem`, from the runtime, so
-// a function can get memory this way only if its caller passes it down. Everything else
-// allocates from buffers it is given (§14), usually an arena over reserved memory:
+// a function can get memory this way only if its caller passes it down, as it can from std's
+// heap (std/heap.ctx), which takes a Mem too. Everything else allocates from buffers it is given
+// (§14), usually an arena over reserved memory:
 //
 //   fn main { mut io: Io, mut mem: Mem } -> i32 {
 //       let buf = mem::reserve{ &mem, size = 1073741824 } ifnull { return 1 }   // 1 GiB, used as reached
