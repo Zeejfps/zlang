@@ -85,6 +85,7 @@ namespace check {
         any_thread: bool = false,       // and `any_thread = true`: from any thread, holding no capability
         thread_bound: bool = false,     // a capability with `#thread_bound`, not those that include one
         task_handle: bool = false,      // a struct with `#loan_holder`: std's task::Task(R) and Group
+        settings: []u32 = [],           // a loan holder's fields with `#setting`, by index: what its literal may give
         tasky:    bool = false,         // a fn whose body starts tasks or passes handles (task_borrows)
         includes: []u32,                // what a capability includes, directly or not (§15)
         links:    []Link = [],          // a capability's `#c_link`s, in the order they are written
@@ -139,9 +140,10 @@ namespace check {
     // The attributes the compiler declares, in the universe: `#convert` (§18, Literal
     // conversions), `#write` (§13, Formatting), `#start` and `#panic` (§15, Entry point),
     // `#stack_limit` and `#thread_local` on a static (§15, rule 13), `#pure` on an extern fn (§18, Extern functions, rule 8), and tasks' (§15, Tasks):
-    // `#thread_bound` on a capability, and std's `#loan_holder` and `#scope_end`. The C
+    // `#thread_bound` on a capability, `#loan_holder` on a struct, `#setting` on a loan holder's
+    // field, and `#scope_end` on a holder's fn. The C
     // attributes (§18): `#c_symbol`, `#c_callback`, `#c_export`, and `#c_link` on a capability.
-    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, pure, thread_bound, loan_holder, scope_end, test, test_main, c_symbol, c_callback, c_export, c_link }
+    enum Attribute: u8 { convert, write, start, panic, stack_limit, thread_local, pure, thread_bound, loan_holder, setting, scope_end, test, test_main, c_symbol, c_callback, c_export, c_link }
 
     struct Space {
         name:   []u8,
@@ -323,6 +325,12 @@ namespace check {
         // The `ifnull` or `iferr` whose value a discard drops (`_ = f{} iferr { ... }`): its
         // fallback may give no value, and then it has none (§11, rule 6).
         dropping: ?u64 = null,
+        // The initializer of the `let` being checked, where a loan holder's literal may be
+        // (§15, Tasks, rule 4), and whether it was one: built where the handle lives. misplaced:
+        // whether a holder's literal was found elsewhere, which handle_lit reported.
+        let_init: ?u64 = null,
+        handle_init: bool = false,
+        misplaced: bool = false,
         // The builtin that is the statement being checked: where a `@require` may be (§13, Checks).
         stmt: ?u64 = null,
         // The sets of Var.derived and Var.held.
@@ -749,6 +757,7 @@ namespace check {
         put_name{ &c, ns = UNIVERSE, values = false, name = "pure", e = Entry::attr{ a = Attribute::pure } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "thread_bound", e = Entry::attr{ a = Attribute::thread_bound } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "loan_holder", e = Entry::attr{ a = Attribute::loan_holder } }
+        put_name{ &c, ns = UNIVERSE, values = false, name = "setting", e = Entry::attr{ a = Attribute::setting } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "scope_end", e = Entry::attr{ a = Attribute::scope_end } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "test", e = Entry::attr{ a = Attribute::test } }
         put_name{ &c, ns = UNIVERSE, values = false, name = "test_main", e = Entry::attr{ a = Attribute::test_main } }
@@ -2107,6 +2116,9 @@ namespace check {
                             handle_attr{ &c, x, file, a, seen = seen_handle }
                             seen_handle = true
                         }
+                        setting => {
+                            error{ &c, at = a.span, msg = SETTING_PLACE }
+                        }
                         scope_end => {
                             scope_attr{ &c, x, file, a, seen = seen_scope }
                             seen_scope = true
@@ -2127,6 +2139,7 @@ namespace check {
                 k = k + 1
             }
             if not seen_pure and x.k is func{ name, external } and external { pure_or_cap{ &c, x, file, name } }
+            if x.k is record{ fields } { setting_attrs{ &c, x, file, fields, ns } }
             if x.k is space{ decls = inner } {
                 let child = map::get{ m = c.space_of, key = key{ file, id = x.id } }
                 if child != null { compiler_attr_list{ &c, file, decls = inner, ns = child } }
@@ -2137,7 +2150,7 @@ namespace check {
 
     // A compiler attribute's name, for messages.
     fn attr_name { a: Attribute } -> []u8 {
-        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } pure => { "pure" } thread_bound => { "thread_bound" } test => { "test" } test_main => { "test_main" } c_symbol => { "c_symbol" } c_callback => { "c_callback" } c_export => { "c_export" } c_link => { "c_link" } loan_holder => { "loan_holder" } scope_end => { "scope_end" } }
+        return match a { convert => { "convert" } write => { "write" } start => { "start" } panic => { "panic" } stack_limit => { "stack_limit" } thread_local => { "thread_local" } pure => { "pure" } thread_bound => { "thread_bound" } test => { "test" } test_main => { "test_main" } c_symbol => { "c_symbol" } c_callback => { "c_callback" } c_export => { "c_export" } c_link => { "c_link" } loan_holder => { "loan_holder" } setting => { "setting" } scope_end => { "scope_end" } }
     }
 
     // The attribute the compiler declares that a names, if it is one: `#convert` or `#write`
@@ -2549,6 +2562,66 @@ namespace check {
         try! list::push{ list = &c.handle_spaces, item = get_decl{ c, d }.ns }
     }
 
+    const SETTING_PLACE: utf8::String = "`setting` applies only to a field of a loan holder, a struct with `#loan_holder`"
+
+    // The fields of struct x with `#setting` (§15, Tasks, rule 4): the fields of a loan holder
+    // that its literal may give, each plain data without a default. A loan holder's other fields
+    // have no default either: a handle starts zero but for the settings its literal gives.
+    fn setting_attrs { mut c: Checker, x: syntax::Decl, file: u32, fields: []syntax::Field, ns: u32 } {
+        let d = nodes::get{ m = c.decl_of, key = key{ file, id = x.id } } ifnull { return }
+        let holder = get_decl{ c, d }.task_handle
+        let mut settings = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        for f in fields {
+            if holder and f.default != null {
+                errorf{ &c, at = f.span, msg = @fmt("loan holder `{}`'s field `{}` has a default: a handle starts zero but for the settings its literal gives, so zero is each field's default", str{ s = get_decl{ c, d }.name.text }, str{ s = f.name.text }) }
+            }
+            let mut seen = false
+            for a in f.attrs {
+                let which = compiler_attr{ c, a, ns } ifnull { continue }
+                if which != Attribute::setting { continue }
+                if not holder {
+                    error{ &c, at = a.span, msg = SETTING_PLACE }
+                    continue
+                }
+                if seen {
+                    error{ &c, at = a.span, msg = "duplicate `setting` attribute" }
+                    continue
+                }
+                seen = true
+                let fi = types::field_index{ fields = get_decl{ c, d }.fields, name = f.name.text } ifnull { continue }
+                let t = get_decl{ c, d }.fields[fi].ty
+                if not plain_data{ &c, t, seen = no_vars{} } {
+                    errorf{ &c, at = f.span, msg = @fmt("setting `{}` has type {}, which isn't plain data: a setting holds numbers, bools and enums, in arrays, optionals and structs, so that a handle borrows only what its tasks borrow", str{ s = f.name.text }, tstr{ c, t }) }
+                    continue
+                }
+                push{ xs = &settings, n = @as(u32, fi) }
+            }
+        }
+        if settings.len > 0 { list::at{ list = c.decls, i = d }.settings = list::items{ list = settings } }
+    }
+
+    // Whether t is plain data, which holds no address, function, capability, error or handle:
+    // numbers, bools and enums, and arrays, optionals, distinct types and structs of them.
+    fn plain_data { mut c: Checker, t: Id, seen: []u32 } -> bool {
+        let x = types::prune{ s = c.ty, t }
+        match types::get{ s = c.ty, id = x } {
+            error | prim | enumeration => { return true }
+            opt{ elem } => { return plain_data{ &c, t = elem, seen } }
+            array{ elem } => { return plain_data{ &c, t = elem, seen } }
+            distinct{ base } => { return plain_data{ &c, t = base, seen } }
+            record{ decl } => {
+                if get_decl{ c, d = decl }.task_handle { return false }
+                if has_id{ xs = seen, n = decl } { return true }
+                let inner = set_add{ c, xs = seen, n = decl }
+                for f in struct_fields{ &c, t = x } {
+                    if not plain_data{ &c, t = f.ty, seen = inner } { return false }
+                }
+                return true
+            }
+            else => { return false }
+        }
+    }
+
     // Whether capability d is thread-bound: it has `#thread_bound`, or includes one that has.
     fn thread_bound { c: Checker, d: u32 } -> bool {
         let x = get_decl{ c, d }
@@ -2635,12 +2708,13 @@ namespace check {
     }
 
     // A local of type t, with a value or not, or an assignment to a place of type t (assign):
-    // a handle is declared without a value, which is no task, and never copied or replaced.
+    // a handle is declared without a value or with its literal (handle_lit), which is no task,
+    // and never copied or replaced.
     fn handle_local { mut c: Checker, t: Id, value: bool, at: source::Span } {
         if not holds_handle{ c, t } { return }
         if c.fn_decl != NONE and handles_own{ c, ns = get_decl{ c, d = c.fn_decl }.ns } { return }
         if value {
-            errorf{ &c, at, msg = @fmt("{} holds a task handle, which is never copied: declare it without a value, and start a task into it", tstr{ c, t }) }
+            errorf{ &c, at, msg = @fmt("{} holds a task handle, which is never copied: declare it without a value, or a handle with its literal, and start a task into it", tstr{ c, t }) }
         } else if not local_handle{ c, t } {
             errorf{ &c, at, msg = @fmt("{} holds a task handle: {}", tstr{ c, t }, str{ s = HANDLE_PLACES }) }
         }
@@ -3228,22 +3302,22 @@ namespace check {
                 cap{ fields } => {
                     if fields != null { field_attributes{ &c, x, file, fields, ns } }
                 }
-                record{ fields } => { check_data_fields{ &c, fields, ns } }
+                record{ fields } => { check_data_fields{ &c, fields, ns, record = true } }
                 sum{ variants } => {
                     let mut v: usize = 0
                     while v < variants.len {
                         let fields = variants[v].fields
-                        if fields != null { check_data_fields{ &c, fields, ns } }
+                        if fields != null { check_data_fields{ &c, fields, ns, record = false } }
                         v = v + 1
                     }
                 }
                 fault{ fields } => {
-                    if fields != null { check_data_fields{ &c, fields, ns } }
+                    if fields != null { check_data_fields{ &c, fields, ns, record = false } }
                 }
                 func{ params } => {
                     let mut p: usize = 0
                     while p < params.len {
-                        check_data_attrs{ &c, attrs = params[p].attrs, ns }
+                        check_data_attrs{ &c, attrs = params[p].attrs, ns, record = false }
                         p = p + 1
                     }
                 }
@@ -3253,19 +3327,21 @@ namespace check {
         }
     }
 
-    // The attributes of the fields of a struct, an extern union, a union's variant or an error.
-    fn check_data_fields { mut c: Checker, fields: []syntax::Field, ns: u32 } {
+    // The attributes of the fields of a struct (record), an extern union, a union's variant or an
+    // error.
+    fn check_data_fields { mut c: Checker, fields: []syntax::Field, ns: u32, record: bool } {
         let mut i: usize = 0
         while i < fields.len {
-            check_data_attrs{ &c, attrs = fields[i].attrs, ns }
+            check_data_attrs{ &c, attrs = fields[i].attrs, ns, record }
             i = i + 1
         }
     }
 
     // The attributes of a field that isn't a capability's: of a struct, an extern union, a
     // union's variant, an error or a fn's context. They are data alone (§18, rule 3), so one the
-    // compiler acts on is misplaced there, as it is on a declaration it doesn't apply to.
-    fn check_data_attrs { mut c: Checker, attrs: []syntax::Attr, ns: u32 } {
+    // compiler acts on is misplaced there, as it is on a declaration it doesn't apply to, but a
+    // struct's `setting`, which setting_attrs checks.
+    fn check_data_attrs { mut c: Checker, attrs: []syntax::Attr, ns: u32, record: bool } {
         let mut k: usize = 0
         while k < attrs.len {
             let a = attrs[k]
@@ -3284,6 +3360,9 @@ namespace check {
                     }
                     c_link => {
                         error{ &c, at = a.span, msg = LINK_PLACE }
+                    }
+                    setting => {
+                        if not record { error{ &c, at = a.span, msg = SETTING_PLACE } }
                     }
                     else => {
                         errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr_name{ a = which } }) }
@@ -3325,6 +3404,8 @@ namespace check {
                         seen = true
                     } else if which == Attribute::c_link {
                         error{ &c, at = a.span, msg = LINK_PLACE }
+                    } else if which == Attribute::setting {
+                        error{ &c, at = a.span, msg = SETTING_PLACE }
                     } else {
                         errorf{ &c, at = a.span, msg = @fmt("`{}` applies only to a fn", str{ s = attr_name{ a = which } }) }
                     }
@@ -6628,13 +6709,30 @@ namespace check {
 
     fn let_stmt { mut c: Checker, s: syntax::Stmt, mutable: bool, name: syntax::Name, ty: ?syntax::TypeExpr, init: ?syntax::Expr } {
         let mut t = types::ERROR
+        // A loan holder's literal may be the initializer itself, nothing inside it (handle_lit).
+        let outer_init = c.let_init
+        let outer_handle = c.handle_init
+        let outer_misplaced = c.misplaced
+        c.let_init = null
+        if let x = init { c.let_init = expr_key{ e = x } }
+        c.handle_init = false
+        c.misplaced = false
         if ty != null {
             t = sized_type{ &c, te = ty, init, sc = c.sc, allow_bound = true }
             if init != null { expect{ &c, e = init, t } }
         } else if init != null {
             t = value_type{ &c, e = init }
         }
-        handle_local{ &c, t, value = init != null, at = s.span }
+        let literal = c.handle_init
+        let misplaced = c.misplaced
+        c.let_init = outer_init
+        c.handle_init = outer_handle
+        c.misplaced = outer_misplaced
+        if literal and not mutable {
+            errorf{ &c, at = s.span, msg = @fmt("`{}` is a handle, declared with `let mut`: its tasks write into it", str{ s = name.text }) }
+        }
+        // A holder's literal elsewhere in the initializer was reported where it is.
+        if not misplaced { handle_local{ &c, t, value = init != null and not literal, at = s.span } }
         let v = new_var{ &c, name = name.text, ty = t, kind = VarKind::local, mutable, at = s.span }
         if holds_handle{ c, t } { mark_tasky{ &c } }
         let mut held: []Place = slice::empty(Place){}
@@ -6681,9 +6779,13 @@ namespace check {
                 }
                 errorf{ &c, at = expr_at{ e = place }, msg = @fmt("cannot assign to `{}`: it is {}", str{ s = x.name }, why) }
             }
+            let outer_misplaced = c.misplaced
+            c.misplaced = false
             expect{ &c, e = value, t = x.ty }
+            let misplaced = c.misplaced
+            c.misplaced = outer_misplaced
             check_cap_assign{ &c, t = x.ty, once = x.tracked and not x.mutable, at = expr_at{ e = place } }
-            handle_local{ &c, t = x.ty, value = true, at = expr_at{ e = place } }
+            if not misplaced { handle_local{ &c, t = x.ty, value = true, at = expr_at{ e = place } } }
             if x.tracked {
                 if not x.mutable and has_id{ xs = c.maybe, n = v } and not c.dead {
                     let mut b = message{ c }
@@ -6705,9 +6807,13 @@ namespace check {
         }
         let lt = expr{ &c, e = place, exp = types::NO_TYPE }
         check_mutable{ &c, e = place }
+        let outer_misplaced = c.misplaced
+        c.misplaced = false
         expect{ &c, e = value, t = lt }
+        let misplaced = c.misplaced
+        c.misplaced = outer_misplaced
         check_cap_assign{ &c, t = lt, once = false, at = expr_at{ e = place } }
-        handle_local{ &c, t = lt, value = true, at = expr_at{ e = place } }
+        if not misplaced { handle_local{ &c, t = lt, value = true, at = expr_at{ e = place } } }
         let p = place_path{ c, e = place }
         check_store{ &c, root = if p == null { NONE } else { p.root }, through = p == null, rhs = value, at }
     }
@@ -14465,7 +14571,41 @@ namespace check {
             return untagged_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, forward, bind }
         }
         try! @fmt(&b, "struct `{}`", str{ s = get_decl{ c, d = decl }.name.text })
+        if get_decl{ c, d = decl }.task_handle and not (c.fn_decl != NONE and handles_own{ c, ns = get_decl{ c, d = c.fn_decl }.ns }) {
+            return handle_lit{ &c, e, t, decl, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, forward, bind }
+        }
         return fields_lit{ &c, e, t, fields = struct_fields{ &c, t }, what = utf8::view{ b }, items, spread = slice::empty(types::Field){}, defaults = get_decl{ c, d = decl }.defaults, forward, bind }
+    }
+
+    // A loan holder's literal (§15, Tasks, rule 4): only the value of the `let mut` that
+    // declares the handle, so it is built where the handle lives and never moves. It gives
+    // some of the holder's settings, and its `..` leaves each field it doesn't give zero, as a
+    // handle declared without a value is: no task.
+    fn handle_lit { mut c: Checker, e: syntax::Expr, t: Id, decl: u32, fields: []types::Field, what: utf8::String, items: []syntax::Item, forward: bool, bind: bool } -> Id {
+        set_literal{ &c, e, literal = true }
+        let mut at_let = false
+        if let k = c.let_init { at_let = k == expr_key{ e } }
+        if at_let {
+            c.handle_init = true
+        } else {
+            c.misplaced = true
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("{} is a loan holder, whose literal is only the value of the `let mut` that declares a handle: it is built there and never moves", what) }
+        }
+        if bind {
+            error{ &c, at = expr_at{ e }, msg = "`_` is not allowed in a literal" }
+        } else if not forward {
+            errorf{ &c, at = expr_at{ e }, msg = @fmt("{}'s literal ends in `..`, which leaves the fields it doesn't give zero", what) }
+        }
+        supplied{ &c, e, items, fields, what }
+        let settings = get_decl{ c, d = decl }.settings
+        for it in items {
+            let fi = types::field_index{ fields, name = it.name.text } ifnull { continue }
+            if not has_id{ xs = settings, n = @as(u32, fi) } {
+                errorf{ &c, at = it.span, msg = @fmt("`{}` isn't a setting of {}: a handle's literal gives only the fields with `#setting`, and the rest start zero", str{ s = it.name.text }, what) }
+            }
+            expect{ &c, e = it.value, t = fields[fi].ty }
+        }
+        return t
     }
 
     // A capability with fields (§15): only a function of the namespace that declares it, which

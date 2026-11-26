@@ -5,4 +5,4 @@ fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
 
 fn sq { n: u64 } -> !u64 { return n * n }
 
-fn main {} { let mut p: ?task::Task(!) = null }  //~ error at 14: ?task::Task(!) holds a task handle, which is never copied: declare it without a value, and start a task into it
+fn main {} { let mut p: ?task::Task(!) = null }  //~ error at 14: ?task::Task(!) holds a task handle, which is never copied: declare it without a value, or a handle with its literal, and start a task into it

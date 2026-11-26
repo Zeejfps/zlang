@@ -328,6 +328,13 @@ of the capability's extern fns, and into no other; `archive = true` links `libLI
 path, found in `CTX_LIB_PATH`, the C compiler's paths or `dirs = ["..."]`, and
 `framework = true` a macOS framework (§18, Extern functions, rule 11).
 
+A task's handle, `task::Task(R)` or `task::Group` (§15, Tasks, rule 4), is a `let mut` declared
+without a value, `let mut t: task::Task(!u64)`, or with its literal, which gives its `#setting`
+fields and leaves the rest zero, `let mut g = task::Group{ .. }`. It is never assigned, copied,
+returned or kept in a struct, only passed to a `mut` field, `task = &t`.
+`task::start{ &threads, task = &t, run = load{ &fs, path, _ } }` lends what the bind borrows
+until `task::wait` ends it, or the handle's scope does, which cancels and waits.
+
 ## Printing and text
 
 `io::println{ &io, s = "text" }`, `io::print_i64{ &io, n }`. `_ = @fmt(&io, "x = {} y = {}\n",

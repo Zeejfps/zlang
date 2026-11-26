@@ -6,4 +6,4 @@ fn look { s: []u8 } -> !u64 { return @as(u64, s.len) }
 fn sq { n: u64 } -> !u64 { return n * n }
 
 fn main {} { let mut xs: [2]u8
-    let n = slice::empty(task::Task(!)){} }  //~ error at 13: a generic argument holds a task handle: a task's handle is only a local, a local array's element, or a `mut` field, and is never copied //~ error at 5: []mut task::Task(!) holds a task handle, which is never copied: declare it without a value, and start a task into it
+    let n = slice::empty(task::Task(!)){} }  //~ error at 13: a generic argument holds a task handle: a task's handle is only a local, a local array's element, or a `mut` field, and is never copied //~ error at 5: []mut task::Task(!) holds a task handle, which is never copied: declare it without a value, or a handle with its literal, and start a task into it

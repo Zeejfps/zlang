@@ -48,9 +48,9 @@ namespace task {
         static table: Table
     }
 
-    // A task's handle and, once it has ended, its result. Zero is no task. Only a local, a local
-    // array's element, or a `mut` field: never copied, so it never moves while its task writes
-    // its result into it.
+    // A task's handle and, once it has ended, its result. Zero is no task, as `Task(R){ .. }` is:
+    // no field is a setting (spec §15, Tasks, rule 4). Only a local, a local array's element, or
+    // a `mut` field: never copied, so it never moves while its task writes its result into it.
     #loan_holder
     struct Task(R) {
         slot: u32,                  // the task's slot in the table, from 1, while RUNNING
@@ -59,7 +59,7 @@ namespace task {
         result: R,                  // the task's result, once it has ended
     }
 
-    // Tasks that end together. Zero is an empty group. The same places as a Task.
+    // Tasks that end together. Zero is an empty group, as `Group{ .. }` is. The same places as a Task.
     #loan_holder
     struct Group {
         tasks: u32,                 // tasks of the group that haven't ended

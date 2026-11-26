@@ -1,0 +1,29 @@
+// A handle declared with its literal holds loans as one declared without a value does (spec §15,
+// Tasks, rules 4, 7 and 9).
+namespace jobs {
+    #loan_holder
+    struct Job {
+        #setting
+        bonus: u64,
+        t: task::Task(u64),
+    }
+
+    fn submit { mut threads: Threads, mut job: Job, run: &thread fn{} -> u64 into job } {
+        task::start{ &threads, task = &job.t, run }
+    }
+
+    #scope_end
+    fn finish { mut threads: Threads, mut job: Job ends } { task::end{ &threads, task = &job.t } }
+}
+
+fn count { mut n: u64 } -> u64 {
+    n = n + 1
+    return n
+}
+
+fn main { mut threads: Threads } {
+    let mut n: u64 = 1
+    let mut job = jobs::Job{ bonus = 1, .. }
+    jobs::submit{ &threads, &job, run = count{ &n, _ } }
+    n = 2  //~ error at 5: `n` is lent into `job` at 27:17, and held until `job` is ended
+}

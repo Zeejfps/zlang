@@ -1,0 +1,41 @@
+// `#setting` marks a loan holder's field that its literal may give (spec §15, Tasks, rule 4).
+namespace jobs {
+    enum Mode: u8 { once, twice }
+
+    struct Plain {
+        #setting  //~ error at 9: `setting` applies only to a field of a loan holder, a struct with `#loan_holder`
+        n: u32,
+    }
+
+    #setting  //~ error at 5: `setting` applies only to a field of a loan holder, a struct with `#loan_holder`
+    fn look {} {}
+
+    #loan_holder
+    struct Job(R) {
+        #setting
+        #setting  //~ error at 9: duplicate `setting` attribute
+        mode: Mode,
+        #setting
+        name: []u8,  //~ error at 9: setting `name` has type []u8, which isn't plain data: a setting holds numbers, bools and enums, in arrays, optionals and structs, so that a handle borrows only what its tasks borrow
+        #setting
+        run: fn{} -> u32,  //~ error at 9: setting `run` has type fn{} -> u32, which isn't plain data: a setting holds numbers, bools and enums, in arrays, optionals and structs, so that a handle borrows only what its tasks borrow
+        #setting
+        first: R,  //~ error at 9: setting `first` has type R, which isn't plain data: a setting holds numbers, bools and enums, in arrays, optionals and structs, so that a handle borrows only what its tasks borrow
+        #setting
+        limits: [2]?u32,
+        kept: u32 = 64,  //~ error at 9: loan holder `Job`'s field `kept` has a default: a handle starts zero but for the settings its literal gives, so zero is each field's default
+        t: task::Task(R),
+    }
+
+    union Shape {
+        dot{
+            #setting  //~ error at 13: `setting` applies only to a field of a loan holder, a struct with `#loan_holder`
+            n: u32,
+        },
+    }
+
+    #scope_end
+    fn finish(R) { mut threads: Threads, mut job: Job(R) ends } { task::end{ &threads, task = &job.t } }
+}
+
+fn main {} {}

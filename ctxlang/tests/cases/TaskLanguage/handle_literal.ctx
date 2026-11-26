@@ -1,0 +1,60 @@
+// A handle declared with its literal (spec §15, Tasks, rule 4): the literal gives the holder's
+// settings, its `..` leaves the rest zero, no task, and the handle is then used as one declared
+// without a value is: a task is started into it, waited for, or ended by its scope.
+namespace jobs {
+    enum Mode: u8 { once, twice }
+
+    #loan_holder
+    struct Job {
+        #setting
+        mode: Mode,
+        #setting
+        bonus: u64,
+        t: task::Task(u64),
+    }
+
+    fn submit { mut threads: Threads, mut job: Job, run: &thread fn{} -> u64 into job } {
+        task::start{ &threads, task = &job.t, run }
+    }
+
+    #scope_end
+    fn finish { mut threads: Threads, mut job: Job ends } { task::end{ &threads, task = &job.t } }
+
+    // The task's result, as the job's settings say.
+    fn collect { mut threads: Threads, mut job: Job ends } -> u64 {
+        let n = task::wait{ &threads, task = &job.t }
+        if job.mode == Mode::twice { return 2 * n + job.bonus }
+        return n + job.bonus
+    }
+}
+
+fn count { mut n: u64 } -> u64 {
+    n = n + 1
+    return n
+}
+
+fn fails { n: u64 } -> ! { if n == 2 { return task::cancelled } }
+
+fn main { mut io: Io, mut threads: Threads } {
+    let mut n: u64 = 20
+    let mut job = jobs::Job{ mode = jobs::Mode::twice, bonus = 2, .. }
+    jobs::submit{ &threads, &job, run = count{ &n, _ } }
+    io::println_u64{ &io, n = jobs::collect{ &threads, &job } }
+    let mut plain: jobs::Job = jobs::Job{ .. }
+    jobs::submit{ &threads, job = &plain, run = count{ &n, _ } }
+    io::println_u64{ &io, n = jobs::collect{ &threads, job = &plain } }
+    {
+        let mut left = jobs::Job{ bonus = 5, .. }
+        jobs::submit{ &threads, job = &left, run = count{ &n, _ } }
+    }
+    io::println_u64{ &io, n }
+    let mut g = task::Group{ .. }
+    task::start_in{ &threads, group = &g, run = fails{ n = 1, _ } }
+    task::start_in{ &threads, group = &g, run = fails{ n = 2, _ } }
+    task::wait_all{ &threads, group = &g } iferr { io::println{ &io, s = "failed" } }
+}
+//# stdout:
+//| 44
+//| 22
+//| 23
+//| failed
