@@ -36,6 +36,12 @@ namespace sys {
     const ENAMETOOLONG: i32 = 36
     const ENOTEMPTY: i32 = 39
 
+    // mmap's flags for memory of no file's (std/os/posix's pages and reserve), and for memory
+    // the system doesn't set aside room in RAM or swap for until it is touched, which a big
+    // reservation needs where overcommit is heuristic, as it is by default.
+    const MAP_ANONYMOUS: i32 = 0x20
+    const MAP_NORESERVE: i32 = 0x4000
+
     // The offset of d_name, the entry's name, in the struct dirent readdir returns: glibc's and
     // musl's, on every 64-bit architecture.
     const DIRENT_NAME: usize = 19

@@ -14461,13 +14461,13 @@ static t19 f_mem__reserve(CTX_UP t3 l0, t15 l1) {
     CTX_FRAME(&w_mem__reserve);
     {
         if ((l1 == ((t15)(0ULL)))) {
-            return ((t19){ .tag = 1, .p.v1.m_value = (CTX_AT(38, 47), f_slice__emptyu8_5539fb6e(CTX_ME0)) });
+            return ((t19){ .tag = 1, .p.v1.m_value = (CTX_AT(46, 47), f_slice__emptyu8_5539fb6e(CTX_ME0)) });
         }
-        if (({ t15 _t0 = l1; t15 _t1 = ctx_sub_u64(((t15)(18446744073709551615ULL)), ctx_sub_u64(((t15)(4096ULL)), ((t15)(1ULL)), 39, 48, &w_mem__reserve, CTX_UPV), 39, 40, &w_mem__reserve, CTX_UPV); (_t0 > _t1); })) {
+        if (({ t15 _t0 = l1; t15 _t1 = ctx_sub_u64(((t15)(18446744073709551615ULL)), ctx_sub_u64(((t15)(4096ULL)), ((t15)(1ULL)), 47, 48, &w_mem__reserve, CTX_UPV), 47, 40, &w_mem__reserve, CTX_UPV); (_t0 > _t1); })) {
             return ((t19){0});
         }
-        l2 = ctx_mul_u64(ctx_div_u64(ctx_sub_u64(ctx_add_u64(l1, ((t15)(4096ULL)), 40, 23, &w_mem__reserve, CTX_UPV), ((t15)(1ULL)), 40, 30, &w_mem__reserve, CTX_UPV), ((t15)(4096ULL)), 40, 35, &w_mem__reserve, CTX_UPV), ((t15)(4096ULL)), 40, 42, &w_mem__reserve, CTX_UPV);
-        l3 = ({ t43 _t2; t114 _t3 = (CTX_AT(41, 28), f_os__reserve(CTX_ME (&(*l0)), l2)); if ((_t3 != 0)) { l4 = _t3; {
+        l2 = ctx_mul_u64(ctx_div_u64(ctx_sub_u64(ctx_add_u64(l1, ((t15)(4096ULL)), 48, 23, &w_mem__reserve, CTX_UPV), ((t15)(1ULL)), 48, 30, &w_mem__reserve, CTX_UPV), ((t15)(4096ULL)), 48, 35, &w_mem__reserve, CTX_UPV), ((t15)(4096ULL)), 48, 42, &w_mem__reserve, CTX_UPV);
+        l3 = ({ t43 _t2; t114 _t3 = (CTX_AT(49, 28), f_os__reserve(CTX_ME (&(*l0)), l2)); if ((_t3 != 0)) { l4 = _t3; {
             _t2 = l4;
         } } else if ((_t3 == 0)) { {
             return ((t19){0});
@@ -14617,36 +14617,36 @@ static t19 f_arena__alloc(CTX_UP t30 l0, t8 l1, t15 l2, t15 l3) {
     CTX_FRAME(&w_arena__alloc);
     {
         if ((l2 == ((t15)(0ULL)))) {
-            return ((t19){ .tag = 1, .p.v1.m_value = (CTX_AT(23, 46), f_slice__emptyu8_5539fb6e(CTX_ME0)) });
+            return ((t19){ .tag = 1, .p.v1.m_value = (CTX_AT(28, 46), f_slice__emptyu8_5539fb6e(CTX_ME0)) });
         }
         if ((l2 <= (l1).m_len)) {
-            return ((t19){ .tag = 1, .p.v1.m_value = ({ t8 _t0 = (l1); uint64_t _t1 = ((t15)(0ULL)); uint64_t _t2 = l2; ctx_range(_t1, _t2, _t0.m_len, 24, 39, &w_arena__alloc, CTX_UPV); (t8){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; }) });
+            return ((t19){ .tag = 1, .p.v1.m_value = ({ t8 _t0 = (l1); uint64_t _t1 = ((t15)(0ULL)); uint64_t _t2 = l2; ctx_range(_t1, _t2, _t0.m_len, 29, 39, &w_arena__alloc, CTX_UPV); (t8){ .m_ptr = _t0.m_ptr + _t1, .m_len = _t2 - _t1 }; }) });
         }
         if (((((*l0)).m_buf).m_len == ((t15)(0ULL)))) {
             return ((t19){0});
         }
-        l4 = ctx_add_u64(((uint64_t)(uintptr_t)((((*l0)).m_buf).m_ptr)), ((*l0)).m_used, 28, 40, &w_arena__alloc, CTX_UPV);
-        l5 = ({ t15 _t3 = ((*l0)).m_used; t15 _t4 = ({ t15 _t5 = ({ t15 _t7 = l3; t15 _t8 = ctx_rem_u64(l4, l3, 29, 47, &w_arena__alloc, CTX_UPV); ctx_sub_u64(_t7, _t8, 29, 40, &w_arena__alloc, CTX_UPV); }); t15 _t6 = l3; ctx_rem_u64(_t5, _t6, 29, 56, &w_arena__alloc, CTX_UPV); }); ctx_add_u64(_t3, _t4, 29, 31, &w_arena__alloc, CTX_UPV); });
-        if (({ t15 _t9 = ctx_add_u64(l5, l2, 30, 18, &w_arena__alloc, CTX_UPV); t15 _t10 = (((*l0)).m_buf).m_len; (_t9 > _t10); })) {
+        l4 = ctx_add_u64(((uint64_t)(uintptr_t)((((*l0)).m_buf).m_ptr)), ((*l0)).m_used, 33, 40, &w_arena__alloc, CTX_UPV);
+        l5 = ({ t15 _t3 = ((*l0)).m_used; t15 _t4 = ({ t15 _t5 = ({ t15 _t7 = l3; t15 _t8 = ctx_rem_u64(l4, l3, 34, 47, &w_arena__alloc, CTX_UPV); ctx_sub_u64(_t7, _t8, 34, 40, &w_arena__alloc, CTX_UPV); }); t15 _t6 = l3; ctx_rem_u64(_t5, _t6, 34, 56, &w_arena__alloc, CTX_UPV); }); ctx_add_u64(_t3, _t4, 34, 31, &w_arena__alloc, CTX_UPV); });
+        if (({ t15 _t9 = ctx_add_u64(l5, l2, 35, 18, &w_arena__alloc, CTX_UPV); t15 _t10 = (((*l0)).m_buf).m_len; (_t9 > _t10); })) {
             return ((t19){0});
         }
-        l6 = ctx_add_u64(l5, l2, 34, 25, &w_arena__alloc, CTX_UPV);
+        l6 = ctx_add_u64(l5, l2, 39, 25, &w_arena__alloc, CTX_UPV);
         l7 = ((uint64_t)(uintptr_t)((((*l0)).m_buf).m_ptr));
-        if (((((*l0)).m_used == ((t15)(0ULL))) || ({ t15 _t11 = ((t15)(ctx_sub_u64(ctx_add_u64(l7, l6, 36, 36, &w_arena__alloc, CTX_UPV), ((t15)(1ULL)), 36, 42, &w_arena__alloc, CTX_UPV) >> ctx_shcount_i(((t0)(20ULL)), 64, 36, 47, &w_arena__alloc, CTX_UPV))); t15 _t12 = ((t15)(ctx_sub_u64(ctx_add_u64(l7, ((*l0)).m_used, 36, 62, &w_arena__alloc, CTX_UPV), ((t15)(1ULL)), 36, 74, &w_arena__alloc, CTX_UPV) >> ctx_shcount_i(((t0)(20ULL)), 64, 36, 79, &w_arena__alloc, CTX_UPV))); (_t11 != _t12); }))) {
-            if ((!({ t43 _t13 = (&(*({ t8 _t15 = (((*l0)).m_buf); uint64_t _t16 = l5; _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 37, 49, &w_arena__alloc, CTX_UPV); }))); t43 _t14 = (&(*({ t8 _t17 = (((*l0)).m_buf); uint64_t _t18 = ctx_sub_u64(l6, ((t15)(1ULL)), 37, 79, &w_arena__alloc, CTX_UPV); _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 37, 74, &w_arena__alloc, CTX_UPV); }))); CTX_AT(37, 30); f_os__commit(CTX_ME _t13, _t14); }))) {
+        if (((((*l0)).m_used == ((t15)(0ULL))) || ({ t15 _t11 = ((t15)(ctx_sub_u64(ctx_add_u64(l7, l6, 41, 36, &w_arena__alloc, CTX_UPV), ((t15)(1ULL)), 41, 42, &w_arena__alloc, CTX_UPV) >> ctx_shcount_i(((t0)(20ULL)), 64, 41, 47, &w_arena__alloc, CTX_UPV))); t15 _t12 = ((t15)(ctx_sub_u64(ctx_add_u64(l7, ((*l0)).m_used, 41, 62, &w_arena__alloc, CTX_UPV), ((t15)(1ULL)), 41, 74, &w_arena__alloc, CTX_UPV) >> ctx_shcount_i(((t0)(20ULL)), 64, 41, 79, &w_arena__alloc, CTX_UPV))); (_t11 != _t12); }))) {
+            if ((!({ t43 _t13 = (&(*({ t8 _t15 = (((*l0)).m_buf); uint64_t _t16 = l5; _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 42, 49, &w_arena__alloc, CTX_UPV); }))); t43 _t14 = (&(*({ t8 _t17 = (((*l0)).m_buf); uint64_t _t18 = ctx_sub_u64(l6, ((t15)(1ULL)), 42, 79, &w_arena__alloc, CTX_UPV); _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 42, 74, &w_arena__alloc, CTX_UPV); }))); CTX_AT(42, 30); f_os__commit(CTX_ME _t13, _t14); }))) {
                 return ((t19){0});
             }
         }
-        l8 = ({ t8 _t19 = (((*l0)).m_buf); uint64_t _t20 = l5; uint64_t _t21 = l6; ctx_range(_t20, _t21, _t19.m_len, 39, 27, &w_arena__alloc, CTX_UPV); (t8){ .m_ptr = _t19.m_ptr + _t20, .m_len = _t21 - _t20 }; });
+        l8 = ({ t8 _t19 = (((*l0)).m_buf); uint64_t _t20 = l5; uint64_t _t21 = l6; ctx_range(_t20, _t21, _t19.m_len, 44, 27, &w_arena__alloc, CTX_UPV); (t8){ .m_ptr = _t19.m_ptr + _t20, .m_len = _t21 - _t20 }; });
         ((*l0)).m_used = l6;
-        (CTX_AT(41, 20), f_slice__copyu8_aae5a9c4(CTX_ME l8, l1));
-        if (({ t15 _t22 = ((*l0)).m_handed; t15 _t23 = ctx_add_u64(l5, (l1).m_len, 43, 32, &w_arena__alloc, CTX_UPV); (_t22 > _t23); })) {
+        (CTX_AT(46, 20), f_slice__copyu8_aae5a9c4(CTX_ME l8, l1));
+        if (({ t15 _t22 = ((*l0)).m_handed; t15 _t23 = ctx_add_u64(l5, (l1).m_len, 48, 32, &w_arena__alloc, CTX_UPV); (_t22 > _t23); })) {
             l9 = ({ t15 _t24; if ((((*l0)).m_handed < l6)) {
-                _t24 = ctx_sub_u64(((*l0)).m_handed, l5, 44, 60, &w_arena__alloc, CTX_UPV);
+                _t24 = ctx_sub_u64(((*l0)).m_handed, l5, 49, 60, &w_arena__alloc, CTX_UPV);
             } else {
                 _t24 = l2;
             } _t24; });
-            (CTX_AT(45, 28), f_slice__fillu8_47b59c30(CTX_ME ({ t8 _t25 = (l8); uint64_t _t26 = (l1).m_len; uint64_t _t27 = l9; ctx_range(_t26, _t27, _t25.m_len, 45, 37, &w_arena__alloc, CTX_UPV); (t8){ .m_ptr = _t25.m_ptr + _t26, .m_len = _t27 - _t26 }; }), ((t16)(0ULL))));
+            (CTX_AT(50, 28), f_slice__fillu8_47b59c30(CTX_ME ({ t8 _t25 = (l8); uint64_t _t26 = (l1).m_len; uint64_t _t27 = l9; ctx_range(_t26, _t27, _t25.m_len, 50, 37, &w_arena__alloc, CTX_UPV); (t8){ .m_ptr = _t25.m_ptr + _t26, .m_len = _t27 - _t26 }; }), ((t16)(0ULL))));
         }
         if ((l6 > ((*l0)).m_handed)) {
             ((*l0)).m_handed = l6;
@@ -19042,7 +19042,7 @@ static t29 f_arena__restore(CTX_UP t30 l0, t15 l1) {
     CTX_STACK_CHECK();
     {
         if ((l1 > ((*l0)).m_used)) {
-            ctx_panic(67, 29, &w_arena__restore, CTX_UPV, "arena::restore: the arena was reset or restored past this mark");
+            ctx_panic(72, 29, &w_arena__restore, CTX_UPV, "arena::restore: the arena was reset or restored past this mark");
         }
         ((*l0)).m_used = l1;
     }
@@ -19510,7 +19510,7 @@ static t114 f_os__reserve(CTX_UP t3 l0, t15 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__reserve);
     {
-        return (CTX_AT(481, 28), e349(CTX_ME (&(*l0)), ((t114)(0)), l1, ((t23)(8192ULL)), ((t23)(1ULL))));
+        return (CTX_AT(482, 28), e349(CTX_ME (&(*l0)), ((t114)(0)), l1, ((t23)(8192ULL)), ((t23)(1ULL))));
     }
     __builtin_unreachable();
 }
@@ -19670,18 +19670,18 @@ static t7 f_os__commit(CTX_UP t43 l0, t43 l1) {
     CTX_FRAME(&w_os__commit);
     {
         l2 = ((uint64_t)(uintptr_t)(l0));
-        l3 = ctx_add_u64(((t15)((((uint64_t)(uintptr_t)(l1)) | ((t15)(1048575ULL))))), ((t15)(1ULL)), 510, 43, &w_os__commit, CTX_UPV);
-        if (((({ t43 _t0 = l0; t15 _t1 = ctx_sub_u64(l3, l2, 511, 54, &w_os__commit, CTX_UPV); t23 _t2 = ((t23)(4096ULL)); t23 _t3 = ((t23)(4ULL)); CTX_AT(511, 24); e353(CTX_ME _t0, _t1, _t2, _t3); })) != 0)) {
+        l3 = ctx_add_u64(((t15)((((uint64_t)(uintptr_t)(l1)) | ((t15)(1048575ULL))))), ((t15)(1ULL)), 524, 43, &w_os__commit, CTX_UPV);
+        if (((({ t43 _t0 = l0; t15 _t1 = ctx_sub_u64(l3, l2, 525, 54, &w_os__commit, CTX_UPV); t23 _t2 = ((t23)(4096ULL)); t23 _t3 = ((t23)(4ULL)); CTX_AT(525, 24); e353(CTX_ME _t0, _t1, _t2, _t3); })) != 0)) {
             return ((bool)1);
         }
         l4 = ((t267){ .m_base = ((t15)(0ULL)), .m_allocation_base = ((t15)(0ULL)), .m_allocation_protect = ((t23)(0ULL)), .m_partition = ((t23)(0ULL)), .m_size = ((t15)(0ULL)), .m_state = ((t23)(0ULL)), .m_protect = ((t23)(0ULL)), .m_kind = ((t23)(0ULL)), .m_pad = ((t23)(0ULL)), });
         l5 = l2;
         while ((l5 <= ((uint64_t)(uintptr_t)(l1)))) {
-            l6 = ({ t43 _t4 = l0; t15 _t5 = ctx_sub_u64(l5, l2, 515, 33, &w_os__commit, CTX_UPV); (_t4 + _t5); });
-            if (((CTX_AT(516, 21), e354(CTX_ME l6, (&l4), ((t15)(48ULL)))) == ((t15)(0ULL)))) {
+            l6 = ({ t43 _t4 = l0; t15 _t5 = ctx_sub_u64(l5, l2, 529, 33, &w_os__commit, CTX_UPV); (_t4 + _t5); });
+            if (((CTX_AT(530, 21), e354(CTX_ME l6, (&l4), ((t15)(48ULL)))) == ((t15)(0ULL)))) {
                 return ((bool)0);
             }
-            l7 = ctx_add_u64((l4).m_base, (l4).m_size, 517, 33, &w_os__commit, CTX_UPV);
+            l7 = ctx_add_u64((l4).m_base, (l4).m_size, 531, 33, &w_os__commit, CTX_UPV);
             if ((l7 <= l5)) {
                 return ((bool)0);
             }
@@ -19691,7 +19691,7 @@ static t7 f_os__commit(CTX_UP t43 l0, t43 l1) {
                 } else {
                     _t6 = l10;
                 } _t6; }); }); });
-                if (((({ t43 _t7 = l6; t15 _t8 = ctx_sub_u64(l8, l5, 521, 57, &w_os__commit, CTX_UPV); t23 _t9 = ((t23)(4096ULL)); t23 _t10 = ((t23)(4ULL)); CTX_AT(521, 32); e353(CTX_ME _t7, _t8, _t9, _t10); })) == 0)) {
+                if (((({ t43 _t7 = l6; t15 _t8 = ctx_sub_u64(l8, l5, 535, 57, &w_os__commit, CTX_UPV); t23 _t9 = ((t23)(4096ULL)); t23 _t10 = ((t23)(4ULL)); CTX_AT(535, 32); e353(CTX_ME _t7, _t8, _t9, _t10); })) == 0)) {
                     return ((bool)0);
                 }
             } else {
@@ -22275,7 +22275,7 @@ static t0 f_os__narrow(CTX_UP t163 l0, t0 l1, t114 l2, t0 l3, t114 l4, t167 l5) 
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__narrow);
     {
-        return (CTX_AT(582, 28), e439(CTX_ME ((t23)(65001ULL)), ((t23)(0ULL)), l0, l1, l2, l3, l4, l5));
+        return (CTX_AT(596, 28), e439(CTX_ME ((t23)(65001ULL)), ((t23)(0ULL)), l0, l1, l2, l3, l4, l5));
     }
     __builtin_unreachable();
 }
@@ -22290,13 +22290,13 @@ static t19 f_mem__pages(CTX_UP t3 l0, t15 l1) {
     CTX_FRAME(&w_mem__pages);
     {
         if ((l1 == ((t15)(0ULL)))) {
-            return ((t19){ .tag = 1, .p.v1.m_value = (CTX_AT(25, 47), f_slice__emptyu8_5539fb6e(CTX_ME0)) });
+            return ((t19){ .tag = 1, .p.v1.m_value = (CTX_AT(33, 47), f_slice__emptyu8_5539fb6e(CTX_ME0)) });
         }
-        if (({ t15 _t0 = l1; t15 _t1 = ctx_sub_u64(((t15)(18446744073709551615ULL)), ctx_sub_u64(((t15)(4096ULL)), ((t15)(1ULL)), 26, 48, &w_mem__pages, CTX_UPV), 26, 40, &w_mem__pages, CTX_UPV); (_t0 > _t1); })) {
+        if (({ t15 _t0 = l1; t15 _t1 = ctx_sub_u64(((t15)(18446744073709551615ULL)), ctx_sub_u64(((t15)(4096ULL)), ((t15)(1ULL)), 34, 48, &w_mem__pages, CTX_UPV), 34, 40, &w_mem__pages, CTX_UPV); (_t0 > _t1); })) {
             return ((t19){0});
         }
-        l2 = ctx_mul_u64(ctx_div_u64(ctx_sub_u64(ctx_add_u64(l1, ((t15)(4096ULL)), 27, 23, &w_mem__pages, CTX_UPV), ((t15)(1ULL)), 27, 30, &w_mem__pages, CTX_UPV), ((t15)(4096ULL)), 27, 35, &w_mem__pages, CTX_UPV), ((t15)(4096ULL)), 27, 42, &w_mem__pages, CTX_UPV);
-        l3 = ({ t43 _t2; t114 _t3 = (CTX_AT(28, 26), f_os__pages(CTX_ME (&(*l0)), l2)); if ((_t3 != 0)) { l4 = _t3; {
+        l2 = ctx_mul_u64(ctx_div_u64(ctx_sub_u64(ctx_add_u64(l1, ((t15)(4096ULL)), 35, 23, &w_mem__pages, CTX_UPV), ((t15)(1ULL)), 35, 30, &w_mem__pages, CTX_UPV), ((t15)(4096ULL)), 35, 35, &w_mem__pages, CTX_UPV), ((t15)(4096ULL)), 35, 42, &w_mem__pages, CTX_UPV);
+        l3 = ({ t43 _t2; t114 _t3 = (CTX_AT(36, 26), f_os__pages(CTX_ME (&(*l0)), l2)); if ((_t3 != 0)) { l4 = _t3; {
             _t2 = l4;
         } } else if ((_t3 == 0)) { {
             return ((t19){0});
@@ -23980,34 +23980,34 @@ static t8 f_os__exe_path(CTX_UP t40 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__exe_path);
     {
-        l1 = ({ t43 _t0; t114 _t1 = (CTX_AT(1216, 28), e434(CTX_ME (&(*l0)), ((t15)(65536ULL)))); if ((_t1 != 0)) { l2 = _t1; {
+        l1 = ({ t43 _t0; t114 _t1 = (CTX_AT(1230, 28), e434(CTX_ME (&(*l0)), ((t15)(65536ULL)))); if ((_t1 != 0)) { l2 = _t1; {
             _t0 = l2;
         } } else if ((_t1 == 0)) { {
             return ((t8){ .m_ptr = (void *)"", .m_len = 0 });
         } } _t0; });
         /* defer */
         l3 = ((t163)(l1));
-        l4 = (CTX_AT(1219, 35), e475(CTX_ME (&(*l0)), ((t9)(0ULL)), l3, ((t23)(32768ULL))));
+        l4 = (CTX_AT(1233, 35), e475(CTX_ME (&(*l0)), ((t9)(0ULL)), l3, ((t23)(32768ULL))));
         if (((l4 == ((t23)(0ULL))) || (l4 >= ((t23)(32768ULL))))) {
             { t8 _t2 = ((t8){ .m_ptr = (void *)"", .m_len = 0 });
             {
-                (CTX_AT(1217, 21), e436(CTX_ME (&(*l0)), l1));
+                (CTX_AT(1231, 21), e436(CTX_ME (&(*l0)), l1));
             } return _t2; }
         }
-        l5 = ({ t40 _t3 = (&(*l0)); t256 _t4 = ({ t163 _t5 = l3; t15 _t6 = ((t15)(ctx_as_u((uint64_t)(l4), UINT64_MAX, "usize", 1221, 50, &w_os__exe_path, CTX_UPV))); ((t256){ .m_ptr = _t5, .m_len = _t6, }); }); CTX_AT(1221, 27); f_os__utf8_of(CTX_ME _t3, _t4); });
+        l5 = ({ t40 _t3 = (&(*l0)); t256 _t4 = ({ t163 _t5 = l3; t15 _t6 = ((t15)(ctx_as_u((uint64_t)(l4), UINT64_MAX, "usize", 1235, 50, &w_os__exe_path, CTX_UPV))); ((t256){ .m_ptr = _t5, .m_len = _t6, }); }); CTX_AT(1235, 27); f_os__utf8_of(CTX_ME _t3, _t4); });
         l6 = ((t15)(0ULL));
         while ((l6 < (l5).m_len)) {
-            if (((*({ t8 _t7 = (l5); uint64_t _t8 = l6; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 1224, 20, &w_os__exe_path, CTX_UPV); })) == ((t16)(92ULL)))) {
-                (*({ t8 _t9 = (l5); uint64_t _t10 = l6; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 1224, 38, &w_os__exe_path, CTX_UPV); })) = ((t16)(47ULL));
+            if (((*({ t8 _t7 = (l5); uint64_t _t8 = l6; _t7.m_ptr + ctx_idx(_t8, _t7.m_len, 1238, 20, &w_os__exe_path, CTX_UPV); })) == ((t16)(92ULL)))) {
+                (*({ t8 _t9 = (l5); uint64_t _t10 = l6; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 1238, 38, &w_os__exe_path, CTX_UPV); })) = ((t16)(47ULL));
             }
-            l6 = ctx_add_u64(l6, ((t15)(1ULL)), 1225, 19, &w_os__exe_path, CTX_UPV);
+            l6 = ctx_add_u64(l6, ((t15)(1ULL)), 1239, 19, &w_os__exe_path, CTX_UPV);
         }
         { t8 _t11 = l5;
         {
-            (CTX_AT(1217, 21), e436(CTX_ME (&(*l0)), l1));
+            (CTX_AT(1231, 21), e436(CTX_ME (&(*l0)), l1));
         } return _t11; }
         {
-            (CTX_AT(1217, 21), e436(CTX_ME (&(*l0)), l1));
+            (CTX_AT(1231, 21), e436(CTX_ME (&(*l0)), l1));
         }
     }
     __builtin_unreachable();
@@ -24038,8 +24038,8 @@ static t181 f_os__wait(CTX_UP t40 l0, t110 l1, t171 * l2, t7 l3) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__wait);
     {
-        if ((l3 && (CTX_AT(1052, 44), f_task__can_stop(CTX_ME (&(*l1)))))) {
-            { t109 _t0 = (CTX_AT(1053, 28), f_task__check(CTX_ME (&(*l1)))); if ((_t0.tag == 0)) { {
+        if ((l3 && (CTX_AT(1066, 44), f_task__can_stop(CTX_ME (&(*l1)))))) {
+            { t109 _t0 = (CTX_AT(1067, 28), f_task__check(CTX_ME (&(*l1)))); if ((_t0.tag == 0)) { {
             } } else if ((_t0.tag == 1)) { l7 = _t0.p.v1.m_error; {
                 return ((t181){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t1; t107 _t2 = l7; if ((_t2.tag == 0)) { {
                     _t1 = ((t182){ .tag = 4 });
@@ -24047,16 +24047,16 @@ static t181 f_os__wait(CTX_UP t40 l0, t110 l1, t171 * l2, t7 l3) {
                     _t1 = ((t182){ .tag = 5 });
                 } } _t1; }), } });
             } } }
-            l8 = (CTX_AT(1054, 33), f_os__await_handle(CTX_ME (&(*l1)), ((*l2)).m_id, ((t9)(18446744073709551615ULL))));
+            l8 = (CTX_AT(1068, 33), f_os__await_handle(CTX_ME (&(*l1)), ((*l2)).m_id, ((t9)(18446744073709551615ULL))));
             if ((l8 == ((t16)(2ULL)))) {
-                return ((t181){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t3; t107 _t4 = (CTX_AT(1055, 64), f_task__get_stop_error(CTX_ME (&(*l1)))); if ((_t4.tag == 0)) { {
+                return ((t181){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t3; t107 _t4 = (CTX_AT(1069, 64), f_task__get_stop_error(CTX_ME (&(*l1)))); if ((_t4.tag == 0)) { {
                     _t3 = ((t182){ .tag = 4 });
                 } } else if ((_t4.tag == 1)) { {
                     _t3 = ((t182){ .tag = 5 });
                 } } _t3; }), } });
             }
             if ((l8 == ((t16)(3ULL)))) {
-                return ({ t181 _t5; t324 _t6 = ({ t23 _t7 = (CTX_AT(1056, 73), e480(CTX_ME (&(*l0)))); CTX_AT(1056, 54); f_os__proc_failedi32_90c4dade(CTX_ME _t7); }); if ((_t6.tag == 0)) { l9 = _t6.p.v0.m_value; {
+                return ({ t181 _t5; t324 _t6 = ({ t23 _t7 = (CTX_AT(1070, 73), e480(CTX_ME (&(*l0)))); CTX_AT(1070, 54); f_os__proc_failedi32_90c4dade(CTX_ME _t7); }); if ((_t6.tag == 0)) { l9 = _t6.p.v0.m_value; {
                     _t5 = ((t181){ .tag = 0, .p.v0 = { .m_value = l9, } });
                 } } else if ((_t6.tag == 1)) { l10 = _t6.p.v1.m_error; {
                     _t5 = ((t181){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t8; t323 _t9 = l10; if ((_t9.tag == 0)) { {
@@ -24071,9 +24071,9 @@ static t181 f_os__wait(CTX_UP t40 l0, t110 l1, t171 * l2, t7 l3) {
                 } } _t5; });
             }
         } else {
-            if (((CTX_AT(1057, 38), e482(CTX_ME (&(*l0)), ((*l2)).m_id, ((t23)(4294967295ULL)))) == ((t23)(4294967295ULL)))) {
+            if (((CTX_AT(1071, 38), e482(CTX_ME (&(*l0)), ((*l2)).m_id, ((t23)(4294967295ULL)))) == ((t23)(4294967295ULL)))) {
                 /* defer */
-                { t181 _t10 = ({ t181 _t11; t324 _t12 = ({ t23 _t13 = (CTX_AT(1059, 50), e480(CTX_ME (&(*l0)))); CTX_AT(1059, 31); f_os__proc_failedi32_90c4dade(CTX_ME _t13); }); if ((_t12.tag == 0)) { l4 = _t12.p.v0.m_value; {
+                { t181 _t10 = ({ t181 _t11; t324 _t12 = ({ t23 _t13 = (CTX_AT(1073, 50), e480(CTX_ME (&(*l0)))); CTX_AT(1073, 31); f_os__proc_failedi32_90c4dade(CTX_ME _t13); }); if ((_t12.tag == 0)) { l4 = _t12.p.v0.m_value; {
                     _t11 = ((t181){ .tag = 0, .p.v0 = { .m_value = l4, } });
                 } } else if ((_t12.tag == 1)) { l5 = _t12.p.v1.m_error; {
                     _t11 = ((t181){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t14; t323 _t15 = l5; if ((_t15.tag == 0)) { {
@@ -24087,20 +24087,20 @@ static t181 f_os__wait(CTX_UP t40 l0, t110 l1, t171 * l2, t7 l3) {
                     } } _t14; }), } });
                 } } _t11; });
                 {
-                    (CTX_AT(1058, 26), f_os__release(CTX_ME (&(*l0)), &((*l2))));
+                    (CTX_AT(1072, 26), f_os__release(CTX_ME (&(*l0)), &((*l2))));
                 } return _t10; }
                 {
-                    (CTX_AT(1058, 26), f_os__release(CTX_ME (&(*l0)), &((*l2))));
+                    (CTX_AT(1072, 26), f_os__release(CTX_ME (&(*l0)), &((*l2))));
                 }
             }
         }
         /* defer */
-        { t181 _t16 = (CTX_AT(1062, 25), f_os__exit_code(CTX_ME (&(*l0)), ((*l2)).m_id));
+        { t181 _t16 = (CTX_AT(1076, 25), f_os__exit_code(CTX_ME (&(*l0)), ((*l2)).m_id));
         {
-            (CTX_AT(1061, 22), f_os__release(CTX_ME (&(*l0)), &((*l2))));
+            (CTX_AT(1075, 22), f_os__release(CTX_ME (&(*l0)), &((*l2))));
         } return _t16; }
         {
-            (CTX_AT(1061, 22), f_os__release(CTX_ME (&(*l0)), &((*l2))));
+            (CTX_AT(1075, 22), f_os__release(CTX_ME (&(*l0)), &((*l2))));
         }
     }
     __builtin_unreachable();
@@ -28796,11 +28796,11 @@ static t9 f_os__read_deadline_clock(CTX_UP t110 l0) {
     {
         l1 = ((t57)(0ULL));
         l2 = ((t57)(0ULL));
-        (void)(CTX_AT(1920, 29), e722(CTX_ME (&(*l0)), (&l1)));
-        (void)(CTX_AT(1921, 31), e723(CTX_ME (&(*l0)), (&l2)));
-        l3 = ((t9)(ctx_as_s((int64_t)(l1), 0, INT64_MAX, "u64", 1922, 17, &w_os__read_deadline_clock, CTX_UPV)));
-        l4 = ((t9)(ctx_as_s((int64_t)(l2), 0, INT64_MAX, "u64", 1923, 17, &w_os__read_deadline_clock, CTX_UPV)));
-        return ({ t9 _t0 = ctx_mul_u64(ctx_div_u64(l3, l4, 1924, 18, &w_os__read_deadline_clock, CTX_UPV), ((t9)(1000000000ULL)), 1924, 22, &w_os__read_deadline_clock, CTX_UPV); t9 _t1 = ({ t9 _t2 = ctx_mul_u64(ctx_rem_u64(l3, l4, 1924, 39, &w_os__read_deadline_clock, CTX_UPV), ((t9)(1000000000ULL)), 1924, 43, &w_os__read_deadline_clock, CTX_UPV); t9 _t3 = l4; ctx_div_u64(_t2, _t3, 1924, 56, &w_os__read_deadline_clock, CTX_UPV); }); ctx_add_u64(_t0, _t1, 1924, 35, &w_os__read_deadline_clock, CTX_UPV); });
+        (void)(CTX_AT(1934, 29), e722(CTX_ME (&(*l0)), (&l1)));
+        (void)(CTX_AT(1935, 31), e723(CTX_ME (&(*l0)), (&l2)));
+        l3 = ((t9)(ctx_as_s((int64_t)(l1), 0, INT64_MAX, "u64", 1936, 17, &w_os__read_deadline_clock, CTX_UPV)));
+        l4 = ((t9)(ctx_as_s((int64_t)(l2), 0, INT64_MAX, "u64", 1937, 17, &w_os__read_deadline_clock, CTX_UPV)));
+        return ({ t9 _t0 = ctx_mul_u64(ctx_div_u64(l3, l4, 1938, 18, &w_os__read_deadline_clock, CTX_UPV), ((t9)(1000000000ULL)), 1938, 22, &w_os__read_deadline_clock, CTX_UPV); t9 _t1 = ({ t9 _t2 = ctx_mul_u64(ctx_rem_u64(l3, l4, 1938, 39, &w_os__read_deadline_clock, CTX_UPV), ((t9)(1000000000ULL)), 1938, 43, &w_os__read_deadline_clock, CTX_UPV); t9 _t3 = l4; ctx_div_u64(_t2, _t3, 1938, 56, &w_os__read_deadline_clock, CTX_UPV); }); ctx_add_u64(_t0, _t1, 1938, 35, &w_os__read_deadline_clock, CTX_UPV); });
     }
     __builtin_unreachable();
 }
@@ -28825,8 +28825,8 @@ static t259 f_os__wide_path(CTX_UP t2 l0, t8 l1, t256 l2) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__wide_path);
     {
-        if (({ t15 _t0 = (l1).m_len; t15 _t1 = ctx_mul_u64(((t15)(3ULL)), ((t15)(32767ULL)), 1258, 25, &w_os__wide_path, CTX_UPV); (_t0 > _t1); })) {
-            return ({ t259 _t2; t486 _t3 = (CTX_AT(1258, 57), f_os__too_longmutu16_5e7becfb(CTX_ME0)); if ((_t3.tag == 0)) { l3 = _t3.p.v0.m_value; {
+        if (({ t15 _t0 = (l1).m_len; t15 _t1 = ctx_mul_u64(((t15)(3ULL)), ((t15)(32767ULL)), 1272, 25, &w_os__wide_path, CTX_UPV); (_t0 > _t1); })) {
+            return ({ t259 _t2; t486 _t3 = (CTX_AT(1272, 57), f_os__too_longmutu16_5e7becfb(CTX_ME0)); if ((_t3.tag == 0)) { l3 = _t3.p.v0.m_value; {
                 _t2 = ((t259){ .tag = 0, .p.v0 = { .m_value = l3, } });
             } } else if ((_t3.tag == 1)) { l4 = _t3.p.v1.m_error; {
                 _t2 = ((t259){ .tag = 1, .p.v1 = { .m_error = ({ t108 _t4; t485 _t5 = l4; if ((_t5.tag == 0)) { l5 = _t5.p.v0.m_code; {
@@ -28834,15 +28834,15 @@ static t259 f_os__wide_path(CTX_UP t2 l0, t8 l1, t256 l2) {
                 } } _t4; }), } });
             } } _t2; });
         }
-        l6 = ctx_add_u64((l1).m_len, ((t15)(3ULL)), 1259, 28, &w_os__wide_path, CTX_UPV);
+        l6 = ctx_add_u64((l1).m_len, ((t15)(3ULL)), 1273, 28, &w_os__wide_path, CTX_UPV);
         l7 = l2;
         if ((l6 <= (l2).m_len)) {
-            l7 = ({ t256 _t6 = (l2); uint64_t _t7 = ((t15)(0ULL)); uint64_t _t8 = l6; ctx_range(_t7, _t8, _t6.m_len, 1262, 24, &w_os__wide_path, CTX_UPV); (t256){ .m_ptr = _t6.m_ptr + _t7, .m_len = _t8 - _t7 }; });
+            l7 = ({ t256 _t6 = (l2); uint64_t _t7 = ((t15)(0ULL)); uint64_t _t8 = l6; ctx_range(_t7, _t8, _t6.m_len, 1276, 24, &w_os__wide_path, CTX_UPV); (t256){ .m_ptr = _t6.m_ptr + _t7, .m_len = _t8 - _t7 }; });
         } else {
-            l8 = ({ t43 _t9; t114 _t10 = ({ t2 _t11 = (&(*l0)); t15 _t12 = ctx_mul_u64(l6, ((t15)(2ULL)), 1264, 48, &w_os__wide_path, CTX_UPV); CTX_AT(1264, 30); e725(CTX_ME _t11, _t12); }); if ((_t10 != 0)) { l9 = _t10; {
+            l8 = ({ t43 _t9; t114 _t10 = ({ t2 _t11 = (&(*l0)); t15 _t12 = ctx_mul_u64(l6, ((t15)(2ULL)), 1278, 48, &w_os__wide_path, CTX_UPV); CTX_AT(1278, 30); e725(CTX_ME _t11, _t12); }); if ((_t10 != 0)) { l9 = _t10; {
                 _t9 = l9;
             } } else if ((_t10 == 0)) { {
-                return ({ t259 _t13; t486 _t14 = (CTX_AT(1264, 93), f_os__out_of_memory_for_filesmutu16_20e98bbc(CTX_ME0)); if ((_t14.tag == 0)) { l10 = _t14.p.v0.m_value; {
+                return ({ t259 _t13; t486 _t14 = (CTX_AT(1278, 93), f_os__out_of_memory_for_filesmutu16_20e98bbc(CTX_ME0)); if ((_t14.tag == 0)) { l10 = _t14.p.v0.m_value; {
                     _t13 = ((t259){ .tag = 0, .p.v0 = { .m_value = l10, } });
                 } } else if ((_t14.tag == 1)) { l11 = _t14.p.v1.m_error; {
                     _t13 = ((t259){ .tag = 1, .p.v1 = { .m_error = ({ t108 _t15; t485 _t16 = l11; if ((_t16.tag == 0)) { l12 = _t16.p.v0.m_code; {
@@ -28852,10 +28852,10 @@ static t259 f_os__wide_path(CTX_UP t2 l0, t8 l1, t256 l2) {
             } } _t9; });
             l7 = ((t256){ .m_ptr = ((t163)(l8)), .m_len = l6, });
         }
-        l13 = ({ t2 _t17 = (&(*l0)); t23 _t18 = ((t23)(65001ULL)); t23 _t19 = ((t23)(0ULL)); t43 _t20 = (l1).m_ptr; t0 _t21 = ((t0)(ctx_as_u((uint64_t)((l1).m_len), INT32_MAX, "i32", 1267, 88, &w_os__wide_path, CTX_UPV))); t163 _t22 = (l7).m_ptr; t0 _t23 = ((t0)(ctx_as_u((uint64_t)((l1).m_len), INT32_MAX, "i32", 1267, 129, &w_os__wide_path, CTX_UPV))); CTX_AT(1267, 36); e727(CTX_ME _t17, _t18, _t19, _t20, _t21, _t22, _t23); });
-        if (((l13 <= ((t0)(0ULL))) || (((t15)(ctx_as_s((int64_t)(l13), 0, INT64_MAX, "usize", 1268, 22, &w_os__wide_path, CTX_UPV))) > ((t15)(32767ULL))))) {
-            (CTX_AT(1269, 22), f_os__free_wide(CTX_ME (&(*l0)), l7));
-            return ({ t259 _t24; t486 _t25 = (CTX_AT(1270, 28), f_os__too_longmutu16_5e7becfb(CTX_ME0)); if ((_t25.tag == 0)) { l14 = _t25.p.v0.m_value; {
+        l13 = ({ t2 _t17 = (&(*l0)); t23 _t18 = ((t23)(65001ULL)); t23 _t19 = ((t23)(0ULL)); t43 _t20 = (l1).m_ptr; t0 _t21 = ((t0)(ctx_as_u((uint64_t)((l1).m_len), INT32_MAX, "i32", 1281, 88, &w_os__wide_path, CTX_UPV))); t163 _t22 = (l7).m_ptr; t0 _t23 = ((t0)(ctx_as_u((uint64_t)((l1).m_len), INT32_MAX, "i32", 1281, 129, &w_os__wide_path, CTX_UPV))); CTX_AT(1281, 36); e727(CTX_ME _t17, _t18, _t19, _t20, _t21, _t22, _t23); });
+        if (((l13 <= ((t0)(0ULL))) || (((t15)(ctx_as_s((int64_t)(l13), 0, INT64_MAX, "usize", 1282, 22, &w_os__wide_path, CTX_UPV))) > ((t15)(32767ULL))))) {
+            (CTX_AT(1283, 22), f_os__free_wide(CTX_ME (&(*l0)), l7));
+            return ({ t259 _t24; t486 _t25 = (CTX_AT(1284, 28), f_os__too_longmutu16_5e7becfb(CTX_ME0)); if ((_t25.tag == 0)) { l14 = _t25.p.v0.m_value; {
                 _t24 = ((t259){ .tag = 0, .p.v0 = { .m_value = l14, } });
             } } else if ((_t25.tag == 1)) { l15 = _t25.p.v1.m_error; {
                 _t24 = ((t259){ .tag = 1, .p.v1 = { .m_error = ({ t108 _t26; t485 _t27 = l15; if ((_t27.tag == 0)) { l16 = _t27.p.v0.m_code; {
@@ -28863,7 +28863,7 @@ static t259 f_os__wide_path(CTX_UP t2 l0, t8 l1, t256 l2) {
                 } } _t26; }), } });
             } } _t24; });
         }
-        (*({ t256 _t28 = (l7); uint64_t _t29 = ((t15)(ctx_as_s((int64_t)(l13), 0, INT64_MAX, "usize", 1272, 13, &w_os__wide_path, CTX_UPV))); _t28.m_ptr + ctx_idx(_t29, _t28.m_len, 1272, 12, &w_os__wide_path, CTX_UPV); })) = ((t262)(0ULL));
+        (*({ t256 _t28 = (l7); uint64_t _t29 = ((t15)(ctx_as_s((int64_t)(l13), 0, INT64_MAX, "usize", 1286, 13, &w_os__wide_path, CTX_UPV))); _t28.m_ptr + ctx_idx(_t29, _t28.m_len, 1286, 12, &w_os__wide_path, CTX_UPV); })) = ((t262)(0ULL));
         return ((t259){ .tag = 0, .p.v0 = { .m_value = l7, } });
     }
     __builtin_unreachable();
@@ -28876,7 +28876,7 @@ static t29 f_os__free_wide(CTX_UP t2 l0, t256 l1) {
     CTX_FRAME(&w_os__free_wide);
     {
         if (((l1).m_len > ((t15)(512ULL)))) {
-            (CTX_AT(1278, 43), e728(CTX_ME (&(*l0)), ((t43)((l1).m_ptr))));
+            (CTX_AT(1292, 43), e728(CTX_ME (&(*l0)), ((t43)((l1).m_ptr))));
         }
     }
 }
@@ -28917,7 +28917,7 @@ static t260 f_os__failedu64_85b811de(CTX_UP t23 l0) {
                 _t10 = ((t258){ .tag = 5 });
             } } _t10; }), } });
         }
-        return ((t260){ .tag = 1, .p.v1 = { .m_error = ({ t258 _t12; t485 _t13 = ((t485){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 2118, 34, &w_os__failedu64_85b811de, CTX_UPV))), } }); if ((_t13.tag == 0)) { l1 = _t13.p.v0.m_code; {
+        return ((t260){ .tag = 1, .p.v1 = { .m_error = ({ t258 _t12; t485 _t13 = ((t485){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 2132, 34, &w_os__failedu64_85b811de, CTX_UPV))), } }); if ((_t13.tag == 0)) { l1 = _t13.p.v0.m_code; {
             _t12 = ((t258){ .tag = 6, .p.v6 = { .m_code = l1, } });
         } } _t12; }), } });
     }
@@ -31336,11 +31336,11 @@ static t204 f_os__utf16_of(CTX_UP t8 l0, t256 l1) {
         if (((l0).m_len > (l1).m_len)) {
             return ((t204){0});
         }
-        l2 = ({ t23 _t0 = ((t23)(65001ULL)); t23 _t1 = ((t23)(0ULL)); t43 _t2 = (l0).m_ptr; t0 _t3 = ((t0)(ctx_as_u((uint64_t)((l0).m_len), INT32_MAX, "i32", 1245, 66, &w_os__utf16_of, CTX_UPV))); t166 _t4 = ((t166)((l1).m_ptr)); t0 _t5 = ((t0)(ctx_as_u((uint64_t)((l1).m_len), INT32_MAX, "i32", 1245, 105, &w_os__utf16_of, CTX_UPV))); CTX_AT(1245, 22); e834(CTX_ME _t0, _t1, _t2, _t3, _t4, _t5); });
+        l2 = ({ t23 _t0 = ((t23)(65001ULL)); t23 _t1 = ((t23)(0ULL)); t43 _t2 = (l0).m_ptr; t0 _t3 = ((t0)(ctx_as_u((uint64_t)((l0).m_len), INT32_MAX, "i32", 1259, 66, &w_os__utf16_of, CTX_UPV))); t166 _t4 = ((t166)((l1).m_ptr)); t0 _t5 = ((t0)(ctx_as_u((uint64_t)((l1).m_len), INT32_MAX, "i32", 1259, 105, &w_os__utf16_of, CTX_UPV))); CTX_AT(1259, 22); e834(CTX_ME _t0, _t1, _t2, _t3, _t4, _t5); });
         if ((l2 <= ((t0)(0ULL)))) {
             return ((t204){0});
         }
-        return ((t204){ .tag = 1, .p.v1.m_value = ((t15)(ctx_as_s((int64_t)(l2), 0, INT64_MAX, "usize", 1247, 16, &w_os__utf16_of, CTX_UPV))) });
+        return ((t204){ .tag = 1, .p.v1.m_value = ((t15)(ctx_as_s((int64_t)(l2), 0, INT64_MAX, "usize", 1261, 16, &w_os__utf16_of, CTX_UPV))) });
     }
     __builtin_unreachable();
 }
@@ -31356,19 +31356,19 @@ static t8 f_os__utf8_of(CTX_UP t40 l0, t256 l1) {
     CTX_FRAME(&w_os__utf8_of);
     {
         if (((l1).m_len == ((t15)(0ULL)))) {
-            return (CTX_AT(1232, 48), f_slice__emptyu8_5539fb6e(CTX_ME0));
+            return (CTX_AT(1246, 48), f_slice__emptyu8_5539fb6e(CTX_ME0));
         }
-        l2 = ({ t163 _t0 = (l1).m_ptr; t0 _t1 = ((t0)(ctx_as_u((uint64_t)((l1).m_len), INT32_MAX, "i32", 1233, 43, &w_os__utf8_of, CTX_UPV))); t114 _t2 = ((t114)(0)); t0 _t3 = ((t0)(0ULL)); t114 _t4 = ((t114)(0)); t167 _t5 = ((t167)(0)); CTX_AT(1233, 23); f_os__narrow(CTX_ME _t0, _t1, _t2, _t3, _t4, _t5); });
+        l2 = ({ t163 _t0 = (l1).m_ptr; t0 _t1 = ((t0)(ctx_as_u((uint64_t)((l1).m_len), INT32_MAX, "i32", 1247, 43, &w_os__utf8_of, CTX_UPV))); t114 _t2 = ((t114)(0)); t0 _t3 = ((t0)(0ULL)); t114 _t4 = ((t114)(0)); t167 _t5 = ((t167)(0)); CTX_AT(1247, 23); f_os__narrow(CTX_ME _t0, _t1, _t2, _t3, _t4, _t5); });
         if ((l2 <= ((t0)(0ULL)))) {
-            return (CTX_AT(1234, 44), f_slice__emptyu8_5539fb6e(CTX_ME0));
+            return (CTX_AT(1248, 44), f_slice__emptyu8_5539fb6e(CTX_ME0));
         }
-        l3 = ({ t43 _t6; t114 _t7 = ({ t40 _t8 = (&(*l0)); t15 _t9 = ((t15)(ctx_as_s((int64_t)(l2), 0, INT64_MAX, "usize", 1235, 41, &w_os__utf8_of, CTX_UPV))); CTX_AT(1235, 25); e434(CTX_ME _t8, _t9); }); if ((_t7 != 0)) { l4 = _t7; {
+        l3 = ({ t43 _t6; t114 _t7 = ({ t40 _t8 = (&(*l0)); t15 _t9 = ((t15)(ctx_as_s((int64_t)(l2), 0, INT64_MAX, "usize", 1249, 41, &w_os__utf8_of, CTX_UPV))); CTX_AT(1249, 25); e434(CTX_ME _t8, _t9); }); if ((_t7 != 0)) { l4 = _t7; {
             _t6 = l4;
         } } else if ((_t7 == 0)) { {
-            return (CTX_AT(1235, 89), f_slice__emptyu8_5539fb6e(CTX_ME0));
+            return (CTX_AT(1249, 89), f_slice__emptyu8_5539fb6e(CTX_ME0));
         } } _t6; });
-        l5 = ({ t43 _t10 = l3; t15 _t11 = ((t15)(ctx_as_s((int64_t)(l2), 0, INT64_MAX, "usize", 1236, 29, &w_os__utf8_of, CTX_UPV))); ((t8){ .m_ptr = _t10, .m_len = _t11, }); });
-        (void)({ t163 _t12 = (l1).m_ptr; t0 _t13 = ((t0)(ctx_as_u((uint64_t)((l1).m_len), INT32_MAX, "i32", 1237, 39, &w_os__utf8_of, CTX_UPV))); t114 _t14 = ((t114)(l3)); t0 _t15 = l2; t114 _t16 = ((t114)(0)); t167 _t17 = ((t167)(0)); CTX_AT(1237, 19); f_os__narrow(CTX_ME _t12, _t13, _t14, _t15, _t16, _t17); });
+        l5 = ({ t43 _t10 = l3; t15 _t11 = ((t15)(ctx_as_s((int64_t)(l2), 0, INT64_MAX, "usize", 1250, 29, &w_os__utf8_of, CTX_UPV))); ((t8){ .m_ptr = _t10, .m_len = _t11, }); });
+        (void)({ t163 _t12 = (l1).m_ptr; t0 _t13 = ((t0)(ctx_as_u((uint64_t)((l1).m_len), INT32_MAX, "i32", 1251, 39, &w_os__utf8_of, CTX_UPV))); t114 _t14 = ((t114)(l3)); t0 _t15 = l2; t114 _t16 = ((t114)(0)); t167 _t17 = ((t167)(0)); CTX_AT(1251, 19); f_os__narrow(CTX_ME _t12, _t13, _t14, _t15, _t16, _t17); });
         return l5;
     }
     __builtin_unreachable();
@@ -31701,7 +31701,7 @@ static t23 f_os__processors(CTX_UP t40 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__processors);
     {
-        l1 = (CTX_AT(1209, 40), e838(CTX_ME (&(*l0)), ((t262)(65535ULL))));
+        l1 = (CTX_AT(1223, 40), e838(CTX_ME (&(*l0)), ((t262)(65535ULL))));
         return ({ l2 = l1; ({ l3 = ((t23)(1ULL)); ({ t23 _t0; if ((l2 >= l3)) {
             _t0 = l2;
         } else {
@@ -32754,13 +32754,13 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
         l4 = ((t15)(1ULL));
         l5 = ((t15)(0ULL));
         while ((l5 < (l1).m_len)) {
-            l4 = ctx_add_u64(({ t15 _t0 = l4; t15 _t1 = ctx_mul_u64(((t15)(2ULL)), ((*({ t6 _t2 = (l1); uint64_t _t3 = l5; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 677, 50, &w_os__spawn, CTX_UPV); }))).m_len, 677, 44, &w_os__spawn, CTX_UPV); ctx_add_u64(_t0, _t1, 677, 40, &w_os__spawn, CTX_UPV); }), ((t15)(3ULL)), 677, 58, &w_os__spawn, CTX_UPV);
-            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 677, 69, &w_os__spawn, CTX_UPV);
+            l4 = ctx_add_u64(({ t15 _t0 = l4; t15 _t1 = ctx_mul_u64(((t15)(2ULL)), ((*({ t6 _t2 = (l1); uint64_t _t3 = l5; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 691, 50, &w_os__spawn, CTX_UPV); }))).m_len, 691, 44, &w_os__spawn, CTX_UPV); ctx_add_u64(_t0, _t1, 691, 40, &w_os__spawn, CTX_UPV); }), ((t15)(3ULL)), 691, 58, &w_os__spawn, CTX_UPV);
+            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 691, 69, &w_os__spawn, CTX_UPV);
         }
-        l6 = ({ t43 _t4; t114 _t5 = (CTX_AT(678, 28), e434(CTX_ME (&(*l0)), l4)); if ((_t5 != 0)) { l7 = _t5; {
+        l6 = ({ t43 _t4; t114 _t5 = (CTX_AT(692, 28), e434(CTX_ME (&(*l0)), l4)); if ((_t5 != 0)) { l7 = _t5; {
             _t4 = l7;
         } } else if ((_t5 == 0)) { {
-            return ({ t321 _t6; t562 _t7 = (CTX_AT(678, 92), f_os__out_of_memoryproc__Child_0aa23820(CTX_ME0)); if ((_t7.tag == 0)) { l8 = _t7.p.v0.m_value; {
+            return ({ t321 _t6; t562 _t7 = (CTX_AT(692, 92), f_os__out_of_memoryproc__Child_0aa23820(CTX_ME0)); if ((_t7.tag == 0)) { l8 = _t7.p.v0.m_value; {
                 _t6 = ((t321){ .tag = 0, .p.v0 = { .m_value = l8, } });
             } } else if ((_t7.tag == 1)) { l9 = _t7.p.v1.m_error; {
                 _t6 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t8; t557 _t9 = l9; if ((_t9.tag == 0)) { l10 = _t9.p.v0.m_code; {
@@ -32770,23 +32770,23 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
         } } _t4; });
         /* defer */
         l11 = ((t8){ .m_ptr = l6, .m_len = l4, });
-        l12 = ({ t8 _t10 = l11; t15 _t11 = ((t15)(0ULL)); t8 _t12 = (*({ t6 _t13 = (l1); uint64_t _t14 = ((t15)(0ULL)); _t13.m_ptr + ctx_idx(_t14, _t13.m_len, 683, 62, &w_os__spawn, CTX_UPV); })); CTX_AT(683, 30); f_os__quote_arg(CTX_ME _t10, _t11, _t12); });
+        l12 = ({ t8 _t10 = l11; t15 _t11 = ((t15)(0ULL)); t8 _t12 = (*({ t6 _t13 = (l1); uint64_t _t14 = ((t15)(0ULL)); _t13.m_ptr + ctx_idx(_t14, _t13.m_len, 697, 62, &w_os__spawn, CTX_UPV); })); CTX_AT(697, 30); f_os__quote_arg(CTX_ME _t10, _t11, _t12); });
         l5 = ((t15)(0ULL));
         while ((l5 < l12)) {
-            if (((*({ t8 _t15 = (l11); uint64_t _t16 = l5; _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 686, 20, &w_os__spawn, CTX_UPV); })) == ((t16)(47ULL)))) {
-                (*({ t8 _t17 = (l11); uint64_t _t18 = l5; _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 686, 37, &w_os__spawn, CTX_UPV); })) = ((t16)(92ULL));
+            if (((*({ t8 _t15 = (l11); uint64_t _t16 = l5; _t15.m_ptr + ctx_idx(_t16, _t15.m_len, 700, 20, &w_os__spawn, CTX_UPV); })) == ((t16)(47ULL)))) {
+                (*({ t8 _t17 = (l11); uint64_t _t18 = l5; _t17.m_ptr + ctx_idx(_t18, _t17.m_len, 700, 37, &w_os__spawn, CTX_UPV); })) = ((t16)(92ULL));
             }
-            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 687, 19, &w_os__spawn, CTX_UPV);
+            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 701, 19, &w_os__spawn, CTX_UPV);
         }
         l5 = ((t15)(1ULL));
         while ((l5 < (l1).m_len)) {
-            l12 = ({ t8 _t19 = l11; t15 _t20 = l12; t8 _t21 = (*({ t6 _t22 = (l1); uint64_t _t23 = l5; _t22.m_ptr + ctx_idx(_t23, _t22.m_len, 691, 54, &w_os__spawn, CTX_UPV); })); CTX_AT(691, 26); f_os__quote_arg(CTX_ME _t19, _t20, _t21); });
-            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 692, 19, &w_os__spawn, CTX_UPV);
+            l12 = ({ t8 _t19 = l11; t15 _t20 = l12; t8 _t21 = (*({ t6 _t22 = (l1); uint64_t _t23 = l5; _t22.m_ptr + ctx_idx(_t23, _t22.m_len, 705, 54, &w_os__spawn, CTX_UPV); })); CTX_AT(705, 26); f_os__quote_arg(CTX_ME _t19, _t20, _t21); });
+            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 706, 19, &w_os__spawn, CTX_UPV);
         }
-        l13 = ({ t43 _t24; t114 _t25 = ({ t40 _t26 = (&(*l0)); t15 _t27 = ctx_mul_u64(ctx_add_u64(l12, ((t15)(1ULL)), 694, 48, &w_os__spawn, CTX_UPV), ((t15)(2ULL)), 694, 53, &w_os__spawn, CTX_UPV); CTX_AT(694, 29); e434(CTX_ME _t26, _t27); }); if ((_t25 != 0)) { l14 = _t25; {
+        l13 = ({ t43 _t24; t114 _t25 = ({ t40 _t26 = (&(*l0)); t15 _t27 = ctx_mul_u64(ctx_add_u64(l12, ((t15)(1ULL)), 708, 48, &w_os__spawn, CTX_UPV), ((t15)(2ULL)), 708, 53, &w_os__spawn, CTX_UPV); CTX_AT(708, 29); e434(CTX_ME _t26, _t27); }); if ((_t25 != 0)) { l14 = _t25; {
             _t24 = l14;
         } } else if ((_t25 == 0)) { {
-            { t321 _t28 = ({ t321 _t29; t562 _t30 = (CTX_AT(694, 101), f_os__out_of_memoryproc__Child_0aa23820(CTX_ME0)); if ((_t30.tag == 0)) { l15 = _t30.p.v0.m_value; {
+            { t321 _t28 = ({ t321 _t29; t562 _t30 = (CTX_AT(708, 101), f_os__out_of_memoryproc__Child_0aa23820(CTX_ME0)); if ((_t30.tag == 0)) { l15 = _t30.p.v0.m_value; {
                 _t29 = ((t321){ .tag = 0, .p.v0 = { .m_value = l15, } });
             } } else if ((_t30.tag == 1)) { l16 = _t30.p.v1.m_error; {
                 _t29 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t31; t557 _t32 = l16; if ((_t32.tag == 0)) { l17 = _t32.p.v0.m_code; {
@@ -32794,47 +32794,47 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
                 } } _t31; }), } });
             } } _t29; });
             {
-                (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
             } return _t28; }
         } } _t24; });
         /* defer */
-        l18 = ({ t163 _t33 = ((t163)(l13)); t15 _t34 = ctx_add_u64(l12, ((t15)(1ULL)), 696, 53, &w_os__spawn, CTX_UPV); ((t256){ .m_ptr = _t33, .m_len = _t34, }); });
+        l18 = ({ t163 _t33 = ((t163)(l13)); t15 _t34 = ctx_add_u64(l12, ((t15)(1ULL)), 710, 53, &w_os__spawn, CTX_UPV); ((t256){ .m_ptr = _t33, .m_len = _t34, }); });
         l19 = ({ t0 _t35; if ((l12 == ((t15)(0ULL)))) {
             _t35 = ((t0)(0ULL));
         } else {
-            _t35 = ({ t23 _t36 = ((t23)(65001ULL)); t23 _t37 = ((t23)(0ULL)); t43 _t38 = l6; t0 _t39 = ((t0)(ctx_as_u((uint64_t)(l12), INT32_MAX, "i32", 697, 88, &w_os__spawn, CTX_UPV))); t166 _t40 = ((t166)((l18).m_ptr)); t0 _t41 = ((t0)(ctx_as_u((uint64_t)(l12), INT32_MAX, "i32", 697, 123, &w_os__spawn, CTX_UPV))); CTX_AT(697, 45); e834(CTX_ME _t36, _t37, _t38, _t39, _t40, _t41); });
+            _t35 = ({ t23 _t36 = ((t23)(65001ULL)); t23 _t37 = ((t23)(0ULL)); t43 _t38 = l6; t0 _t39 = ((t0)(ctx_as_u((uint64_t)(l12), INT32_MAX, "i32", 711, 88, &w_os__spawn, CTX_UPV))); t166 _t40 = ((t166)((l18).m_ptr)); t0 _t41 = ((t0)(ctx_as_u((uint64_t)(l12), INT32_MAX, "i32", 711, 123, &w_os__spawn, CTX_UPV))); CTX_AT(711, 45); e834(CTX_ME _t36, _t37, _t38, _t39, _t40, _t41); });
         } _t35; });
-        (*({ t256 _t42 = (l18); uint64_t _t43 = ((t15)(ctx_as_s((int64_t)(l19), 0, INT64_MAX, "usize", 698, 14, &w_os__spawn, CTX_UPV))); _t42.m_ptr + ctx_idx(_t43, _t42.m_len, 698, 13, &w_os__spawn, CTX_UPV); })) = ((t262)(0ULL));
-        l20 = ({ t163 _t44; t166 _t45 = (CTX_AT(701, 47), e641(CTX_ME (&(*l0)))); if ((_t45 != 0)) { l21 = _t45; {
+        (*({ t256 _t42 = (l18); uint64_t _t43 = ((t15)(ctx_as_s((int64_t)(l19), 0, INT64_MAX, "usize", 712, 14, &w_os__spawn, CTX_UPV))); _t42.m_ptr + ctx_idx(_t43, _t42.m_len, 712, 13, &w_os__spawn, CTX_UPV); })) = ((t262)(0ULL));
+        l20 = ({ t163 _t44; t166 _t45 = (CTX_AT(715, 47), e641(CTX_ME (&(*l0)))); if ((_t45 != 0)) { l21 = _t45; {
             _t44 = l21;
         } } else if ((_t45 == 0)) { {
-            { t321 _t46 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t47; t557 _t48 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)((CTX_AT(701, 112), e480(CTX_ME (&(*l0))))), INT64_MAX, "i64", 701, 93, &w_os__spawn, CTX_UPV))), } }); if ((_t48.tag == 0)) { l22 = _t48.p.v0.m_code; {
+            { t321 _t46 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t47; t557 _t48 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)((CTX_AT(715, 112), e480(CTX_ME (&(*l0))))), INT64_MAX, "i64", 715, 93, &w_os__spawn, CTX_UPV))), } }); if ((_t48.tag == 0)) { l22 = _t48.p.v0.m_code; {
                 _t47 = ((t182){ .tag = 3, .p.v3 = { .m_code = l22, } });
             } } _t47; }), } });
             {
-                (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
             }
             {
-                (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
             } return _t46; }
         } } _t44; });
         /* defer */
         l23 = ((t15)(1ULL));
         l24 = ((t15)(0ULL));
         while (((*(l20 + l24)) != ((t262)(0ULL)))) {
-            l25 = (CTX_AT(706, 31), f_os__wide_len(CTX_ME (l20 + l24)));
-            l23 = ctx_add_u64(ctx_add_u64(l23, l25, 707, 27, &w_os__spawn, CTX_UPV), ((t15)(1ULL)), 707, 33, &w_os__spawn, CTX_UPV);
-            l24 = ctx_add_u64(ctx_add_u64(l24, l25, 708, 21, &w_os__spawn, CTX_UPV), ((t15)(1ULL)), 708, 27, &w_os__spawn, CTX_UPV);
+            l25 = (CTX_AT(720, 31), f_os__wide_len(CTX_ME (l20 + l24)));
+            l23 = ctx_add_u64(ctx_add_u64(l23, l25, 721, 27, &w_os__spawn, CTX_UPV), ((t15)(1ULL)), 721, 33, &w_os__spawn, CTX_UPV);
+            l24 = ctx_add_u64(ctx_add_u64(l24, l25, 722, 21, &w_os__spawn, CTX_UPV), ((t15)(1ULL)), 722, 27, &w_os__spawn, CTX_UPV);
         }
         l5 = ((t15)(0ULL));
         while ((l5 < (l3).m_len)) {
-            l23 = ctx_add_u64(({ t15 _t49 = l23; t15 _t50 = ((*({ t6 _t51 = (l3); uint64_t _t52 = l5; _t51.m_ptr + ctx_idx(_t52, _t51.m_len, 711, 48, &w_os__spawn, CTX_UPV); }))).m_len; ctx_add_u64(_t49, _t50, 711, 43, &w_os__spawn, CTX_UPV); }), ((t15)(1ULL)), 711, 56, &w_os__spawn, CTX_UPV);
-            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 711, 67, &w_os__spawn, CTX_UPV);
+            l23 = ctx_add_u64(({ t15 _t49 = l23; t15 _t50 = ((*({ t6 _t51 = (l3); uint64_t _t52 = l5; _t51.m_ptr + ctx_idx(_t52, _t51.m_len, 725, 48, &w_os__spawn, CTX_UPV); }))).m_len; ctx_add_u64(_t49, _t50, 725, 43, &w_os__spawn, CTX_UPV); }), ((t15)(1ULL)), 725, 56, &w_os__spawn, CTX_UPV);
+            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 725, 67, &w_os__spawn, CTX_UPV);
         }
-        l26 = ({ t43 _t53; t114 _t54 = ({ t40 _t55 = (&(*l0)); t15 _t56 = ctx_mul_u64(l23, ((t15)(2ULL)), 712, 51, &w_os__spawn, CTX_UPV); CTX_AT(712, 29); e434(CTX_ME _t55, _t56); }); if ((_t54 != 0)) { l27 = _t54; {
+        l26 = ({ t43 _t53; t114 _t54 = ({ t40 _t55 = (&(*l0)); t15 _t56 = ctx_mul_u64(l23, ((t15)(2ULL)), 726, 51, &w_os__spawn, CTX_UPV); CTX_AT(726, 29); e434(CTX_ME _t55, _t56); }); if ((_t54 != 0)) { l27 = _t54; {
             _t53 = l27;
         } } else if ((_t54 == 0)) { {
-            { t321 _t57 = ({ t321 _t58; t562 _t59 = (CTX_AT(712, 99), f_os__out_of_memoryproc__Child_0aa23820(CTX_ME0)); if ((_t59.tag == 0)) { l28 = _t59.p.v0.m_value; {
+            { t321 _t57 = ({ t321 _t58; t562 _t59 = (CTX_AT(726, 99), f_os__out_of_memoryproc__Child_0aa23820(CTX_ME0)); if ((_t59.tag == 0)) { l28 = _t59.p.v0.m_value; {
                 _t58 = ((t321){ .tag = 0, .p.v0 = { .m_value = l28, } });
             } } else if ((_t59.tag == 1)) { l29 = _t59.p.v1.m_error; {
                 _t58 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t60; t557 _t61 = l29; if ((_t61.tag == 0)) { l30 = _t61.p.v0.m_code; {
@@ -32842,13 +32842,13 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
                 } } _t60; }), } });
             } } _t58; });
             {
-                (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
             }
             {
-                (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
             }
             {
-                (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
             } return _t57; }
         } } _t53; });
         /* defer */
@@ -32856,32 +32856,32 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
         l32 = ((t15)(0ULL));
         l24 = ((t15)(0ULL));
         while (((*(l20 + l24)) != ((t262)(0ULL)))) {
-            l33 = (CTX_AT(718, 31), f_os__wide_len(CTX_ME (l20 + l24)));
-            if ((!(CTX_AT(719, 28), f_os__replaced(CTX_ME (&(*l0)), ((t256){ .m_ptr = (l20 + l24), .m_len = l33, }), l3)))) {
+            l33 = (CTX_AT(732, 31), f_os__wide_len(CTX_ME (l20 + l24)));
+            if ((!(CTX_AT(733, 28), f_os__replaced(CTX_ME (&(*l0)), ((t256){ .m_ptr = (l20 + l24), .m_len = l33, }), l3)))) {
                 l34 = ((t15)(0ULL));
                 while ((l34 <= l33)) {
-                    { t262 _t62 = (*({ t163 _t63 = l20; t15 _t64 = ctx_add_u64(l24, l34, 722, 56, &w_os__spawn, CTX_UPV); (_t63 + _t64); })); (*({ t256 _t65 = (l31); uint64_t _t66 = ctx_add_u64(l32, l34, 722, 32, &w_os__spawn, CTX_UPV); _t65.m_ptr + ctx_idx(_t66, _t65.m_len, 722, 26, &w_os__spawn, CTX_UPV); })) = _t62; }
-                    l34 = ctx_add_u64(l34, ((t15)(1ULL)), 723, 27, &w_os__spawn, CTX_UPV);
+                    { t262 _t62 = (*({ t163 _t63 = l20; t15 _t64 = ctx_add_u64(l24, l34, 736, 56, &w_os__spawn, CTX_UPV); (_t63 + _t64); })); (*({ t256 _t65 = (l31); uint64_t _t66 = ctx_add_u64(l32, l34, 736, 32, &w_os__spawn, CTX_UPV); _t65.m_ptr + ctx_idx(_t66, _t65.m_len, 736, 26, &w_os__spawn, CTX_UPV); })) = _t62; }
+                    l34 = ctx_add_u64(l34, ((t15)(1ULL)), 737, 27, &w_os__spawn, CTX_UPV);
                 }
-                l32 = ctx_add_u64(ctx_add_u64(l32, l33, 725, 29, &w_os__spawn, CTX_UPV), ((t15)(1ULL)), 725, 35, &w_os__spawn, CTX_UPV);
+                l32 = ctx_add_u64(ctx_add_u64(l32, l33, 739, 29, &w_os__spawn, CTX_UPV), ((t15)(1ULL)), 739, 35, &w_os__spawn, CTX_UPV);
             }
-            l24 = ctx_add_u64(ctx_add_u64(l24, l33, 727, 21, &w_os__spawn, CTX_UPV), ((t15)(1ULL)), 727, 27, &w_os__spawn, CTX_UPV);
+            l24 = ctx_add_u64(ctx_add_u64(l24, l33, 741, 21, &w_os__spawn, CTX_UPV), ((t15)(1ULL)), 741, 27, &w_os__spawn, CTX_UPV);
         }
         l5 = ((t15)(0ULL));
         while ((l5 < (l3).m_len)) {
-            l35 = (*({ t6 _t67 = (l3); uint64_t _t68 = l5; _t67.m_ptr + ctx_idx(_t68, _t67.m_len, 731, 24, &w_os__spawn, CTX_UPV); }));
-            l36 = ({ t23 _t69 = ((t23)(65001ULL)); t23 _t70 = ((t23)(0ULL)); t43 _t71 = (l35).m_ptr; t0 _t72 = ((t0)(ctx_as_u((uint64_t)((l35).m_len), INT32_MAX, "i32", 732, 70, &w_os__spawn, CTX_UPV))); t166 _t73 = ((t166)((({ t256 _t75 = (l31); uint64_t _t76 = l32; uint64_t _t77 = _t75.m_len; ctx_range(_t76, _t77, _t75.m_len, 732, 98, &w_os__spawn, CTX_UPV); (t256){ .m_ptr = _t75.m_ptr + _t76, .m_len = _t77 - _t76 }; })).m_ptr)); t0 _t74 = ((t0)(ctx_as_u((uint64_t)(ctx_sub_u64(l23, l32, 732, 133, &w_os__spawn, CTX_UPV)), INT32_MAX, "i32", 732, 118, &w_os__spawn, CTX_UPV))); CTX_AT(732, 26); e834(CTX_ME _t69, _t70, _t71, _t72, _t73, _t74); });
-            l32 = ({ t15 _t78 = l32; t15 _t79 = ((t15)(ctx_as_s((int64_t)(l36), 0, INT64_MAX, "usize", 733, 27, &w_os__spawn, CTX_UPV))); ctx_add_u64(_t78, _t79, 733, 25, &w_os__spawn, CTX_UPV); });
-            (*({ t256 _t80 = (l31); uint64_t _t81 = l32; _t80.m_ptr + ctx_idx(_t81, _t80.m_len, 734, 18, &w_os__spawn, CTX_UPV); })) = ((t262)(0ULL));
-            l32 = ctx_add_u64(l32, ((t15)(1ULL)), 735, 25, &w_os__spawn, CTX_UPV);
-            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 736, 19, &w_os__spawn, CTX_UPV);
+            l35 = (*({ t6 _t67 = (l3); uint64_t _t68 = l5; _t67.m_ptr + ctx_idx(_t68, _t67.m_len, 745, 24, &w_os__spawn, CTX_UPV); }));
+            l36 = ({ t23 _t69 = ((t23)(65001ULL)); t23 _t70 = ((t23)(0ULL)); t43 _t71 = (l35).m_ptr; t0 _t72 = ((t0)(ctx_as_u((uint64_t)((l35).m_len), INT32_MAX, "i32", 746, 70, &w_os__spawn, CTX_UPV))); t166 _t73 = ((t166)((({ t256 _t75 = (l31); uint64_t _t76 = l32; uint64_t _t77 = _t75.m_len; ctx_range(_t76, _t77, _t75.m_len, 746, 98, &w_os__spawn, CTX_UPV); (t256){ .m_ptr = _t75.m_ptr + _t76, .m_len = _t77 - _t76 }; })).m_ptr)); t0 _t74 = ((t0)(ctx_as_u((uint64_t)(ctx_sub_u64(l23, l32, 746, 133, &w_os__spawn, CTX_UPV)), INT32_MAX, "i32", 746, 118, &w_os__spawn, CTX_UPV))); CTX_AT(746, 26); e834(CTX_ME _t69, _t70, _t71, _t72, _t73, _t74); });
+            l32 = ({ t15 _t78 = l32; t15 _t79 = ((t15)(ctx_as_s((int64_t)(l36), 0, INT64_MAX, "usize", 747, 27, &w_os__spawn, CTX_UPV))); ctx_add_u64(_t78, _t79, 747, 25, &w_os__spawn, CTX_UPV); });
+            (*({ t256 _t80 = (l31); uint64_t _t81 = l32; _t80.m_ptr + ctx_idx(_t81, _t80.m_len, 748, 18, &w_os__spawn, CTX_UPV); })) = ((t262)(0ULL));
+            l32 = ctx_add_u64(l32, ((t15)(1ULL)), 749, 25, &w_os__spawn, CTX_UPV);
+            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 750, 19, &w_os__spawn, CTX_UPV);
         }
-        (*({ t256 _t82 = (l31); uint64_t _t83 = l32; _t82.m_ptr + ctx_idx(_t83, _t82.m_len, 738, 14, &w_os__spawn, CTX_UPV); })) = ((t262)(0ULL));
+        (*({ t256 _t82 = (l31); uint64_t _t83 = l32; _t82.m_ptr + ctx_idx(_t83, _t82.m_len, 752, 14, &w_os__spawn, CTX_UPV); })) = ((t262)(0ULL));
         l37 = ((t166)(0));
-        l38 = ({ t43 _t84; t114 _t85 = ({ t40 _t86 = (&(*l0)); t15 _t87 = ctx_mul_u64(ctx_add_u64((((*l2)).m_dir).m_len, ((t15)(1ULL)), 742, 66, &w_os__spawn, CTX_UPV), ((t15)(2ULL)), 742, 71, &w_os__spawn, CTX_UPV); CTX_AT(742, 33); e434(CTX_ME _t86, _t87); }); if ((_t85 != 0)) { l39 = _t85; {
+        l38 = ({ t43 _t84; t114 _t85 = ({ t40 _t86 = (&(*l0)); t15 _t87 = ctx_mul_u64(ctx_add_u64((((*l2)).m_dir).m_len, ((t15)(1ULL)), 756, 66, &w_os__spawn, CTX_UPV), ((t15)(2ULL)), 756, 71, &w_os__spawn, CTX_UPV); CTX_AT(756, 33); e434(CTX_ME _t86, _t87); }); if ((_t85 != 0)) { l39 = _t85; {
             _t84 = l39;
         } } else if ((_t85 == 0)) { {
-            { t321 _t88 = ({ t321 _t89; t562 _t90 = (CTX_AT(742, 119), f_os__out_of_memoryproc__Child_0aa23820(CTX_ME0)); if ((_t90.tag == 0)) { l40 = _t90.p.v0.m_value; {
+            { t321 _t88 = ({ t321 _t89; t562 _t90 = (CTX_AT(756, 119), f_os__out_of_memoryproc__Child_0aa23820(CTX_ME0)); if ((_t90.tag == 0)) { l40 = _t90.p.v0.m_value; {
                 _t89 = ((t321){ .tag = 0, .p.v0 = { .m_value = l40, } });
             } } else if ((_t90.tag == 1)) { l41 = _t90.p.v1.m_error; {
                 _t89 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t91; t557 _t92 = l41; if ((_t92.tag == 0)) { l42 = _t92.p.v0.m_code; {
@@ -32889,44 +32889,44 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
                 } } _t91; }), } });
             } } _t89; });
             {
-                (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
             }
             {
-                (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
             }
             {
-                (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
             }
             {
-                (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
             } return _t88; }
         } } _t84; });
         /* defer */
         if (((((*l2)).m_dir).m_len > ((t15)(0ULL)))) {
-            l43 = ({ t163 _t93 = ((t163)(l38)); t15 _t94 = ctx_add_u64((((*l2)).m_dir).m_len, ((t15)(1ULL)), 745, 75, &w_os__spawn, CTX_UPV); ((t256){ .m_ptr = _t93, .m_len = _t94, }); });
-            l44 = ({ t15 _t95; t204 _t96 = ({ t8 _t97 = ((*l2)).m_dir; t256 _t98 = ({ t256 _t99 = (l43); uint64_t _t100 = ((t15)(0ULL)); uint64_t _t101 = (((*l2)).m_dir).m_len; ctx_range(_t100, _t101, _t99.m_len, 746, 59, &w_os__spawn, CTX_UPV); (t256){ .m_ptr = _t99.m_ptr + _t100, .m_len = _t101 - _t100 }; }); CTX_AT(746, 29); f_os__utf16_of(CTX_ME _t97, _t98); }); if ((_t96.tag == 1)) { l45 = _t96.p.v1.m_value; {
+            l43 = ({ t163 _t93 = ((t163)(l38)); t15 _t94 = ctx_add_u64((((*l2)).m_dir).m_len, ((t15)(1ULL)), 759, 75, &w_os__spawn, CTX_UPV); ((t256){ .m_ptr = _t93, .m_len = _t94, }); });
+            l44 = ({ t15 _t95; t204 _t96 = ({ t8 _t97 = ((*l2)).m_dir; t256 _t98 = ({ t256 _t99 = (l43); uint64_t _t100 = ((t15)(0ULL)); uint64_t _t101 = (((*l2)).m_dir).m_len; ctx_range(_t100, _t101, _t99.m_len, 760, 59, &w_os__spawn, CTX_UPV); (t256){ .m_ptr = _t99.m_ptr + _t100, .m_len = _t101 - _t100 }; }); CTX_AT(760, 29); f_os__utf16_of(CTX_ME _t97, _t98); }); if ((_t96.tag == 1)) { l45 = _t96.p.v1.m_value; {
                 _t95 = l45;
             } } else if ((_t96.tag == 0)) { {
                 { t321 _t102 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t103; t557 _t104 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(123ULL)), } }); if ((_t104.tag == 0)) { l46 = _t104.p.v0.m_code; {
                     _t103 = ((t182){ .tag = 3, .p.v3 = { .m_code = l46, } });
                 } } _t103; }), } });
                 {
-                    (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+                    (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
                 }
                 {
-                    (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                    (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
                 }
                 {
-                    (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                    (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
                 }
                 {
-                    (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                    (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
                 }
                 {
-                    (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                    (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
                 } return _t102; }
             } } _t95; });
-            (*({ t256 _t105 = (l43); uint64_t _t106 = l44; _t105.m_ptr + ctx_idx(_t106, _t105.m_len, 747, 17, &w_os__spawn, CTX_UPV); })) = ((t262)(0ULL));
+            (*({ t256 _t105 = (l43); uint64_t _t106 = l44; _t105.m_ptr + ctx_idx(_t106, _t105.m_len, 761, 17, &w_os__spawn, CTX_UPV); })) = ((t262)(0ULL));
             l37 = ((t166)((l43).m_ptr));
         }
         l47 = ((t558){{ ((t9)(0ULL)), ((t9)(0ULL)), ((t9)(0ULL)) }});
@@ -32946,153 +32946,153 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
                 } _t108; });
             } _t107; });
             { t177 _t109 = l51; if ((_t109.tag == 0)) { {
-                l52 = ({ t40 _t110 = (&(*l0)); t23 _t111 = (q23).a[ctx_idx(l50, 3, 765, 69, &w_os__spawn, CTX_UPV)]; CTX_AT(765, 41); e863(CTX_ME _t110, _t111); });
+                l52 = ({ t40 _t110 = (&(*l0)); t23 _t111 = (q23).a[ctx_idx(l50, 3, 779, 69, &w_os__spawn, CTX_UPV)]; CTX_AT(779, 41); e863(CTX_ME _t110, _t111); });
                 if (((l52 != ((t9)(0ULL))) && (l52 != ((t9)(18446744073709551615ULL))))) {
-                    { t9 _t112 = ({ t9 _t113; t563 _t114 = (CTX_AT(766, 84), f_os__inheritable(CTX_ME (&(*l0)), l52)); if ((_t114.tag == 0)) { l53 = _t114.p.v0.m_value; {
+                    { t9 _t112 = ({ t9 _t113; t563 _t114 = (CTX_AT(780, 84), f_os__inheritable(CTX_ME (&(*l0)), l52)); if ((_t114.tag == 0)) { l53 = _t114.p.v0.m_value; {
                         _t113 = l53;
                     } } else if ((_t114.tag == 1)) { l54 = _t114.p.v1.m_error; {
                         { t321 _t115 = ((t321){ .tag = 1, .p.v1 = { .m_error = l54, } });
                         {
                             if ((!l49)) {
-                                ({ t40 _t116 = (&(*l0)); t342 _t117 = ({ t342 _t118 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t119 = ((t15)(0ULL)); uint64_t _t120 = _t118.m_len; ctx_range(_t119, _t120, _t118.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t118.m_ptr + _t119, .m_len = _t120 - _t119 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t116, _t117); });
+                                ({ t40 _t116 = (&(*l0)); t342 _t117 = ({ t342 _t118 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t119 = ((t15)(0ULL)); uint64_t _t120 = _t118.m_len; ctx_range(_t119, _t120, _t118.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t118.m_ptr + _t119, .m_len = _t120 - _t119 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t116, _t117); });
                             }
                         }
                         {
-                            ({ t40 _t121 = (&(*l0)); t342 _t122 = ({ t342 _t123 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t124 = ((t15)(0ULL)); uint64_t _t125 = _t123.m_len; ctx_range(_t124, _t125, _t123.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t123.m_ptr + _t124, .m_len = _t125 - _t124 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t121, _t122); });
+                            ({ t40 _t121 = (&(*l0)); t342 _t122 = ({ t342 _t123 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t124 = ((t15)(0ULL)); uint64_t _t125 = _t123.m_len; ctx_range(_t124, _t125, _t123.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t123.m_ptr + _t124, .m_len = _t125 - _t124 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t121, _t122); });
                         }
                         {
-                            (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+                            (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
                         }
                         {
-                            (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                            (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
                         }
                         {
-                            (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                            (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
                         }
                         {
-                            (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                            (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
                         }
                         {
-                            (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                            (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
                         } return _t115; }
-                    } } _t113; }); (l47).a[ctx_idx(l50, 3, 766, 63, &w_os__spawn, CTX_UPV)] = _t112; }
+                    } } _t113; }); (l47).a[ctx_idx(l50, 3, 780, 63, &w_os__spawn, CTX_UPV)] = _t112; }
                 }
             } } else if ((_t109.tag == 1)) { {
-                { t9 _t126 = ({ t9 _t127; t563 _t128 = (CTX_AT(768, 56), f_os__null_device(CTX_ME (&(*l0)))); if ((_t128.tag == 0)) { l55 = _t128.p.v0.m_value; {
+                { t9 _t126 = ({ t9 _t127; t563 _t128 = (CTX_AT(782, 56), f_os__null_device(CTX_ME (&(*l0)))); if ((_t128.tag == 0)) { l55 = _t128.p.v0.m_value; {
                     _t127 = l55;
                 } } else if ((_t128.tag == 1)) { l56 = _t128.p.v1.m_error; {
                     { t321 _t129 = ((t321){ .tag = 1, .p.v1 = { .m_error = l56, } });
                     {
                         if ((!l49)) {
-                            ({ t40 _t130 = (&(*l0)); t342 _t131 = ({ t342 _t132 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t133 = ((t15)(0ULL)); uint64_t _t134 = _t132.m_len; ctx_range(_t133, _t134, _t132.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t132.m_ptr + _t133, .m_len = _t134 - _t133 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t130, _t131); });
+                            ({ t40 _t130 = (&(*l0)); t342 _t131 = ({ t342 _t132 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t133 = ((t15)(0ULL)); uint64_t _t134 = _t132.m_len; ctx_range(_t133, _t134, _t132.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t132.m_ptr + _t133, .m_len = _t134 - _t133 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t130, _t131); });
                         }
                     }
                     {
-                        ({ t40 _t135 = (&(*l0)); t342 _t136 = ({ t342 _t137 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t138 = ((t15)(0ULL)); uint64_t _t139 = _t137.m_len; ctx_range(_t138, _t139, _t137.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t137.m_ptr + _t138, .m_len = _t139 - _t138 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t135, _t136); });
+                        ({ t40 _t135 = (&(*l0)); t342 _t136 = ({ t342 _t137 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t138 = ((t15)(0ULL)); uint64_t _t139 = _t137.m_len; ctx_range(_t138, _t139, _t137.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t137.m_ptr + _t138, .m_len = _t139 - _t138 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t135, _t136); });
                     }
                     {
-                        (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+                        (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
                     }
                     {
-                        (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                        (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
                     }
                     {
-                        (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                        (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
                     }
                     {
-                        (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                        (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
                     }
                     {
-                        (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                        (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
                     } return _t129; }
-                } } _t127; }); (l47).a[ctx_idx(l50, 3, 768, 35, &w_os__spawn, CTX_UPV)] = _t126; }
+                } } _t127; }); (l47).a[ctx_idx(l50, 3, 782, 35, &w_os__spawn, CTX_UPV)] = _t126; }
             } } else if ((_t109.tag == 2)) { {
-                l57 = ({ t559 _t140; t564 _t141 = (CTX_AT(771, 45), f_os__make_pipe(CTX_ME (&(*l0)), (l50 != ((t15)(0ULL))))); if ((_t141.tag == 0)) { l58 = _t141.p.v0.m_value; {
+                l57 = ({ t559 _t140; t564 _t141 = (CTX_AT(785, 45), f_os__make_pipe(CTX_ME (&(*l0)), (l50 != ((t15)(0ULL))))); if ((_t141.tag == 0)) { l58 = _t141.p.v0.m_value; {
                     _t140 = l58;
                 } } else if ((_t141.tag == 1)) { l59 = _t141.p.v1.m_error; {
                     { t321 _t142 = ((t321){ .tag = 1, .p.v1 = { .m_error = l59, } });
                     {
                         if ((!l49)) {
-                            ({ t40 _t143 = (&(*l0)); t342 _t144 = ({ t342 _t145 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t146 = ((t15)(0ULL)); uint64_t _t147 = _t145.m_len; ctx_range(_t146, _t147, _t145.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t145.m_ptr + _t146, .m_len = _t147 - _t146 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t143, _t144); });
+                            ({ t40 _t143 = (&(*l0)); t342 _t144 = ({ t342 _t145 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t146 = ((t15)(0ULL)); uint64_t _t147 = _t145.m_len; ctx_range(_t146, _t147, _t145.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t145.m_ptr + _t146, .m_len = _t147 - _t146 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t143, _t144); });
                         }
                     }
                     {
-                        ({ t40 _t148 = (&(*l0)); t342 _t149 = ({ t342 _t150 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t151 = ((t15)(0ULL)); uint64_t _t152 = _t150.m_len; ctx_range(_t151, _t152, _t150.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t150.m_ptr + _t151, .m_len = _t152 - _t151 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t148, _t149); });
+                        ({ t40 _t148 = (&(*l0)); t342 _t149 = ({ t342 _t150 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t151 = ((t15)(0ULL)); uint64_t _t152 = _t150.m_len; ctx_range(_t151, _t152, _t150.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t150.m_ptr + _t151, .m_len = _t152 - _t151 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t148, _t149); });
                     }
                     {
-                        (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+                        (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
                     }
                     {
-                        (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                        (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
                     }
                     {
-                        (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                        (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
                     }
                     {
-                        (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                        (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
                     }
                     {
-                        (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                        (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
                     } return _t142; }
                 } } _t140; });
-                (l48).a[ctx_idx(l50, 3, 772, 25, &w_os__spawn, CTX_UPV)] = (l57).m_ours;
-                (l47).a[ctx_idx(l50, 3, 773, 27, &w_os__spawn, CTX_UPV)] = (l57).m_theirs;
+                (l48).a[ctx_idx(l50, 3, 786, 25, &w_os__spawn, CTX_UPV)] = (l57).m_ours;
+                (l47).a[ctx_idx(l50, 3, 787, 27, &w_os__spawn, CTX_UPV)] = (l57).m_theirs;
             } } else if ((_t109.tag == 3)) { l60 = _t109.p.v3.m_file; {
-                { t9 _t153 = ({ t9 _t154; t563 _t155 = (CTX_AT(775, 62), f_os__inheritable(CTX_ME (&(*l0)), (l60).m_id)); if ((_t155.tag == 0)) { l61 = _t155.p.v0.m_value; {
+                { t9 _t153 = ({ t9 _t154; t563 _t155 = (CTX_AT(789, 62), f_os__inheritable(CTX_ME (&(*l0)), (l60).m_id)); if ((_t155.tag == 0)) { l61 = _t155.p.v0.m_value; {
                     _t154 = l61;
                 } } else if ((_t155.tag == 1)) { l62 = _t155.p.v1.m_error; {
                     { t321 _t156 = ((t321){ .tag = 1, .p.v1 = { .m_error = l62, } });
                     {
                         if ((!l49)) {
-                            ({ t40 _t157 = (&(*l0)); t342 _t158 = ({ t342 _t159 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t160 = ((t15)(0ULL)); uint64_t _t161 = _t159.m_len; ctx_range(_t160, _t161, _t159.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t159.m_ptr + _t160, .m_len = _t161 - _t160 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t157, _t158); });
+                            ({ t40 _t157 = (&(*l0)); t342 _t158 = ({ t342 _t159 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t160 = ((t15)(0ULL)); uint64_t _t161 = _t159.m_len; ctx_range(_t160, _t161, _t159.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t159.m_ptr + _t160, .m_len = _t161 - _t160 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t157, _t158); });
                         }
                     }
                     {
-                        ({ t40 _t162 = (&(*l0)); t342 _t163 = ({ t342 _t164 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t165 = ((t15)(0ULL)); uint64_t _t166 = _t164.m_len; ctx_range(_t165, _t166, _t164.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t164.m_ptr + _t165, .m_len = _t166 - _t165 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t162, _t163); });
+                        ({ t40 _t162 = (&(*l0)); t342 _t163 = ({ t342 _t164 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t165 = ((t15)(0ULL)); uint64_t _t166 = _t164.m_len; ctx_range(_t165, _t166, _t164.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t164.m_ptr + _t165, .m_len = _t166 - _t165 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t162, _t163); });
                     }
                     {
-                        (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+                        (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
                     }
                     {
-                        (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                        (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
                     }
                     {
-                        (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                        (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
                     }
                     {
-                        (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                        (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
                     }
                     {
-                        (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                        (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
                     } return _t156; }
-                } } _t154; }); (l47).a[ctx_idx(l50, 3, 775, 41, &w_os__spawn, CTX_UPV)] = _t153; }
+                } } _t154; }); (l47).a[ctx_idx(l50, 3, 789, 41, &w_os__spawn, CTX_UPV)] = _t153; }
             } } }
-            l50 = ctx_add_u64(l50, ((t15)(1ULL)), 777, 19, &w_os__spawn, CTX_UPV);
+            l50 = ctx_add_u64(l50, ((t15)(1ULL)), 791, 19, &w_os__spawn, CTX_UPV);
         }
         l63 = ((t23)(1024ULL));
         if ((((*l2)).m_group || ((*l2)).m_die_with_parent)) {
             l63 = ((t23)((l63 | ((t23)(4ULL)))));
         }
-        l64 = ((t560){ .m_info = ({ t23 _t167 = ((t23)(256ULL)); t9 _t168 = (l47).a[ctx_idx(((t15)(0ULL)), 3, 783, 77, &w_os__spawn, CTX_UPV)]; t9 _t169 = (l47).a[ctx_idx(((t15)(1ULL)), 3, 783, 97, &w_os__spawn, CTX_UPV)]; t9 _t170 = (l47).a[ctx_idx(((t15)(2ULL)), 3, 783, 117, &w_os__spawn, CTX_UPV)]; t23 _t171 = ((t23)(104ULL)); t9 _t172 = ((t9)(0ULL)); t9 _t173 = ((t9)(0ULL)); t9 _t174 = ((t9)(0ULL)); t23 _t175 = ((t23)(0ULL)); t23 _t176 = ((t23)(0ULL)); t23 _t177 = ((t23)(0ULL)); t23 _t178 = ((t23)(0ULL)); t23 _t179 = ((t23)(0ULL)); t23 _t180 = ((t23)(0ULL)); t23 _t181 = ((t23)(0ULL)); t262 _t182 = ((t262)(0ULL)); t262 _t183 = ((t262)(0ULL)); t9 _t184 = ((t9)(0ULL)); ((t565){ .m_flags = _t167, .m_stdin = _t168, .m_stdout = _t169, .m_stderr = _t170, .m_size = _t171, .m_reserved = _t172, .m_desktop = _t173, .m_title = _t174, .m_x = _t175, .m_y = _t176, .m_width = _t177, .m_height = _t178, .m_columns = _t179, .m_rows = _t180, .m_fill = _t181, .m_show_window = _t182, .m_reserved2_size = _t183, .m_reserved2 = _t184, }); }), .m_attributes = ((t114)(0)), });
+        l64 = ((t560){ .m_info = ({ t23 _t167 = ((t23)(256ULL)); t9 _t168 = (l47).a[ctx_idx(((t15)(0ULL)), 3, 797, 77, &w_os__spawn, CTX_UPV)]; t9 _t169 = (l47).a[ctx_idx(((t15)(1ULL)), 3, 797, 97, &w_os__spawn, CTX_UPV)]; t9 _t170 = (l47).a[ctx_idx(((t15)(2ULL)), 3, 797, 117, &w_os__spawn, CTX_UPV)]; t23 _t171 = ((t23)(104ULL)); t9 _t172 = ((t9)(0ULL)); t9 _t173 = ((t9)(0ULL)); t9 _t174 = ((t9)(0ULL)); t23 _t175 = ((t23)(0ULL)); t23 _t176 = ((t23)(0ULL)); t23 _t177 = ((t23)(0ULL)); t23 _t178 = ((t23)(0ULL)); t23 _t179 = ((t23)(0ULL)); t23 _t180 = ((t23)(0ULL)); t23 _t181 = ((t23)(0ULL)); t262 _t182 = ((t262)(0ULL)); t262 _t183 = ((t262)(0ULL)); t9 _t184 = ((t9)(0ULL)); ((t565){ .m_flags = _t167, .m_stdin = _t168, .m_stdout = _t169, .m_stderr = _t170, .m_size = _t171, .m_reserved = _t172, .m_desktop = _t173, .m_title = _t174, .m_x = _t175, .m_y = _t176, .m_width = _t177, .m_height = _t178, .m_columns = _t179, .m_rows = _t180, .m_fill = _t181, .m_show_window = _t182, .m_reserved2_size = _t183, .m_reserved2 = _t184, }); }), .m_attributes = ((t114)(0)), });
         l65 = ((t558){{ ((t9)(0ULL)), ((t9)(0ULL)), ((t9)(0ULL)) }});
         l66 = ((t15)(0ULL));
         l50 = ((t15)(0ULL));
         while ((l50 < ((t15)(3ULL)))) {
-            if (((l47).a[ctx_idx(l50, 3, 791, 22, &w_os__spawn, CTX_UPV)] != ((t9)(0ULL)))) {
-                { t9 _t185 = (l47).a[ctx_idx(l50, 3, 792, 37, &w_os__spawn, CTX_UPV)]; (l65).a[ctx_idx(l66, 3, 792, 21, &w_os__spawn, CTX_UPV)] = _t185; }
-                l66 = ctx_add_u64(l66, ((t15)(1ULL)), 793, 31, &w_os__spawn, CTX_UPV);
+            if (((l47).a[ctx_idx(l50, 3, 805, 22, &w_os__spawn, CTX_UPV)] != ((t9)(0ULL)))) {
+                { t9 _t185 = (l47).a[ctx_idx(l50, 3, 806, 37, &w_os__spawn, CTX_UPV)]; (l65).a[ctx_idx(l66, 3, 806, 21, &w_os__spawn, CTX_UPV)] = _t185; }
+                l66 = ctx_add_u64(l66, ((t15)(1ULL)), 807, 31, &w_os__spawn, CTX_UPV);
             }
-            l50 = ctx_add_u64(l50, ((t15)(1ULL)), 795, 19, &w_os__spawn, CTX_UPV);
+            l50 = ctx_add_u64(l50, ((t15)(1ULL)), 809, 19, &w_os__spawn, CTX_UPV);
         }
         l67 = ((t114)(0));
         /* defer */
         if ((l66 > ((t15)(0ULL)))) {
             l69 = ((t15)(0ULL));
-            (void)(CTX_AT(806, 50), e868(CTX_ME (&(*l0)), ((t114)(0)), ((t23)(1ULL)), ((t23)(0ULL)), (&l69)));
-            l70 = ({ t43 _t186; t114 _t187 = (CTX_AT(807, 29), e434(CTX_ME (&(*l0)), l69)); if ((_t187 != 0)) { l71 = _t187; {
+            (void)(CTX_AT(820, 50), e868(CTX_ME (&(*l0)), ((t114)(0)), ((t23)(1ULL)), ((t23)(0ULL)), (&l69)));
+            l70 = ({ t43 _t186; t114 _t187 = (CTX_AT(821, 29), e434(CTX_ME (&(*l0)), l69)); if ((_t187 != 0)) { l71 = _t187; {
                 _t186 = l71;
             } } else if ((_t187 == 0)) { {
-                { t321 _t188 = ({ t321 _t189; t562 _t190 = (CTX_AT(807, 87), f_os__out_of_memoryproc__Child_0aa23820(CTX_ME0)); if ((_t190.tag == 0)) { l72 = _t190.p.v0.m_value; {
+                { t321 _t188 = ({ t321 _t189; t562 _t190 = (CTX_AT(821, 87), f_os__out_of_memoryproc__Child_0aa23820(CTX_ME0)); if ((_t190.tag == 0)) { l72 = _t190.p.v0.m_value; {
                     _t189 = ((t321){ .tag = 0, .p.v0 = { .m_value = l72, } });
                 } } else if ((_t190.tag == 1)) { l73 = _t190.p.v1.m_error; {
                     _t189 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t191; t557 _t192 = l73; if ((_t192.tag == 0)) { l74 = _t192.p.v0.m_code; {
@@ -33101,39 +33101,39 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
                 } } _t189; });
                 {
                     { t114 _t193 = l67; if ((_t193 != 0)) { l68 = _t193; {
-                        (CTX_AT(800, 46), e869(CTX_ME (&(*l0)), l68));
-                        (CTX_AT(801, 23), e436(CTX_ME (&(*l0)), l68));
+                        (CTX_AT(814, 46), e869(CTX_ME (&(*l0)), l68));
+                        (CTX_AT(815, 23), e436(CTX_ME (&(*l0)), l68));
                     } } else if ((_t193 == 0)) { {
                     } } }
                 }
                 {
                     if ((!l49)) {
-                        ({ t40 _t194 = (&(*l0)); t342 _t195 = ({ t342 _t196 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t197 = ((t15)(0ULL)); uint64_t _t198 = _t196.m_len; ctx_range(_t197, _t198, _t196.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t196.m_ptr + _t197, .m_len = _t198 - _t197 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t194, _t195); });
+                        ({ t40 _t194 = (&(*l0)); t342 _t195 = ({ t342 _t196 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t197 = ((t15)(0ULL)); uint64_t _t198 = _t196.m_len; ctx_range(_t197, _t198, _t196.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t196.m_ptr + _t197, .m_len = _t198 - _t197 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t194, _t195); });
                     }
                 }
                 {
-                    ({ t40 _t199 = (&(*l0)); t342 _t200 = ({ t342 _t201 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t202 = ((t15)(0ULL)); uint64_t _t203 = _t201.m_len; ctx_range(_t202, _t203, _t201.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t201.m_ptr + _t202, .m_len = _t203 - _t202 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t199, _t200); });
+                    ({ t40 _t199 = (&(*l0)); t342 _t200 = ({ t342 _t201 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t202 = ((t15)(0ULL)); uint64_t _t203 = _t201.m_len; ctx_range(_t202, _t203, _t201.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t201.m_ptr + _t202, .m_len = _t203 - _t202 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t199, _t200); });
                 }
                 {
-                    (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+                    (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
                 }
                 {
-                    (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                    (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
                 }
                 {
-                    (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                    (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
                 }
                 {
-                    (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                    (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
                 }
                 {
-                    (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                    (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
                 } return _t188; }
             } } _t186; });
-            if (((CTX_AT(808, 49), e868(CTX_ME (&(*l0)), ((t114)(l70)), ((t23)(1ULL)), ((t23)(0ULL)), (&l69))) == ((t0)(0ULL)))) {
-                l75 = (CTX_AT(809, 35), e480(CTX_ME (&(*l0))));
-                (CTX_AT(810, 23), e436(CTX_ME (&(*l0)), l70));
-                { t321 _t204 = ({ t321 _t205; t566 _t206 = (CTX_AT(811, 35), f_os__proc_failedproc__Child_05204862(CTX_ME l75)); if ((_t206.tag == 0)) { l76 = _t206.p.v0.m_value; {
+            if (((CTX_AT(822, 49), e868(CTX_ME (&(*l0)), ((t114)(l70)), ((t23)(1ULL)), ((t23)(0ULL)), (&l69))) == ((t0)(0ULL)))) {
+                l75 = (CTX_AT(823, 35), e480(CTX_ME (&(*l0))));
+                (CTX_AT(824, 23), e436(CTX_ME (&(*l0)), l70));
+                { t321 _t204 = ({ t321 _t205; t566 _t206 = (CTX_AT(825, 35), f_os__proc_failedproc__Child_05204862(CTX_ME l75)); if ((_t206.tag == 0)) { l76 = _t206.p.v0.m_value; {
                     _t205 = ((t321){ .tag = 0, .p.v0 = { .m_value = l76, } });
                 } } else if ((_t206.tag == 1)) { l77 = _t206.p.v1.m_error; {
                     _t205 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t207; t323 _t208 = l77; if ((_t208.tag == 0)) { {
@@ -33148,38 +33148,38 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
                 } } _t205; });
                 {
                     { t114 _t209 = l67; if ((_t209 != 0)) { l68 = _t209; {
-                        (CTX_AT(800, 46), e869(CTX_ME (&(*l0)), l68));
-                        (CTX_AT(801, 23), e436(CTX_ME (&(*l0)), l68));
+                        (CTX_AT(814, 46), e869(CTX_ME (&(*l0)), l68));
+                        (CTX_AT(815, 23), e436(CTX_ME (&(*l0)), l68));
                     } } else if ((_t209 == 0)) { {
                     } } }
                 }
                 {
                     if ((!l49)) {
-                        ({ t40 _t210 = (&(*l0)); t342 _t211 = ({ t342 _t212 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t213 = ((t15)(0ULL)); uint64_t _t214 = _t212.m_len; ctx_range(_t213, _t214, _t212.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t212.m_ptr + _t213, .m_len = _t214 - _t213 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t210, _t211); });
+                        ({ t40 _t210 = (&(*l0)); t342 _t211 = ({ t342 _t212 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t213 = ((t15)(0ULL)); uint64_t _t214 = _t212.m_len; ctx_range(_t213, _t214, _t212.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t212.m_ptr + _t213, .m_len = _t214 - _t213 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t210, _t211); });
                     }
                 }
                 {
-                    ({ t40 _t215 = (&(*l0)); t342 _t216 = ({ t342 _t217 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t218 = ((t15)(0ULL)); uint64_t _t219 = _t217.m_len; ctx_range(_t218, _t219, _t217.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t217.m_ptr + _t218, .m_len = _t219 - _t218 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t215, _t216); });
+                    ({ t40 _t215 = (&(*l0)); t342 _t216 = ({ t342 _t217 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t218 = ((t15)(0ULL)); uint64_t _t219 = _t217.m_len; ctx_range(_t218, _t219, _t217.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t217.m_ptr + _t218, .m_len = _t219 - _t218 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t215, _t216); });
                 }
                 {
-                    (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+                    (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
                 }
                 {
-                    (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                    (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
                 }
                 {
-                    (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                    (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
                 }
                 {
-                    (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                    (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
                 }
                 {
-                    (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                    (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
                 } return _t204; }
             }
             l67 = ((t114)(l70));
-            if ((({ t40 _t220 = (&(*l0)); t43 _t221 = l70; t23 _t222 = ((t23)(0ULL)); t15 _t223 = ((t15)(131074ULL)); t253 _t224 = (&(l65).a[ctx_idx(((t15)(0ULL)), 3, 814, 131, &w_os__spawn, CTX_UPV)]); t15 _t225 = ctx_mul_u64(l66, ((t15)(8ULL)), 814, 149, &w_os__spawn, CTX_UPV); t114 _t226 = ((t114)(0)); t567 _t227 = ((t567)(0)); CTX_AT(814, 41); e871(CTX_ME _t220, _t221, _t222, _t223, _t224, _t225, _t226, _t227); }) == ((t0)(0ULL)))) {
-                { t321 _t228 = ({ t321 _t229; t566 _t230 = ({ t23 _t231 = (CTX_AT(815, 54), e480(CTX_ME (&(*l0)))); CTX_AT(815, 35); f_os__proc_failedproc__Child_05204862(CTX_ME _t231); }); if ((_t230.tag == 0)) { l79 = _t230.p.v0.m_value; {
+            if ((({ t40 _t220 = (&(*l0)); t43 _t221 = l70; t23 _t222 = ((t23)(0ULL)); t15 _t223 = ((t15)(131074ULL)); t253 _t224 = (&(l65).a[ctx_idx(((t15)(0ULL)), 3, 828, 131, &w_os__spawn, CTX_UPV)]); t15 _t225 = ctx_mul_u64(l66, ((t15)(8ULL)), 828, 149, &w_os__spawn, CTX_UPV); t114 _t226 = ((t114)(0)); t567 _t227 = ((t567)(0)); CTX_AT(828, 41); e871(CTX_ME _t220, _t221, _t222, _t223, _t224, _t225, _t226, _t227); }) == ((t0)(0ULL)))) {
+                { t321 _t228 = ({ t321 _t229; t566 _t230 = ({ t23 _t231 = (CTX_AT(829, 54), e480(CTX_ME (&(*l0)))); CTX_AT(829, 35); f_os__proc_failedproc__Child_05204862(CTX_ME _t231); }); if ((_t230.tag == 0)) { l79 = _t230.p.v0.m_value; {
                     _t229 = ((t321){ .tag = 0, .p.v0 = { .m_value = l79, } });
                 } } else if ((_t230.tag == 1)) { l80 = _t230.p.v1.m_error; {
                     _t229 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t232; t323 _t233 = l80; if ((_t233.tag == 0)) { {
@@ -33194,36 +33194,36 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
                 } } _t229; });
                 {
                     { t114 _t234 = l67; if ((_t234 != 0)) { l68 = _t234; {
-                        (CTX_AT(800, 46), e869(CTX_ME (&(*l0)), l68));
-                        (CTX_AT(801, 23), e436(CTX_ME (&(*l0)), l68));
+                        (CTX_AT(814, 46), e869(CTX_ME (&(*l0)), l68));
+                        (CTX_AT(815, 23), e436(CTX_ME (&(*l0)), l68));
                     } } else if ((_t234 == 0)) { {
                     } } }
                 }
                 {
                     if ((!l49)) {
-                        ({ t40 _t235 = (&(*l0)); t342 _t236 = ({ t342 _t237 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t238 = ((t15)(0ULL)); uint64_t _t239 = _t237.m_len; ctx_range(_t238, _t239, _t237.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t237.m_ptr + _t238, .m_len = _t239 - _t238 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t235, _t236); });
+                        ({ t40 _t235 = (&(*l0)); t342 _t236 = ({ t342 _t237 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t238 = ((t15)(0ULL)); uint64_t _t239 = _t237.m_len; ctx_range(_t238, _t239, _t237.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t237.m_ptr + _t238, .m_len = _t239 - _t238 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t235, _t236); });
                     }
                 }
                 {
-                    ({ t40 _t240 = (&(*l0)); t342 _t241 = ({ t342 _t242 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t243 = ((t15)(0ULL)); uint64_t _t244 = _t242.m_len; ctx_range(_t243, _t244, _t242.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t242.m_ptr + _t243, .m_len = _t244 - _t243 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t240, _t241); });
+                    ({ t40 _t240 = (&(*l0)); t342 _t241 = ({ t342 _t242 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t243 = ((t15)(0ULL)); uint64_t _t244 = _t242.m_len; ctx_range(_t243, _t244, _t242.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t242.m_ptr + _t243, .m_len = _t244 - _t243 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t240, _t241); });
                 }
                 {
-                    (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+                    (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
                 }
                 {
-                    (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                    (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
                 }
                 {
-                    (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                    (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
                 }
                 {
-                    (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                    (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
                 }
                 {
-                    (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                    (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
                 } return _t228; }
             }
-            ((l64).m_info).m_size = ((t23)(ctx_as_u((uint64_t)(((t15)(112ULL))), UINT32_MAX, "u32", 817, 33, &w_os__spawn, CTX_UPV)));
+            ((l64).m_info).m_size = ((t23)(ctx_as_u((uint64_t)(((t15)(112ULL))), UINT32_MAX, "u32", 831, 33, &w_os__spawn, CTX_UPV)));
             (l64).m_attributes = ((t114)(l70));
             l63 = ((t23)((l63 | ((t23)(524288ULL)))));
         }
@@ -33233,9 +33233,9 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
         } else {
             _t245 = ((t0)(0ULL));
         } _t245; });
-        l84 = (CTX_AT(824, 32), e872(CTX_ME (&(*l0)), ((t166)(0)), (l18).m_ptr, ((t114)(0)), ((t114)(0)), l83, l63, ((t166)((l31).m_ptr)), l37, (&l64), (&l82)));
+        l84 = (CTX_AT(838, 32), e872(CTX_ME (&(*l0)), ((t166)(0)), (l18).m_ptr, ((t114)(0)), ((t114)(0)), l83, l63, ((t166)((l31).m_ptr)), l37, (&l64), (&l82)));
         if ((l84 == ((t0)(0ULL)))) {
-            { t321 _t246 = ({ t321 _t247; t566 _t248 = ({ t23 _t249 = (CTX_AT(825, 59), e480(CTX_ME (&(*l0)))); CTX_AT(825, 40); f_os__proc_failedproc__Child_05204862(CTX_ME _t249); }); if ((_t248.tag == 0)) { l85 = _t248.p.v0.m_value; {
+            { t321 _t246 = ({ t321 _t247; t566 _t248 = ({ t23 _t249 = (CTX_AT(839, 59), e480(CTX_ME (&(*l0)))); CTX_AT(839, 40); f_os__proc_failedproc__Child_05204862(CTX_ME _t249); }); if ((_t248.tag == 0)) { l85 = _t248.p.v0.m_value; {
                 _t247 = ((t321){ .tag = 0, .p.v0 = { .m_value = l85, } });
             } } else if ((_t248.tag == 1)) { l86 = _t248.p.v1.m_error; {
                 _t247 = ((t321){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t250; t323 _t251 = l86; if ((_t251.tag == 0)) { {
@@ -33250,33 +33250,33 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
             } } _t247; });
             {
                 { t114 _t252 = l67; if ((_t252 != 0)) { l68 = _t252; {
-                    (CTX_AT(800, 46), e869(CTX_ME (&(*l0)), l68));
-                    (CTX_AT(801, 23), e436(CTX_ME (&(*l0)), l68));
+                    (CTX_AT(814, 46), e869(CTX_ME (&(*l0)), l68));
+                    (CTX_AT(815, 23), e436(CTX_ME (&(*l0)), l68));
                 } } else if ((_t252 == 0)) { {
                 } } }
             }
             {
                 if ((!l49)) {
-                    ({ t40 _t253 = (&(*l0)); t342 _t254 = ({ t342 _t255 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t256 = ((t15)(0ULL)); uint64_t _t257 = _t255.m_len; ctx_range(_t256, _t257, _t255.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t255.m_ptr + _t256, .m_len = _t257 - _t256 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t253, _t254); });
+                    ({ t40 _t253 = (&(*l0)); t342 _t254 = ({ t342 _t255 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t256 = ((t15)(0ULL)); uint64_t _t257 = _t255.m_len; ctx_range(_t256, _t257, _t255.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t255.m_ptr + _t256, .m_len = _t257 - _t256 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t253, _t254); });
                 }
             }
             {
-                ({ t40 _t258 = (&(*l0)); t342 _t259 = ({ t342 _t260 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t261 = ((t15)(0ULL)); uint64_t _t262 = _t260.m_len; ctx_range(_t261, _t262, _t260.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t260.m_ptr + _t261, .m_len = _t262 - _t261 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t258, _t259); });
+                ({ t40 _t258 = (&(*l0)); t342 _t259 = ({ t342 _t260 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t261 = ((t15)(0ULL)); uint64_t _t262 = _t260.m_len; ctx_range(_t261, _t262, _t260.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t260.m_ptr + _t261, .m_len = _t262 - _t261 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t258, _t259); });
             }
             {
-                (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+                (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
             }
             {
-                (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
             }
             {
-                (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
             }
             {
-                (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
             }
             {
-                (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
             } return _t246; }
         }
         l88 = (((*l2)).m_group && ({ t7 _t263; t178 _t264 = ((*l2)).m_leftovers; if ((_t264.tag == 0)) { {
@@ -33287,115 +33287,115 @@ static t321 f_os__spawn(CTX_UP t40 l0, t6 l1, t175 * l2) {
         l89 = ((t9)(0ULL));
         l90 = ((t9)(0ULL));
         if ((((*l2)).m_group || ((*l2)).m_die_with_parent)) {
-            l89 = ({ t9 _t265; t563 _t266 = (CTX_AT(835, 26), f_os__job_for(CTX_ME (&(*l0)), (l82).m_process, (l88 || ((*l2)).m_die_with_parent))); if ((_t266.tag == 0)) { l91 = _t266.p.v0.m_value; {
+            l89 = ({ t9 _t265; t563 _t266 = (CTX_AT(849, 26), f_os__job_for(CTX_ME (&(*l0)), (l82).m_process, (l88 || ((*l2)).m_die_with_parent))); if ((_t266.tag == 0)) { l91 = _t266.p.v0.m_value; {
                 _t265 = l91;
             } } else if ((_t266.tag == 1)) { l92 = _t266.p.v1.m_error; {
-                (void)(CTX_AT(836, 37), e874(CTX_ME (&(*l0)), (l82).m_process, ((t23)(1ULL))));
-                (void)(CTX_AT(837, 33), e875(CTX_ME (&(*l0)), (l82).m_thread));
-                (void)(CTX_AT(838, 33), e875(CTX_ME (&(*l0)), (l82).m_process));
+                (void)(CTX_AT(850, 37), e874(CTX_ME (&(*l0)), (l82).m_process, ((t23)(1ULL))));
+                (void)(CTX_AT(851, 33), e875(CTX_ME (&(*l0)), (l82).m_thread));
+                (void)(CTX_AT(852, 33), e875(CTX_ME (&(*l0)), (l82).m_process));
                 { t321 _t267 = ((t321){ .tag = 1, .p.v1 = { .m_error = l92, } });
                 {
                     { t114 _t268 = l67; if ((_t268 != 0)) { l68 = _t268; {
-                        (CTX_AT(800, 46), e869(CTX_ME (&(*l0)), l68));
-                        (CTX_AT(801, 23), e436(CTX_ME (&(*l0)), l68));
+                        (CTX_AT(814, 46), e869(CTX_ME (&(*l0)), l68));
+                        (CTX_AT(815, 23), e436(CTX_ME (&(*l0)), l68));
                     } } else if ((_t268 == 0)) { {
                     } } }
                 }
                 {
                     if ((!l49)) {
-                        ({ t40 _t269 = (&(*l0)); t342 _t270 = ({ t342 _t271 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t272 = ((t15)(0ULL)); uint64_t _t273 = _t271.m_len; ctx_range(_t272, _t273, _t271.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t271.m_ptr + _t272, .m_len = _t273 - _t272 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t269, _t270); });
+                        ({ t40 _t269 = (&(*l0)); t342 _t270 = ({ t342 _t271 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t272 = ((t15)(0ULL)); uint64_t _t273 = _t271.m_len; ctx_range(_t272, _t273, _t271.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t271.m_ptr + _t272, .m_len = _t273 - _t272 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t269, _t270); });
                     }
                 }
                 {
-                    ({ t40 _t274 = (&(*l0)); t342 _t275 = ({ t342 _t276 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t277 = ((t15)(0ULL)); uint64_t _t278 = _t276.m_len; ctx_range(_t277, _t278, _t276.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t276.m_ptr + _t277, .m_len = _t278 - _t277 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t274, _t275); });
+                    ({ t40 _t274 = (&(*l0)); t342 _t275 = ({ t342 _t276 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t277 = ((t15)(0ULL)); uint64_t _t278 = _t276.m_len; ctx_range(_t277, _t278, _t276.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t276.m_ptr + _t277, .m_len = _t278 - _t277 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t274, _t275); });
                 }
                 {
-                    (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+                    (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
                 }
                 {
-                    (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+                    (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
                 }
                 {
-                    (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+                    (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
                 }
                 {
-                    (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+                    (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
                 }
                 {
-                    (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+                    (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
                 } return _t267; }
             } } _t265; });
-            (void)(CTX_AT(841, 29), e876(CTX_ME (&(*l0)), (l82).m_thread));
+            (void)(CTX_AT(855, 29), e876(CTX_ME (&(*l0)), (l82).m_thread));
             if ((!l88)) {
                 l90 = l89;
             }
         }
-        (void)(CTX_AT(844, 25), e875(CTX_ME (&(*l0)), (l82).m_thread));
+        (void)(CTX_AT(858, 25), e875(CTX_ME (&(*l0)), (l82).m_thread));
         l49 = ((bool)1);
         { t321 _t279 = ((t321){ .tag = 0, .p.v0 = { .m_value = ({ t9 _t280 = (l82).m_process; t9 _t281 = ({ t9 _t286; if (((*l2)).m_group) {
             _t286 = l89;
         } else {
             _t286 = ((t9)(0ULL));
-        } _t286; }); t9 _t282 = l90; t327 _t283 = (CTX_AT(850, 28), f_os__pipe_of(CTX_ME (l48).a[ctx_idx(((t15)(0ULL)), 3, 850, 43, &w_os__spawn, CTX_UPV)])); t327 _t284 = (CTX_AT(851, 29), f_os__pipe_of(CTX_ME (l48).a[ctx_idx(((t15)(1ULL)), 3, 851, 44, &w_os__spawn, CTX_UPV)])); t327 _t285 = (CTX_AT(852, 29), f_os__pipe_of(CTX_ME (l48).a[ctx_idx(((t15)(2ULL)), 3, 852, 44, &w_os__spawn, CTX_UPV)])); ((t171){ .m_id = _t280, .m_group = _t281, .m_cleanup = _t282, .m_stdin = _t283, .m_stdout = _t284, .m_stderr = _t285, }); }), } });
+        } _t286; }); t9 _t282 = l90; t327 _t283 = (CTX_AT(864, 28), f_os__pipe_of(CTX_ME (l48).a[ctx_idx(((t15)(0ULL)), 3, 864, 43, &w_os__spawn, CTX_UPV)])); t327 _t284 = (CTX_AT(865, 29), f_os__pipe_of(CTX_ME (l48).a[ctx_idx(((t15)(1ULL)), 3, 865, 44, &w_os__spawn, CTX_UPV)])); t327 _t285 = (CTX_AT(866, 29), f_os__pipe_of(CTX_ME (l48).a[ctx_idx(((t15)(2ULL)), 3, 866, 44, &w_os__spawn, CTX_UPV)])); ((t171){ .m_id = _t280, .m_group = _t281, .m_cleanup = _t282, .m_stdin = _t283, .m_stdout = _t284, .m_stderr = _t285, }); }), } });
         {
             { t114 _t287 = l67; if ((_t287 != 0)) { l68 = _t287; {
-                (CTX_AT(800, 46), e869(CTX_ME (&(*l0)), l68));
-                (CTX_AT(801, 23), e436(CTX_ME (&(*l0)), l68));
+                (CTX_AT(814, 46), e869(CTX_ME (&(*l0)), l68));
+                (CTX_AT(815, 23), e436(CTX_ME (&(*l0)), l68));
             } } else if ((_t287 == 0)) { {
             } } }
         }
         {
             if ((!l49)) {
-                ({ t40 _t288 = (&(*l0)); t342 _t289 = ({ t342 _t290 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t291 = ((t15)(0ULL)); uint64_t _t292 = _t290.m_len; ctx_range(_t291, _t292, _t290.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t290.m_ptr + _t291, .m_len = _t292 - _t291 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t288, _t289); });
+                ({ t40 _t288 = (&(*l0)); t342 _t289 = ({ t342 _t290 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t291 = ((t15)(0ULL)); uint64_t _t292 = _t290.m_len; ctx_range(_t291, _t292, _t290.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t290.m_ptr + _t291, .m_len = _t292 - _t291 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t288, _t289); });
             }
         }
         {
-            ({ t40 _t293 = (&(*l0)); t342 _t294 = ({ t342 _t295 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t296 = ((t15)(0ULL)); uint64_t _t297 = _t295.m_len; ctx_range(_t296, _t297, _t295.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t295.m_ptr + _t296, .m_len = _t297 - _t296 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t293, _t294); });
+            ({ t40 _t293 = (&(*l0)); t342 _t294 = ({ t342 _t295 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t296 = ((t15)(0ULL)); uint64_t _t297 = _t295.m_len; ctx_range(_t296, _t297, _t295.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t295.m_ptr + _t296, .m_len = _t297 - _t296 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t293, _t294); });
         }
         {
-            (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+            (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
         }
         {
-            (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+            (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
         }
         {
-            (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+            (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
         }
         {
-            (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+            (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
         }
         {
-            (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+            (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
         } return _t279; }
         {
             { t114 _t298 = l67; if ((_t298 != 0)) { l68 = _t298; {
-                (CTX_AT(800, 46), e869(CTX_ME (&(*l0)), l68));
-                (CTX_AT(801, 23), e436(CTX_ME (&(*l0)), l68));
+                (CTX_AT(814, 46), e869(CTX_ME (&(*l0)), l68));
+                (CTX_AT(815, 23), e436(CTX_ME (&(*l0)), l68));
             } } else if ((_t298 == 0)) { {
             } } }
         }
         {
             if ((!l49)) {
-                ({ t40 _t299 = (&(*l0)); t342 _t300 = ({ t342 _t301 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t302 = ((t15)(0ULL)); uint64_t _t303 = _t301.m_len; ctx_range(_t302, _t303, _t301.m_len, 758, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t301.m_ptr + _t302, .m_len = _t303 - _t302 }; }); CTX_AT(758, 43); f_os__close_handles(CTX_ME _t299, _t300); });
+                ({ t40 _t299 = (&(*l0)); t342 _t300 = ({ t342 _t301 = (((t342){ .m_ptr = ((t253)((&l48))), .m_len = ((t15)(3ULL)), })); uint64_t _t302 = ((t15)(0ULL)); uint64_t _t303 = _t301.m_len; ctx_range(_t302, _t303, _t301.m_len, 772, 66, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t301.m_ptr + _t302, .m_len = _t303 - _t302 }; }); CTX_AT(772, 43); f_os__close_handles(CTX_ME _t299, _t300); });
             }
         }
         {
-            ({ t40 _t304 = (&(*l0)); t342 _t305 = ({ t342 _t306 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t307 = ((t15)(0ULL)); uint64_t _t308 = _t306.m_len; ctx_range(_t307, _t308, _t306.m_len, 756, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t306.m_ptr + _t307, .m_len = _t308 - _t307 }; }); CTX_AT(756, 28); f_os__close_handles(CTX_ME _t304, _t305); });
+            ({ t40 _t304 = (&(*l0)); t342 _t305 = ({ t342 _t306 = (((t342){ .m_ptr = ((t253)((&l47))), .m_len = ((t15)(3ULL)), })); uint64_t _t307 = ((t15)(0ULL)); uint64_t _t308 = _t306.m_len; ctx_range(_t307, _t308, _t306.m_len, 770, 53, &w_os__spawn, CTX_UPV); (t342){ .m_ptr = _t306.m_ptr + _t307, .m_len = _t308 - _t307 }; }); CTX_AT(770, 28); f_os__close_handles(CTX_ME _t304, _t305); });
         }
         {
-            (CTX_AT(743, 21), e436(CTX_ME (&(*l0)), l38));
+            (CTX_AT(757, 21), e436(CTX_ME (&(*l0)), l38));
         }
         {
-            (CTX_AT(713, 21), e436(CTX_ME (&(*l0)), l26));
+            (CTX_AT(727, 21), e436(CTX_ME (&(*l0)), l26));
         }
         {
-            (void)(CTX_AT(702, 42), e643(CTX_ME (&(*l0)), l20));
+            (void)(CTX_AT(716, 42), e643(CTX_ME (&(*l0)), l20));
         }
         {
-            (CTX_AT(695, 21), e436(CTX_ME (&(*l0)), l13));
+            (CTX_AT(709, 21), e436(CTX_ME (&(*l0)), l13));
         }
         {
-            (CTX_AT(679, 21), e436(CTX_ME (&(*l0)), l6));
+            (CTX_AT(693, 21), e436(CTX_ME (&(*l0)), l6));
         }
     }
     __builtin_unreachable();
@@ -33687,14 +33687,14 @@ static t29 f_os__release(CTX_UP t40 l0, t171 * l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__release);
     {
-        (void)(CTX_AT(1097, 25), e875(CTX_ME (&(*l0)), ((*l1)).m_id));
+        (void)(CTX_AT(1111, 25), e875(CTX_ME (&(*l0)), ((*l1)).m_id));
         if ((((*l1)).m_cleanup != ((t9)(0ULL)))) {
-            if ((CTX_AT(1099, 21), f_os__spare(CTX_ME (&(*l0)), ((*l1)).m_cleanup))) {
-                (void)(CTX_AT(1099, 70), e875(CTX_ME (&(*l0)), ((*l1)).m_cleanup));
+            if ((CTX_AT(1113, 21), f_os__spare(CTX_ME (&(*l0)), ((*l1)).m_cleanup))) {
+                (void)(CTX_AT(1113, 70), e875(CTX_ME (&(*l0)), ((*l1)).m_cleanup));
             }
         } else {
             if ((((*l1)).m_group != ((t9)(0ULL)))) {
-                (void)(CTX_AT(1101, 29), e875(CTX_ME (&(*l0)), ((*l1)).m_group));
+                (void)(CTX_AT(1115, 29), e875(CTX_ME (&(*l0)), ((*l1)).m_group));
             }
         }
     }
@@ -33721,7 +33721,7 @@ static t324 f_os__proc_failedi32_90c4dade(CTX_UP t23 l0) {
                 _t4 = ((t323){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t324){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 966, 36, &w_os__proc_failedi32_90c4dade, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t324){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 980, 36, &w_os__proc_failedi32_90c4dade, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t323){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
     }
@@ -33756,7 +33756,7 @@ static t16 f_os__await_handle(CTX_UP t110 l0, t9 l1, t9 l2) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__await_handle);
     {
-        l3 = (CTX_AT(1941, 45), f_task__get_cancel_object(CTX_ME (&(*l0))));
+        l3 = (CTX_AT(1955, 45), f_task__get_cancel_object(CTX_ME (&(*l0))));
         l4 = ((t579){{ l1, l3 }});
         l5 = ({ t23 _t0; if ((l3 != ((t9)(0ULL)))) {
             _t0 = ((t23)(2ULL));
@@ -33766,44 +33766,44 @@ static t16 f_os__await_handle(CTX_UP t110 l0, t9 l1, t9 l2) {
         l6 = ({ t9 _t1; if ((l2 == ((t9)(18446744073709551615ULL)))) {
             _t1 = ((t9)(18446744073709551615ULL));
         } else {
-            _t1 = (CTX_AT(1944, 85), f_os__millis(CTX_ME l2));
+            _t1 = (CTX_AT(1958, 85), f_os__millis(CTX_ME l2));
         } _t1; });
         while (((bool)1)) {
-            l7 = ({ t23 _t2; if (({ t9 _t3 = l6; t9 _t4 = ((t9)(ctx_as_u((uint64_t)(((t23)(4294967295ULL))), UINT64_MAX, "u64", 1946, 37, &w_os__await_handle, CTX_UPV))); (_t3 >= _t4); })) {
+            l7 = ({ t23 _t2; if (({ t9 _t3 = l6; t9 _t4 = ((t9)(ctx_as_u((uint64_t)(((t23)(4294967295ULL))), UINT64_MAX, "u64", 1960, 37, &w_os__await_handle, CTX_UPV))); (_t3 >= _t4); })) {
                 _t2 = ({ t23 _t5; if ((l6 == ((t9)(18446744073709551615ULL)))) {
                     _t5 = ((t23)(4294967295ULL));
                 } else {
-                    _t5 = ctx_sub_u32(((t23)(4294967295ULL)), ((t23)(1ULL)), 1946, 110, &w_os__await_handle, CTX_UPV);
+                    _t5 = ctx_sub_u32(((t23)(4294967295ULL)), ((t23)(1ULL)), 1960, 110, &w_os__await_handle, CTX_UPV);
                 } _t5; });
             } else {
-                _t2 = ((t23)(ctx_as_u((uint64_t)(l6), UINT32_MAX, "u32", 1946, 125, &w_os__await_handle, CTX_UPV)));
+                _t2 = ((t23)(ctx_as_u((uint64_t)(l6), UINT32_MAX, "u32", 1960, 125, &w_os__await_handle, CTX_UPV)));
             } _t2; });
-            l8 = (CTX_AT(1947, 43), f_task__get_time_left(CTX_ME (&(*l0))));
+            l8 = (CTX_AT(1961, 43), f_task__get_time_left(CTX_ME (&(*l0))));
             l9 = ({ t23 _t6; if ((l8 == ((t9)(18446744073709551615ULL)))) {
                 _t6 = ((t23)(4294967295ULL));
             } else {
-                _t6 = ((t23)(ctx_as_u((uint64_t)(({ l10 = (CTX_AT(1948, 95), f_os__millis(CTX_ME l8)); ({ l11 = ((t9)(ctx_as_u((uint64_t)(ctx_sub_u32(((t23)(4294967295ULL)), ((t23)(1ULL)), 1948, 137, &w_os__await_handle, CTX_UPV)), UINT64_MAX, "u64", 1948, 119, &w_os__await_handle, CTX_UPV))); ({ t9 _t7; if ((l10 <= l11)) {
+                _t6 = ((t23)(ctx_as_u((uint64_t)(({ l10 = (CTX_AT(1962, 95), f_os__millis(CTX_ME l8)); ({ l11 = ((t9)(ctx_as_u((uint64_t)(ctx_sub_u32(((t23)(4294967295ULL)), ((t23)(1ULL)), 1962, 137, &w_os__await_handle, CTX_UPV)), UINT64_MAX, "u64", 1962, 119, &w_os__await_handle, CTX_UPV))); ({ t9 _t7; if ((l10 <= l11)) {
                     _t7 = l10;
                 } else {
                     _t7 = l11;
-                } _t7; }); }); })), UINT32_MAX, "u32", 1948, 75, &w_os__await_handle, CTX_UPV)));
+                } _t7; }); }); })), UINT32_MAX, "u32", 1962, 75, &w_os__await_handle, CTX_UPV)));
             } _t6; });
             l12 = ({ l13 = l7; ({ l14 = l9; ({ t23 _t8; if ((l13 <= l14)) {
                 _t8 = l13;
             } else {
                 _t8 = l14;
             } _t8; }); }); });
-            l15 = ({ t110 _t9 = (&(*l0)); t23 _t10 = l5; t253 _t11 = (&(l4).a[ctx_idx(((t15)(0ULL)), 2, 1950, 73, &w_os__await_handle, CTX_UPV)]); t0 _t12 = ((t0)(0ULL)); t23 _t13 = l12; CTX_AT(1950, 37); e889(CTX_ME _t9, _t10, _t11, _t12, _t13); });
+            l15 = ({ t110 _t9 = (&(*l0)); t23 _t10 = l5; t253 _t11 = (&(l4).a[ctx_idx(((t15)(0ULL)), 2, 1964, 73, &w_os__await_handle, CTX_UPV)]); t0 _t12 = ((t0)(0ULL)); t23 _t13 = l12; CTX_AT(1964, 37); e889(CTX_ME _t9, _t10, _t11, _t12, _t13); });
             if ((l15 == ((t23)(0ULL)))) {
                 return ((t16)(0ULL));
             }
-            if (({ t23 _t14 = l15; t23 _t15 = ctx_add_u32(((t23)(0ULL)), ((t23)(1ULL)), 1952, 35, &w_os__await_handle, CTX_UPV); (_t14 == _t15); })) {
+            if (({ t23 _t14 = l15; t23 _t15 = ctx_add_u32(((t23)(0ULL)), ((t23)(1ULL)), 1966, 35, &w_os__await_handle, CTX_UPV); (_t14 == _t15); })) {
                 return ((t16)(2ULL));
             }
             if ((l15 == ((t23)(4294967295ULL)))) {
                 return ((t16)(3ULL));
             }
-            if (({ t7 _t16; t109 _t17 = (CTX_AT(1955, 27), f_task__check(CTX_ME (&(*l0)))); if ((_t17.tag == 1)) { {
+            if (({ t7 _t16; t109 _t17 = (CTX_AT(1969, 27), f_task__check(CTX_ME (&(*l0)))); if ((_t17.tag == 1)) { {
                 _t16 = ((bool)1);
             } } else { {
                 _t16 = ((bool)0);
@@ -33811,10 +33811,10 @@ static t16 f_os__await_handle(CTX_UP t110 l0, t9 l1, t9 l2) {
                 return ((t16)(2ULL));
             }
             if ((l6 != ((t9)(18446744073709551615ULL)))) {
-                l6 = ({ t9 _t18; if (({ t9 _t19 = ((t9)(ctx_as_u((uint64_t)(l12), UINT64_MAX, "u64", 1957, 25, &w_os__await_handle, CTX_UPV))); t9 _t20 = l6; (_t19 >= _t20); })) {
+                l6 = ({ t9 _t18; if (({ t9 _t19 = ((t9)(ctx_as_u((uint64_t)(l12), UINT64_MAX, "u64", 1971, 25, &w_os__await_handle, CTX_UPV))); t9 _t20 = l6; (_t19 >= _t20); })) {
                     _t18 = ((t9)(0ULL));
                 } else {
-                    _t18 = ({ t9 _t21 = l6; t9 _t22 = ((t9)(ctx_as_u((uint64_t)(l12), UINT64_MAX, "u64", 1957, 64, &w_os__await_handle, CTX_UPV))); ctx_sub_u64(_t21, _t22, 1957, 62, &w_os__await_handle, CTX_UPV); });
+                    _t18 = ({ t9 _t21 = l6; t9 _t22 = ((t9)(ctx_as_u((uint64_t)(l12), UINT64_MAX, "u64", 1971, 64, &w_os__await_handle, CTX_UPV))); ctx_sub_u64(_t21, _t22, 1971, 62, &w_os__await_handle, CTX_UPV); });
                 } _t18; });
                 if ((l6 == ((t9)(0ULL)))) {
                     return ((t16)(1ULL));
@@ -33857,8 +33857,8 @@ static t181 f_os__exit_code(CTX_UP t40 l0, t9 l1) {
     CTX_FRAME(&w_os__exit_code);
     {
         l2 = ((t23)(0ULL));
-        if (((CTX_AT(1087, 30), e890(CTX_ME (&(*l0)), l1, (&l2))) == ((t0)(0ULL)))) {
-            return ({ t181 _t0; t324 _t1 = ({ t23 _t2 = (CTX_AT(1087, 104), e480(CTX_ME (&(*l0)))); CTX_AT(1087, 85); f_os__proc_failedi32_90c4dade(CTX_ME _t2); }); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
+        if (((CTX_AT(1101, 30), e890(CTX_ME (&(*l0)), l1, (&l2))) == ((t0)(0ULL)))) {
+            return ({ t181 _t0; t324 _t1 = ({ t23 _t2 = (CTX_AT(1101, 104), e480(CTX_ME (&(*l0)))); CTX_AT(1101, 85); f_os__proc_failedi32_90c4dade(CTX_ME _t2); }); if ((_t1.tag == 0)) { l3 = _t1.p.v0.m_value; {
                 _t0 = ((t181){ .tag = 0, .p.v0 = { .m_value = l3, } });
             } } else if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_error; {
                 _t0 = ((t181){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t3; t323 _t4 = l4; if ((_t4.tag == 0)) { {
@@ -33888,18 +33888,18 @@ static t325 f_os__kill(CTX_UP t40 l0, t171 * l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__kill);
     {
-        l2 = ((t23)(ctx_as_s((int64_t)(((t0)(137ULL))), 0, UINT32_MAX, "u32", 1119, 20, &w_os__kill, CTX_UPV)));
+        l2 = ((t23)(ctx_as_s((int64_t)(((t0)(137ULL))), 0, UINT32_MAX, "u32", 1133, 20, &w_os__kill, CTX_UPV)));
         l3 = ({ t0 _t0; if ((((*l1)).m_group != ((t9)(0ULL)))) {
-            _t0 = (CTX_AT(1120, 58), e891(CTX_ME (&(*l0)), ((*l1)).m_group, l2));
+            _t0 = (CTX_AT(1134, 58), e891(CTX_ME (&(*l0)), ((*l1)).m_group, l2));
         } else {
-            _t0 = (CTX_AT(1120, 118), e874(CTX_ME (&(*l0)), ((*l1)).m_id, l2));
+            _t0 = (CTX_AT(1134, 118), e874(CTX_ME (&(*l0)), ((*l1)).m_id, l2));
         } _t0; });
         if ((l3 == ((t0)(0ULL)))) {
-            l4 = (CTX_AT(1122, 31), e480(CTX_ME (&(*l0))));
-            if (((CTX_AT(1123, 35), e482(CTX_ME (&(*l0)), ((*l1)).m_id, ((t23)(0ULL)))) == ((t23)(0ULL)))) {
+            l4 = (CTX_AT(1136, 31), e480(CTX_ME (&(*l0))));
+            if (((CTX_AT(1137, 35), e482(CTX_ME (&(*l0)), ((*l1)).m_id, ((t23)(0ULL)))) == ((t23)(0ULL)))) {
                 return ((t325){ .tag = 0 });
             }
-            return ({ t325 _t1; t580 _t2 = (CTX_AT(1124, 31), f_os__proc_failednovalue_ca4bbae4(CTX_ME l4)); if ((_t2.tag == 0)) { {
+            return ({ t325 _t1; t580 _t2 = (CTX_AT(1138, 31), f_os__proc_failednovalue_ca4bbae4(CTX_ME l4)); if ((_t2.tag == 0)) { {
                 _t1 = ((t325){ .tag = 0 });
             } } else if ((_t2.tag == 1)) { l5 = _t2.p.v1.m_error; {
                 _t1 = ((t325){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t3; t323 _t4 = l5; if ((_t4.tag == 0)) { {
@@ -38424,7 +38424,7 @@ static t15 f_os__wide_len(CTX_UP t163 l0) {
     {
         l1 = ((t15)(0ULL));
         while (((*(l0 + l1)) != ((t262)(0ULL)))) {
-            l1 = ctx_add_u64(l1, ((t15)(1ULL)), 977, 38, &w_os__wide_len, CTX_UPV);
+            l1 = ctx_add_u64(l1, ((t15)(1ULL)), 991, 38, &w_os__wide_len, CTX_UPV);
         }
         return l1;
     }
@@ -40709,7 +40709,7 @@ static t7 f_os__is_dir(CTX_UP t2 l0, t163 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__is_dir);
     {
-        l2 = (CTX_AT(1297, 35), e1288(CTX_ME (&(*l0)), l1));
+        l2 = (CTX_AT(1311, 35), e1288(CTX_ME (&(*l0)), l1));
         return ((l2 != ((t23)(4294967295ULL))) && (((t23)((l2 & ((t23)(16ULL))))) != ((t23)(0ULL))));
     }
     __builtin_unreachable();
@@ -40751,7 +40751,7 @@ static t492 f_os__failednovalue_13c7547f(CTX_UP t23 l0) {
                 _t10 = ((t258){ .tag = 5 });
             } } _t10; }), } });
         }
-        return ((t492){ .tag = 1, .p.v1 = { .m_error = ({ t258 _t12; t485 _t13 = ((t485){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 2118, 34, &w_os__failednovalue_13c7547f, CTX_UPV))), } }); if ((_t13.tag == 0)) { l1 = _t13.p.v0.m_code; {
+        return ((t492){ .tag = 1, .p.v1 = { .m_error = ({ t258 _t12; t485 _t13 = ((t485){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 2132, 34, &w_os__failednovalue_13c7547f, CTX_UPV))), } }); if ((_t13.tag == 0)) { l1 = _t13.p.v0.m_code; {
             _t12 = ((t258){ .tag = 6, .p.v6 = { .m_code = l1, } });
         } } _t12; }), } });
         return ((t492){ .tag = 0 });
@@ -40795,7 +40795,7 @@ static t493 f_os__failedusize_0dc56eeb(CTX_UP t23 l0) {
                 _t10 = ((t258){ .tag = 5 });
             } } _t10; }), } });
         }
-        return ((t493){ .tag = 1, .p.v1 = { .m_error = ({ t258 _t12; t485 _t13 = ((t485){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 2118, 34, &w_os__failedusize_0dc56eeb, CTX_UPV))), } }); if ((_t13.tag == 0)) { l1 = _t13.p.v0.m_code; {
+        return ((t493){ .tag = 1, .p.v1 = { .m_error = ({ t258 _t12; t485 _t13 = ((t485){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 2132, 34, &w_os__failedusize_0dc56eeb, CTX_UPV))), } }); if ((_t13.tag == 0)) { l1 = _t13.p.v0.m_code; {
             _t12 = ((t258){ .tag = 6, .p.v6 = { .m_code = l1, } });
         } } _t12; }), } });
     }
@@ -44109,7 +44109,7 @@ static t562 f_os__out_of_memoryproc__Child_0aa23820(CTX_UP0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__out_of_memoryproc__Child_0aa23820);
     {
-        (CTX_AT(970, 17), e192(CTX_ME ((t8){ .m_ptr = (void *)"out of memory", .m_len = 13 })));
+        (CTX_AT(984, 17), e192(CTX_ME ((t8){ .m_ptr = (void *)"out of memory", .m_len = 13 })));
         return ((t562){ .tag = 1, .p.v1 = { .m_error = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(8ULL)), } }), } });
     }
     __builtin_unreachable();
@@ -44130,46 +44130,46 @@ static t15 f_os__quote_arg(CTX_UP t8 l0, t15 l1, t8 l2) {
     {
         l3 = l1;
         if ((l3 > ((t15)(0ULL)))) {
-            (*({ t8 _t0 = (l0); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1001, 17, &w_os__quote_arg, CTX_UPV); })) = ((t16)(32ULL));
-            l3 = ctx_add_u64(l3, ((t15)(1ULL)), 1002, 19, &w_os__quote_arg, CTX_UPV);
+            (*({ t8 _t0 = (l0); uint64_t _t1 = l3; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1015, 17, &w_os__quote_arg, CTX_UPV); })) = ((t16)(32ULL));
+            l3 = ctx_add_u64(l3, ((t15)(1ULL)), 1016, 19, &w_os__quote_arg, CTX_UPV);
         }
         l4 = ((l2).m_len > ((t15)(0ULL)));
         l5 = ((t15)(0ULL));
         while ((l5 < (l2).m_len)) {
-            l6 = (*({ t8 _t2 = (l2); uint64_t _t3 = l5; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 1007, 24, &w_os__quote_arg, CTX_UPV); }));
+            l6 = (*({ t8 _t2 = (l2); uint64_t _t3 = l5; _t2.m_ptr + ctx_idx(_t3, _t2.m_len, 1021, 24, &w_os__quote_arg, CTX_UPV); }));
             if ((((((l6 == ((t16)(32ULL))) || (l6 == ((t16)(9ULL)))) || (l6 == ((t16)(34ULL)))) || (l6 == ((t16)(10ULL)))) || (l6 == ((t16)(11ULL))))) {
                 l4 = ((bool)0);
             }
-            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 1009, 19, &w_os__quote_arg, CTX_UPV);
+            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 1023, 19, &w_os__quote_arg, CTX_UPV);
         }
         if (l4) {
-            ({ t8 _t4 = ({ t8 _t6 = (l0); uint64_t _t7 = l3; uint64_t _t8 = ctx_add_u64(l3, (l2).m_len, 1012, 46, &w_os__quote_arg, CTX_UPV); ctx_range(_t7, _t8, _t6.m_len, 1012, 40, &w_os__quote_arg, CTX_UPV); (t8){ .m_ptr = _t6.m_ptr + _t7, .m_len = _t8 - _t7 }; }); t8 _t5 = l2; CTX_AT(1012, 28); f_slice__copyu8_aae5a9c4(CTX_ME _t4, _t5); });
-            return ctx_add_u64(l3, (l2).m_len, 1013, 22, &w_os__quote_arg, CTX_UPV);
+            ({ t8 _t4 = ({ t8 _t6 = (l0); uint64_t _t7 = l3; uint64_t _t8 = ctx_add_u64(l3, (l2).m_len, 1026, 46, &w_os__quote_arg, CTX_UPV); ctx_range(_t7, _t8, _t6.m_len, 1026, 40, &w_os__quote_arg, CTX_UPV); (t8){ .m_ptr = _t6.m_ptr + _t7, .m_len = _t8 - _t7 }; }); t8 _t5 = l2; CTX_AT(1026, 28); f_slice__copyu8_aae5a9c4(CTX_ME _t4, _t5); });
+            return ctx_add_u64(l3, (l2).m_len, 1027, 22, &w_os__quote_arg, CTX_UPV);
         }
-        (*({ t8 _t9 = (l0); uint64_t _t10 = l3; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 1015, 13, &w_os__quote_arg, CTX_UPV); })) = ((t16)(34ULL));
-        l3 = ctx_add_u64(l3, ((t15)(1ULL)), 1016, 15, &w_os__quote_arg, CTX_UPV);
+        (*({ t8 _t9 = (l0); uint64_t _t10 = l3; _t9.m_ptr + ctx_idx(_t10, _t9.m_len, 1029, 13, &w_os__quote_arg, CTX_UPV); })) = ((t16)(34ULL));
+        l3 = ctx_add_u64(l3, ((t15)(1ULL)), 1030, 15, &w_os__quote_arg, CTX_UPV);
         l7 = ((t15)(0ULL));
         l5 = ((t15)(0ULL));
         while ((l5 < (l2).m_len)) {
-            l8 = (*({ t8 _t11 = (l2); uint64_t _t12 = l5; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 1020, 24, &w_os__quote_arg, CTX_UPV); }));
+            l8 = (*({ t8 _t11 = (l2); uint64_t _t12 = l5; _t11.m_ptr + ctx_idx(_t12, _t11.m_len, 1034, 24, &w_os__quote_arg, CTX_UPV); }));
             if ((l8 == ((t16)(92ULL)))) {
-                l7 = ctx_add_u64(l7, ((t15)(1ULL)), 1022, 35, &w_os__quote_arg, CTX_UPV);
+                l7 = ctx_add_u64(l7, ((t15)(1ULL)), 1036, 35, &w_os__quote_arg, CTX_UPV);
             } else {
                 l9 = ({ t15 _t13; if ((l8 == ((t16)(34ULL)))) {
-                    _t13 = ctx_add_u64(ctx_mul_u64(l7, ((t15)(2ULL)), 1024, 51, &w_os__quote_arg, CTX_UPV), ((t15)(1ULL)), 1024, 55, &w_os__quote_arg, CTX_UPV);
+                    _t13 = ctx_add_u64(ctx_mul_u64(l7, ((t15)(2ULL)), 1038, 51, &w_os__quote_arg, CTX_UPV), ((t15)(1ULL)), 1038, 55, &w_os__quote_arg, CTX_UPV);
                 } else {
                     _t13 = l7;
                 } _t13; });
-                l3 = (CTX_AT(1025, 32), f_os__backslashes(CTX_ME l0, l3, l9));
+                l3 = (CTX_AT(1039, 32), f_os__backslashes(CTX_ME l0, l3, l9));
                 l7 = ((t15)(0ULL));
-                (*({ t8 _t14 = (l0); uint64_t _t15 = l3; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 1027, 21, &w_os__quote_arg, CTX_UPV); })) = l8;
-                l3 = ctx_add_u64(l3, ((t15)(1ULL)), 1028, 23, &w_os__quote_arg, CTX_UPV);
+                (*({ t8 _t14 = (l0); uint64_t _t15 = l3; _t14.m_ptr + ctx_idx(_t15, _t14.m_len, 1041, 21, &w_os__quote_arg, CTX_UPV); })) = l8;
+                l3 = ctx_add_u64(l3, ((t15)(1ULL)), 1042, 23, &w_os__quote_arg, CTX_UPV);
             }
-            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 1030, 19, &w_os__quote_arg, CTX_UPV);
+            l5 = ctx_add_u64(l5, ((t15)(1ULL)), 1044, 19, &w_os__quote_arg, CTX_UPV);
         }
-        l3 = ({ t8 _t16 = l0; t15 _t17 = l3; t15 _t18 = ctx_mul_u64(l7, ((t15)(2ULL)), 1032, 55, &w_os__quote_arg, CTX_UPV); CTX_AT(1032, 24); f_os__backslashes(CTX_ME _t16, _t17, _t18); });
-        (*({ t8 _t19 = (l0); uint64_t _t20 = l3; _t19.m_ptr + ctx_idx(_t20, _t19.m_len, 1033, 13, &w_os__quote_arg, CTX_UPV); })) = ((t16)(34ULL));
-        return ctx_add_u64(l3, ((t15)(1ULL)), 1034, 18, &w_os__quote_arg, CTX_UPV);
+        l3 = ({ t8 _t16 = l0; t15 _t17 = l3; t15 _t18 = ctx_mul_u64(l7, ((t15)(2ULL)), 1046, 55, &w_os__quote_arg, CTX_UPV); CTX_AT(1046, 24); f_os__backslashes(CTX_ME _t16, _t17, _t18); });
+        (*({ t8 _t19 = (l0); uint64_t _t20 = l3; _t19.m_ptr + ctx_idx(_t20, _t19.m_len, 1047, 13, &w_os__quote_arg, CTX_UPV); })) = ((t16)(34ULL));
+        return ctx_add_u64(l3, ((t15)(1ULL)), 1048, 18, &w_os__quote_arg, CTX_UPV);
     }
     __builtin_unreachable();
 }
@@ -44184,34 +44184,34 @@ static t7 f_os__replaced(CTX_UP t40 l0, t256 l1, t6 l2) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__replaced);
     {
-        l3 = ({ t15 _t0; if ((((l1).m_len > ((t15)(0ULL))) && ((*({ t256 _t1 = (l1); uint64_t _t2 = ((t15)(0ULL)); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 984, 54, &w_os__replaced, CTX_UPV); })) == ((t262)(61ULL))))) {
+        l3 = ({ t15 _t0; if ((((l1).m_len > ((t15)(0ULL))) && ((*({ t256 _t1 = (l1); uint64_t _t2 = ((t15)(0ULL)); _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 998, 54, &w_os__replaced, CTX_UPV); })) == ((t262)(61ULL))))) {
             _t0 = ((t15)(1ULL));
         } else {
             _t0 = ((t15)(0ULL));
         } _t0; });
-        while (((l3 < (l1).m_len) && ((*({ t256 _t3 = (l1); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 985, 38, &w_os__replaced, CTX_UPV); })) != ((t262)(61ULL))))) {
-            l3 = ctx_add_u64(l3, ((t15)(1ULL)), 985, 56, &w_os__replaced, CTX_UPV);
+        while (((l3 < (l1).m_len) && ((*({ t256 _t3 = (l1); uint64_t _t4 = l3; _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 999, 38, &w_os__replaced, CTX_UPV); })) != ((t262)(61ULL))))) {
+            l3 = ctx_add_u64(l3, ((t15)(1ULL)), 999, 56, &w_os__replaced, CTX_UPV);
         }
         if ((l3 == ((t15)(0ULL)))) {
             return ((bool)0);
         }
-        l4 = ({ t163 _t5 = (l1).m_ptr; t0 _t6 = ((t0)(ctx_as_u((uint64_t)(l3), INT32_MAX, "i32", 987, 47, &w_os__replaced, CTX_UPV))); t114 _t7 = ((t114)(0)); t0 _t8 = ((t0)(0ULL)); t114 _t9 = ((t114)(0)); t167 _t10 = ((t167)(0)); CTX_AT(987, 23); f_os__narrow(CTX_ME _t5, _t6, _t7, _t8, _t9, _t10); });
+        l4 = ({ t163 _t5 = (l1).m_ptr; t0 _t6 = ((t0)(ctx_as_u((uint64_t)(l3), INT32_MAX, "i32", 1001, 47, &w_os__replaced, CTX_UPV))); t114 _t7 = ((t114)(0)); t0 _t8 = ((t0)(0ULL)); t114 _t9 = ((t114)(0)); t167 _t10 = ((t167)(0)); CTX_AT(1001, 23); f_os__narrow(CTX_ME _t5, _t6, _t7, _t8, _t9, _t10); });
         if ((l4 <= ((t0)(0ULL)))) {
             return ((bool)0);
         }
-        l5 = ({ t43 _t11; t114 _t12 = ({ t40 _t13 = (&(*l0)); t15 _t14 = ((t15)(ctx_as_s((int64_t)(l4), 0, INT64_MAX, "usize", 989, 45, &w_os__replaced, CTX_UPV))); CTX_AT(989, 29); e434(CTX_ME _t13, _t14); }); if ((_t12 != 0)) { l6 = _t12; {
+        l5 = ({ t43 _t11; t114 _t12 = ({ t40 _t13 = (&(*l0)); t15 _t14 = ((t15)(ctx_as_s((int64_t)(l4), 0, INT64_MAX, "usize", 1003, 45, &w_os__replaced, CTX_UPV))); CTX_AT(1003, 29); e434(CTX_ME _t13, _t14); }); if ((_t12 != 0)) { l6 = _t12; {
             _t11 = l6;
         } } else if ((_t12 == 0)) { {
             return ((bool)0);
         } } _t11; });
         /* defer */
-        (void)({ t163 _t15 = (l1).m_ptr; t0 _t16 = ((t0)(ctx_as_u((uint64_t)(l3), INT32_MAX, "i32", 991, 43, &w_os__replaced, CTX_UPV))); t114 _t17 = ((t114)(l5)); t0 _t18 = l4; t114 _t19 = ((t114)(0)); t167 _t20 = ((t167)(0)); CTX_AT(991, 19); f_os__narrow(CTX_ME _t15, _t16, _t17, _t18, _t19, _t20); });
-        { t7 _t21 = ({ t8 _t22 = ({ t43 _t24 = l5; t15 _t25 = ((t15)(ctx_as_s((int64_t)(l4), 0, INT64_MAX, "usize", 992, 56, &w_os__replaced, CTX_UPV))); ((t8){ .m_ptr = _t24, .m_len = _t25, }); }); t6 _t23 = l2; CTX_AT(992, 32); f_proc__overridden(CTX_ME _t22, _t23); });
+        (void)({ t163 _t15 = (l1).m_ptr; t0 _t16 = ((t0)(ctx_as_u((uint64_t)(l3), INT32_MAX, "i32", 1005, 43, &w_os__replaced, CTX_UPV))); t114 _t17 = ((t114)(l5)); t0 _t18 = l4; t114 _t19 = ((t114)(0)); t167 _t20 = ((t167)(0)); CTX_AT(1005, 19); f_os__narrow(CTX_ME _t15, _t16, _t17, _t18, _t19, _t20); });
+        { t7 _t21 = ({ t8 _t22 = ({ t43 _t24 = l5; t15 _t25 = ((t15)(ctx_as_s((int64_t)(l4), 0, INT64_MAX, "usize", 1006, 56, &w_os__replaced, CTX_UPV))); ((t8){ .m_ptr = _t24, .m_len = _t25, }); }); t6 _t23 = l2; CTX_AT(1006, 32); f_proc__overridden(CTX_ME _t22, _t23); });
         {
-            (CTX_AT(990, 21), e436(CTX_ME (&(*l0)), l5));
+            (CTX_AT(1004, 21), e436(CTX_ME (&(*l0)), l5));
         } return _t21; }
         {
-            (CTX_AT(990, 21), e436(CTX_ME (&(*l0)), l5));
+            (CTX_AT(1004, 21), e436(CTX_ME (&(*l0)), l5));
         }
     }
     __builtin_unreachable();
@@ -44226,10 +44226,10 @@ static t29 f_os__close_handles(CTX_UP t40 l0, t342 l1) {
     {
         l2 = ((t15)(0ULL));
         while ((l2 < (l1).m_len)) {
-            if (((*({ t342 _t0 = (l1); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 949, 23, &w_os__close_handles, CTX_UPV); })) != ((t9)(0ULL)))) {
-                (void)({ t40 _t2 = (&(*l0)); t9 _t3 = (*({ t342 _t4 = (l1); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 949, 75, &w_os__close_handles, CTX_UPV); })); CTX_AT(949, 50); e875(CTX_ME _t2, _t3); });
+            if (((*({ t342 _t0 = (l1); uint64_t _t1 = l2; _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 963, 23, &w_os__close_handles, CTX_UPV); })) != ((t9)(0ULL)))) {
+                (void)({ t40 _t2 = (&(*l0)); t9 _t3 = (*({ t342 _t4 = (l1); uint64_t _t5 = l2; _t4.m_ptr + ctx_idx(_t5, _t4.m_len, 963, 75, &w_os__close_handles, CTX_UPV); })); CTX_AT(963, 50); e875(CTX_ME _t2, _t3); });
             }
-            l2 = ctx_add_u64(l2, ((t15)(1ULL)), 950, 19, &w_os__close_handles, CTX_UPV);
+            l2 = ctx_add_u64(l2, ((t15)(1ULL)), 964, 19, &w_os__close_handles, CTX_UPV);
         }
     }
 }
@@ -44245,10 +44245,10 @@ static t563 f_os__inheritable(CTX_UP t40 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__inheritable);
     {
-        l2 = (CTX_AT(858, 37), e1386(CTX_ME (&(*l0))));
+        l2 = (CTX_AT(872, 37), e1386(CTX_ME (&(*l0))));
         l3 = ((t9)(0ULL));
-        if (((CTX_AT(860, 27), e1387(CTX_ME (&(*l0)), l2, l1, l2, (&l3), ((t23)(0ULL)), ((t0)(1ULL)), ((t23)(2ULL)))) == ((t0)(0ULL)))) {
-            return ({ t563 _t0; t790 _t1 = ({ t23 _t2 = (CTX_AT(861, 50), e480(CTX_ME (&(*l0)))); CTX_AT(861, 31); f_os__proc_failedu64_9d192bf7(CTX_ME _t2); }); if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_value; {
+        if (((CTX_AT(874, 27), e1387(CTX_ME (&(*l0)), l2, l1, l2, (&l3), ((t23)(0ULL)), ((t0)(1ULL)), ((t23)(2ULL)))) == ((t0)(0ULL)))) {
+            return ({ t563 _t0; t790 _t1 = ({ t23 _t2 = (CTX_AT(875, 50), e480(CTX_ME (&(*l0)))); CTX_AT(875, 31); f_os__proc_failedu64_9d192bf7(CTX_ME _t2); }); if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_value; {
                 _t0 = ((t563){ .tag = 0, .p.v0 = { .m_value = l4, } });
             } } else if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_error; {
                 _t0 = ((t563){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t3; t323 _t4 = l5; if ((_t4.tag == 0)) { {
@@ -44280,10 +44280,10 @@ static t563 f_os__null_device(CTX_UP t40 l0) {
     CTX_FRAME(&w_os__null_device);
     {
         l1 = ((t791){{ ((t262)(78ULL)), ((t262)(85ULL)), ((t262)(76ULL)), ((t262)(0ULL)) }});
-        l2 = ((t792){ .m_size = ((t23)(ctx_as_u((uint64_t)(((t15)(24ULL))), UINT32_MAX, "u32", 869, 41, &w_os__null_device, CTX_UPV))), .m_descriptor = ((t9)(0ULL)), .m_inherit = ((t0)(1ULL)), });
-        l3 = ({ t40 _t0 = (&(*l0)); t163 _t1 = (&(l1).a[ctx_idx(((t15)(0ULL)), 4, 870, 47, &w_os__null_device, CTX_UPV)]); t23 _t2 = ((t23)((((t23)(2147483648ULL)) | ((t23)(1073741824ULL))))); t23 _t3 = ((t23)(7ULL)); t793 _t4 = ((t793)((&l2))); t23 _t5 = ((t23)(3ULL)); t23 _t6 = ((t23)(0ULL)); t9 _t7 = ((t9)(0ULL)); CTX_AT(870, 26); e1389(CTX_ME _t0, _t1, _t2, _t3, _t4, _t5, _t6, _t7); });
+        l2 = ((t792){ .m_size = ((t23)(ctx_as_u((uint64_t)(((t15)(24ULL))), UINT32_MAX, "u32", 883, 41, &w_os__null_device, CTX_UPV))), .m_descriptor = ((t9)(0ULL)), .m_inherit = ((t0)(1ULL)), });
+        l3 = ({ t40 _t0 = (&(*l0)); t163 _t1 = (&(l1).a[ctx_idx(((t15)(0ULL)), 4, 884, 47, &w_os__null_device, CTX_UPV)]); t23 _t2 = ((t23)((((t23)(2147483648ULL)) | ((t23)(1073741824ULL))))); t23 _t3 = ((t23)(7ULL)); t793 _t4 = ((t793)((&l2))); t23 _t5 = ((t23)(3ULL)); t23 _t6 = ((t23)(0ULL)); t9 _t7 = ((t9)(0ULL)); CTX_AT(884, 26); e1389(CTX_ME _t0, _t1, _t2, _t3, _t4, _t5, _t6, _t7); });
         if ((l3 == ((t9)(18446744073709551615ULL)))) {
-            return ({ t563 _t8; t790 _t9 = ({ t23 _t10 = (CTX_AT(871, 71), e480(CTX_ME (&(*l0)))); CTX_AT(871, 52); f_os__proc_failedu64_9d192bf7(CTX_ME _t10); }); if ((_t9.tag == 0)) { l4 = _t9.p.v0.m_value; {
+            return ({ t563 _t8; t790 _t9 = ({ t23 _t10 = (CTX_AT(885, 71), e480(CTX_ME (&(*l0)))); CTX_AT(885, 52); f_os__proc_failedu64_9d192bf7(CTX_ME _t10); }); if ((_t9.tag == 0)) { l4 = _t9.p.v0.m_value; {
                 _t8 = ((t563){ .tag = 0, .p.v0 = { .m_value = l4, } });
             } } else if ((_t9.tag == 1)) { l5 = _t9.p.v1.m_error; {
                 _t8 = ((t563){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t11; t323 _t12 = l5; if ((_t12.tag == 0)) { {
@@ -44320,7 +44320,7 @@ static t564 f_os__make_pipe(CTX_UP t40 l0, t7 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__make_pipe);
     {
-        l2 = (CTX_AT(883, 38), e1390(CTX_ME (&(*l0))));
+        l2 = (CTX_AT(897, 38), e1390(CTX_ME (&(*l0))));
         l3 = ((t23)((((t23)((({ t23 _t0; if (l1) {
             _t0 = ((t23)(1ULL));
         } else {
@@ -44329,29 +44329,29 @@ static t564 f_os__make_pipe(CTX_UP t40 l0, t7 l1) {
         l4 = ((t23)(0ULL));
         while (((bool)1)) {
             memset(&l5, 0, sizeof l5);
-            ({ t256 _t1 = ({ t256 _t4 = (((t256){ .m_ptr = ((t163)((&l5))), .m_len = ((t15)(64ULL)), })); uint64_t _t5 = ((t15)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 888, 35, &w_os__make_pipe, CTX_UPV); (t256){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); t23 _t2 = l2; t9 _t3 = ({ t253 _t7 = (&(*(&s_os__Proc__pipes))); t9 _t8 = ((t9)(1ULL)); __atomic_fetch_add(_t7, _t8, __ATOMIC_RELAXED); }); CTX_AT(888, 22); f_os__pipe_name(CTX_ME _t1, _t2, _t3); });
-            l6 = ({ t40 _t9 = (&(*l0)); t163 _t10 = (&(l5).a[ctx_idx(((t15)(0ULL)), 64, 889, 61, &w_os__make_pipe, CTX_UPV)]); t23 _t11 = l3; t23 _t12 = ((t23)(8ULL)); t23 _t13 = ((t23)(1ULL)); t23 _t14 = ((t23)(65536ULL)); t23 _t15 = ((t23)(65536ULL)); t23 _t16 = ((t23)(0ULL)); t793 _t17 = ((t793)(0)); CTX_AT(889, 40); e1392(CTX_ME _t9, _t10, _t11, _t12, _t13, _t14, _t15, _t16, _t17); });
+            ({ t256 _t1 = ({ t256 _t4 = (((t256){ .m_ptr = ((t163)((&l5))), .m_len = ((t15)(64ULL)), })); uint64_t _t5 = ((t15)(0ULL)); uint64_t _t6 = _t4.m_len; ctx_range(_t5, _t6, _t4.m_len, 902, 35, &w_os__make_pipe, CTX_UPV); (t256){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); t23 _t2 = l2; t9 _t3 = ({ t253 _t7 = (&(*(&s_os__Proc__pipes))); t9 _t8 = ((t9)(1ULL)); __atomic_fetch_add(_t7, _t8, __ATOMIC_RELAXED); }); CTX_AT(902, 22); f_os__pipe_name(CTX_ME _t1, _t2, _t3); });
+            l6 = ({ t40 _t9 = (&(*l0)); t163 _t10 = (&(l5).a[ctx_idx(((t15)(0ULL)), 64, 903, 61, &w_os__make_pipe, CTX_UPV)]); t23 _t11 = l3; t23 _t12 = ((t23)(8ULL)); t23 _t13 = ((t23)(1ULL)); t23 _t14 = ((t23)(65536ULL)); t23 _t15 = ((t23)(65536ULL)); t23 _t16 = ((t23)(0ULL)); t793 _t17 = ((t793)(0)); CTX_AT(903, 40); e1392(CTX_ME _t9, _t10, _t11, _t12, _t13, _t14, _t15, _t16, _t17); });
             if ((l6 == ((t9)(18446744073709551615ULL)))) {
-                l7 = (CTX_AT(891, 35), e480(CTX_ME (&(*l0))));
-                l4 = ctx_add_u32(l4, ((t23)(1ULL)), 892, 31, &w_os__make_pipe, CTX_UPV);
+                l7 = (CTX_AT(905, 35), e480(CTX_ME (&(*l0))));
+                l4 = ctx_add_u32(l4, ((t23)(1ULL)), 906, 31, &w_os__make_pipe, CTX_UPV);
                 if (((l7 == ((t23)(5ULL))) && (l4 < ((t23)(64ULL))))) {
                      continue;
                 }
-                return ((t564){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t18; t557 _t19 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l7), INT64_MAX, "i64", 894, 44, &w_os__make_pipe, CTX_UPV))), } }); if ((_t19.tag == 0)) { l8 = _t19.p.v0.m_code; {
+                return ((t564){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t18; t557 _t19 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l7), INT64_MAX, "i64", 908, 44, &w_os__make_pipe, CTX_UPV))), } }); if ((_t19.tag == 0)) { l8 = _t19.p.v0.m_code; {
                     _t18 = ((t182){ .tag = 3, .p.v3 = { .m_code = l8, } });
                 } } _t18; }), } });
             }
-            l9 = ((t792){ .m_size = ((t23)(ctx_as_u((uint64_t)(((t15)(24ULL))), UINT32_MAX, "u32", 896, 45, &w_os__make_pipe, CTX_UPV))), .m_descriptor = ((t9)(0ULL)), .m_inherit = ((t0)(1ULL)), });
+            l9 = ((t792){ .m_size = ((t23)(ctx_as_u((uint64_t)(((t15)(24ULL))), UINT32_MAX, "u32", 910, 45, &w_os__make_pipe, CTX_UPV))), .m_descriptor = ((t9)(0ULL)), .m_inherit = ((t0)(1ULL)), });
             l10 = ({ t23 _t20; if (l1) {
                 _t20 = ((t23)(1073741824ULL));
             } else {
                 _t20 = ((t23)(2147483648ULL));
             } _t20; });
-            l11 = ({ t40 _t21 = (&(*l0)); t163 _t22 = (&(l5).a[ctx_idx(((t15)(0ULL)), 64, 898, 56, &w_os__make_pipe, CTX_UPV)]); t23 _t23 = l10; t23 _t24 = ((t23)(0ULL)); t793 _t25 = ((t793)((&l9))); t23 _t26 = ((t23)(3ULL)); t23 _t27 = ((t23)(0ULL)); t9 _t28 = ((t9)(0ULL)); CTX_AT(898, 35); e1389(CTX_ME _t21, _t22, _t23, _t24, _t25, _t26, _t27, _t28); });
+            l11 = ({ t40 _t21 = (&(*l0)); t163 _t22 = (&(l5).a[ctx_idx(((t15)(0ULL)), 64, 912, 56, &w_os__make_pipe, CTX_UPV)]); t23 _t23 = l10; t23 _t24 = ((t23)(0ULL)); t793 _t25 = ((t793)((&l9))); t23 _t26 = ((t23)(3ULL)); t23 _t27 = ((t23)(0ULL)); t9 _t28 = ((t9)(0ULL)); CTX_AT(912, 35); e1389(CTX_ME _t21, _t22, _t23, _t24, _t25, _t26, _t27, _t28); });
             if ((l11 == ((t9)(18446744073709551615ULL)))) {
-                l12 = (CTX_AT(900, 35), e480(CTX_ME (&(*l0))));
-                (void)(CTX_AT(901, 33), e875(CTX_ME (&(*l0)), l6));
-                return ((t564){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t29; t557 _t30 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l12), INT64_MAX, "i64", 902, 44, &w_os__make_pipe, CTX_UPV))), } }); if ((_t30.tag == 0)) { l13 = _t30.p.v0.m_code; {
+                l12 = (CTX_AT(914, 35), e480(CTX_ME (&(*l0))));
+                (void)(CTX_AT(915, 33), e875(CTX_ME (&(*l0)), l6));
+                return ((t564){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t29; t557 _t30 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l12), INT64_MAX, "i64", 916, 44, &w_os__make_pipe, CTX_UPV))), } }); if ((_t30.tag == 0)) { l13 = _t30.p.v0.m_code; {
                     _t29 = ((t182){ .tag = 3, .p.v3 = { .m_code = l13, } });
                 } } _t29; }), } });
             }
@@ -44382,7 +44382,7 @@ static t566 f_os__proc_failedproc__Child_05204862(CTX_UP t23 l0) {
                 _t4 = ((t323){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t566){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 966, 36, &w_os__proc_failedproc__Child_05204862, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t566){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 980, 36, &w_os__proc_failedproc__Child_05204862, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t323){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
     }
@@ -44406,9 +44406,9 @@ static t563 f_os__job_for(CTX_UP t40 l0, t9 l1, t7 l2) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__job_for);
     {
-        l3 = (CTX_AT(932, 35), e1393(CTX_ME (&(*l0)), ((t793)(0)), ((t166)(0))));
+        l3 = (CTX_AT(946, 35), e1393(CTX_ME (&(*l0)), ((t793)(0)), ((t166)(0))));
         if ((l3 == ((t9)(0ULL)))) {
-            return ({ t563 _t0; t790 _t1 = ({ t23 _t2 = (CTX_AT(933, 60), e480(CTX_ME (&(*l0)))); CTX_AT(933, 41); f_os__proc_failedu64_9d192bf7(CTX_ME _t2); }); if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_value; {
+            return ({ t563 _t0; t790 _t1 = ({ t23 _t2 = (CTX_AT(947, 60), e480(CTX_ME (&(*l0)))); CTX_AT(947, 41); f_os__proc_failedu64_9d192bf7(CTX_ME _t2); }); if ((_t1.tag == 0)) { l4 = _t1.p.v0.m_value; {
                 _t0 = ((t563){ .tag = 0, .p.v0 = { .m_value = l4, } });
             } } else if ((_t1.tag == 1)) { l5 = _t1.p.v1.m_error; {
                 _t0 = ((t563){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t3; t323 _t4 = l5; if ((_t4.tag == 0)) { {
@@ -44423,12 +44423,12 @@ static t563 f_os__job_for(CTX_UP t40 l0, t9 l1, t7 l2) {
             } } _t0; });
         }
         l7 = ((t797){ .m_times = ({ t57 _t5 = ((t57)(0ULL)); t798 _t6; for (uint64_t _i = 0; _i < 2; _i++) _t6.a[_i] = _t5; _t6; }), .m_flags = ((t23)(8192ULL)), .m_rest = ({ t9 _t7 = ((t9)(0ULL)); t799 _t8; for (uint64_t _i = 0; _i < 15; _i++) _t8.a[_i] = _t7; _t8; }), });
-        l8 = ((t23)(ctx_as_u((uint64_t)(((t15)(144ULL))), UINT32_MAX, "u32", 935, 20, &w_os__job_for, CTX_UPV)));
-        l9 = ((!l2) || ((CTX_AT(936, 67), e1394(CTX_ME (&(*l0)), l3, ((t0)(9ULL)), (&l7), l8)) != ((t0)(0ULL))));
-        if (((!l9) || ((CTX_AT(937, 51), e1395(CTX_ME (&(*l0)), l3, l1)) == ((t0)(0ULL))))) {
-            l10 = (CTX_AT(938, 31), e480(CTX_ME (&(*l0))));
-            (void)(CTX_AT(939, 29), e875(CTX_ME (&(*l0)), l3));
-            return ({ t563 _t9; t790 _t10 = (CTX_AT(940, 31), f_os__proc_failedu64_9d192bf7(CTX_ME l10)); if ((_t10.tag == 0)) { l11 = _t10.p.v0.m_value; {
+        l8 = ((t23)(ctx_as_u((uint64_t)(((t15)(144ULL))), UINT32_MAX, "u32", 949, 20, &w_os__job_for, CTX_UPV)));
+        l9 = ((!l2) || ((CTX_AT(950, 67), e1394(CTX_ME (&(*l0)), l3, ((t0)(9ULL)), (&l7), l8)) != ((t0)(0ULL))));
+        if (((!l9) || ((CTX_AT(951, 51), e1395(CTX_ME (&(*l0)), l3, l1)) == ((t0)(0ULL))))) {
+            l10 = (CTX_AT(952, 31), e480(CTX_ME (&(*l0))));
+            (void)(CTX_AT(953, 29), e875(CTX_ME (&(*l0)), l3));
+            return ({ t563 _t9; t790 _t10 = (CTX_AT(954, 31), f_os__proc_failedu64_9d192bf7(CTX_ME l10)); if ((_t10.tag == 0)) { l11 = _t10.p.v0.m_value; {
                 _t9 = ((t563){ .tag = 0, .p.v0 = { .m_value = l11, } });
             } } else if ((_t10.tag == 1)) { l12 = _t10.p.v1.m_error; {
                 _t9 = ((t563){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t11; t323 _t12 = l12; if ((_t12.tag == 0)) { {
@@ -44640,8 +44640,8 @@ static t7 f_os__spare(CTX_UP t40 l0, t9 l1) {
     CTX_FRAME(&w_os__spare);
     {
         l2 = ((t797){ .m_times = ({ t57 _t0 = ((t57)(0ULL)); t798 _t1; for (uint64_t _i = 0; _i < 2; _i++) _t1.a[_i] = _t0; _t1; }), .m_flags = ((t23)(0ULL)), .m_rest = ({ t9 _t2 = ((t9)(0ULL)); t799 _t3; for (uint64_t _i = 0; _i < 15; _i++) _t3.a[_i] = _t2; _t3; }), });
-        l3 = ((t23)(ctx_as_u((uint64_t)(((t15)(144ULL))), UINT32_MAX, "u32", 1111, 20, &w_os__spare, CTX_UPV)));
-        return ((CTX_AT(1112, 39), e1394(CTX_ME (&(*l0)), l1, ((t0)(9ULL)), (&l2), l3)) != ((t0)(0ULL)));
+        l3 = ((t23)(ctx_as_u((uint64_t)(((t15)(144ULL))), UINT32_MAX, "u32", 1125, 20, &w_os__spare, CTX_UPV)));
+        return ((CTX_AT(1126, 39), e1394(CTX_ME (&(*l0)), l1, ((t0)(9ULL)), (&l2), l3)) != ((t0)(0ULL)));
     }
     __builtin_unreachable();
 }
@@ -44669,11 +44669,11 @@ static const ctx_where w_os__millis = { "os::millis", 3508905657, 0 };
 static t9 f_os__millis(CTX_UP t9 l0) {
     CTX_STACK_CHECK();
     {
-        return ({ t9 _t0 = ctx_div_u64(l0, ((t9)(1000000ULL)), 2045, 28, &w_os__millis, CTX_UPV); t9 _t1 = ({ t9 _t2; if ((ctx_rem_u64(l0, ((t9)(1000000ULL)), 2045, 56, &w_os__millis, CTX_UPV) > ((t9)(0ULL)))) {
+        return ({ t9 _t0 = ctx_div_u64(l0, ((t9)(1000000ULL)), 2059, 28, &w_os__millis, CTX_UPV); t9 _t1 = ({ t9 _t2; if ((ctx_rem_u64(l0, ((t9)(1000000ULL)), 2059, 56, &w_os__millis, CTX_UPV) > ((t9)(0ULL)))) {
             _t2 = ((t9)(1ULL));
         } else {
             _t2 = ((t9)(0ULL));
-        } _t2; }); ctx_add_u64(_t0, _t1, 2045, 38, &w_os__millis, CTX_UPV); });
+        } _t2; }); ctx_add_u64(_t0, _t1, 2059, 38, &w_os__millis, CTX_UPV); });
     }
     __builtin_unreachable();
 }
@@ -44719,7 +44719,7 @@ static t580 f_os__proc_failednovalue_ca4bbae4(CTX_UP t23 l0) {
                 _t4 = ((t323){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t580){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 966, 36, &w_os__proc_failednovalue_ca4bbae4, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t580){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 980, 36, &w_os__proc_failednovalue_ca4bbae4, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t323){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
         return ((t580){ .tag = 0 });
@@ -44733,7 +44733,7 @@ static t29 f_os__pipe_close(CTX_UP t40 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__pipe_close);
     {
-        (void)(CTX_AT(1197, 25), e875(CTX_ME (&(*l0)), l1));
+        (void)(CTX_AT(1211, 25), e875(CTX_ME (&(*l0)), l1));
     }
 }
 
@@ -61658,10 +61658,10 @@ static t15 f_os__backslashes(CTX_UP t8 l0, t15 l1, t15 l2) {
     {
         l3 = ((t15)(0ULL));
         while ((l3 < l2)) {
-            (*({ t8 _t0 = (l0); uint64_t _t1 = ctx_add_u64(l1, l3, 1040, 20, &w_os__backslashes, CTX_UPV); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1040, 17, &w_os__backslashes, CTX_UPV); })) = ((t16)(92ULL));
-            l3 = ctx_add_u64(l3, ((t15)(1ULL)), 1041, 19, &w_os__backslashes, CTX_UPV);
+            (*({ t8 _t0 = (l0); uint64_t _t1 = ctx_add_u64(l1, l3, 1054, 20, &w_os__backslashes, CTX_UPV); _t0.m_ptr + ctx_idx(_t1, _t0.m_len, 1054, 17, &w_os__backslashes, CTX_UPV); })) = ((t16)(92ULL));
+            l3 = ctx_add_u64(l3, ((t15)(1ULL)), 1055, 19, &w_os__backslashes, CTX_UPV);
         }
-        return ctx_add_u64(l1, l2, 1043, 18, &w_os__backslashes, CTX_UPV);
+        return ctx_add_u64(l1, l2, 1057, 18, &w_os__backslashes, CTX_UPV);
     }
     __builtin_unreachable();
 }
@@ -61687,7 +61687,7 @@ static t790 f_os__proc_failedu64_9d192bf7(CTX_UP t23 l0) {
                 _t4 = ((t323){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t790){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 966, 36, &w_os__proc_failedu64_9d192bf7, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t790){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 980, 36, &w_os__proc_failedu64_9d192bf7, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t323){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
     }
@@ -61703,11 +61703,11 @@ static t29 f_os__pipe_name(CTX_UP t256 l0, t23 l1, t9 l2) {
     CTX_FRAME(&w_os__pipe_name);
     {
         memset(&l3, 0, sizeof l3);
-        l4 = (CTX_AT(911, 32), f_os__ascii_into(CTX_ME l0, ((t15)(0ULL)), ((t8){ .m_ptr = (void *)"\134\134.\134pipe\134ctx-", .m_len = 13 })));
-        l4 = ({ t256 _t0 = l0; t15 _t1 = l4; t8 _t2 = (({ t9 _t3 = ((t9)(ctx_as_u((uint64_t)(l1), UINT64_MAX, "u64", 912, 66, &w_os__pipe_name, CTX_UPV))); t8 _t4 = ({ t8 _t5 = (((t8){ .m_ptr = ((t43)((&l3))), .m_len = ((t15)(20ULL)), })); uint64_t _t6 = ((t15)(0ULL)); uint64_t _t7 = _t5.m_len; ctx_range(_t6, _t7, _t5.m_len, 912, 94, &w_os__pipe_name, CTX_UPV); (t8){ .m_ptr = _t5.m_ptr + _t6, .m_len = _t7 - _t6 }; }); CTX_AT(912, 60); f_utf8__fmt_u64(CTX_ME _t3, _t4); })).m_bytes; CTX_AT(912, 24); f_os__ascii_into(CTX_ME _t0, _t1, _t2); });
-        l4 = (CTX_AT(913, 24), f_os__ascii_into(CTX_ME l0, l4, ((t8){ .m_ptr = (void *)"-", .m_len = 1 })));
-        l4 = ({ t256 _t8 = l0; t15 _t9 = l4; t8 _t10 = (({ t9 _t11 = l2; t8 _t12 = ({ t8 _t13 = (((t8){ .m_ptr = ((t43)((&l3))), .m_len = ((t15)(20ULL)), })); uint64_t _t14 = ((t15)(0ULL)); uint64_t _t15 = _t13.m_len; ctx_range(_t14, _t15, _t13.m_len, 914, 78, &w_os__pipe_name, CTX_UPV); (t8){ .m_ptr = _t13.m_ptr + _t14, .m_len = _t15 - _t14 }; }); CTX_AT(914, 60); f_utf8__fmt_u64(CTX_ME _t11, _t12); })).m_bytes; CTX_AT(914, 24); f_os__ascii_into(CTX_ME _t8, _t9, _t10); });
-        (*({ t256 _t16 = (l0); uint64_t _t17 = l4; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 915, 13, &w_os__pipe_name, CTX_UPV); })) = ((t262)(0ULL));
+        l4 = (CTX_AT(925, 32), f_os__ascii_into(CTX_ME l0, ((t15)(0ULL)), ((t8){ .m_ptr = (void *)"\134\134.\134pipe\134ctx-", .m_len = 13 })));
+        l4 = ({ t256 _t0 = l0; t15 _t1 = l4; t8 _t2 = (({ t9 _t3 = ((t9)(ctx_as_u((uint64_t)(l1), UINT64_MAX, "u64", 926, 66, &w_os__pipe_name, CTX_UPV))); t8 _t4 = ({ t8 _t5 = (((t8){ .m_ptr = ((t43)((&l3))), .m_len = ((t15)(20ULL)), })); uint64_t _t6 = ((t15)(0ULL)); uint64_t _t7 = _t5.m_len; ctx_range(_t6, _t7, _t5.m_len, 926, 94, &w_os__pipe_name, CTX_UPV); (t8){ .m_ptr = _t5.m_ptr + _t6, .m_len = _t7 - _t6 }; }); CTX_AT(926, 60); f_utf8__fmt_u64(CTX_ME _t3, _t4); })).m_bytes; CTX_AT(926, 24); f_os__ascii_into(CTX_ME _t0, _t1, _t2); });
+        l4 = (CTX_AT(927, 24), f_os__ascii_into(CTX_ME l0, l4, ((t8){ .m_ptr = (void *)"-", .m_len = 1 })));
+        l4 = ({ t256 _t8 = l0; t15 _t9 = l4; t8 _t10 = (({ t9 _t11 = l2; t8 _t12 = ({ t8 _t13 = (((t8){ .m_ptr = ((t43)((&l3))), .m_len = ((t15)(20ULL)), })); uint64_t _t14 = ((t15)(0ULL)); uint64_t _t15 = _t13.m_len; ctx_range(_t14, _t15, _t13.m_len, 928, 78, &w_os__pipe_name, CTX_UPV); (t8){ .m_ptr = _t13.m_ptr + _t14, .m_len = _t15 - _t14 }; }); CTX_AT(928, 60); f_utf8__fmt_u64(CTX_ME _t11, _t12); })).m_bytes; CTX_AT(928, 24); f_os__ascii_into(CTX_ME _t8, _t9, _t10); });
+        (*({ t256 _t16 = (l0); uint64_t _t17 = l4; _t16.m_ptr + ctx_idx(_t17, _t16.m_len, 929, 13, &w_os__pipe_name, CTX_UPV); })) = ((t262)(0ULL));
     }
 }
 
@@ -61777,7 +61777,7 @@ static t806 f_os__failedos__Dir_d53c32fe(CTX_UP t23 l0) {
                 _t10 = ((t258){ .tag = 5 });
             } } _t10; }), } });
         }
-        return ((t806){ .tag = 1, .p.v1 = { .m_error = ({ t258 _t12; t485 _t13 = ((t485){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 2118, 34, &w_os__failedos__Dir_d53c32fe, CTX_UPV))), } }); if ((_t13.tag == 0)) { l1 = _t13.p.v0.m_code; {
+        return ((t806){ .tag = 1, .p.v1 = { .m_error = ({ t258 _t12; t485 _t13 = ((t485){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 2132, 34, &w_os__failedos__Dir_d53c32fe, CTX_UPV))), } }); if ((_t13.tag == 0)) { l1 = _t13.p.v0.m_code; {
             _t12 = ((t258){ .tag = 6, .p.v6 = { .m_code = l1, } });
         } } _t12; }), } });
     }
@@ -61965,7 +61965,7 @@ static t29 f_os__mutex_lock(CTX_UP t586 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__mutex_lock);
     {
-        (CTX_AT(2089, 65), e1952(CTX_ME (&(*l0))));
+        (CTX_AT(2103, 65), e1952(CTX_ME (&(*l0))));
     }
 }
 
@@ -61975,7 +61975,7 @@ static t29 f_os__mutex_unlock(CTX_UP t586 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__mutex_unlock);
     {
-        (CTX_AT(2091, 67), e1953(CTX_ME (&(*l0))));
+        (CTX_AT(2105, 67), e1953(CTX_ME (&(*l0))));
     }
 }
 
@@ -62046,7 +62046,7 @@ static t9 f_os__now(CTX_UP t813 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__now);
     {
-        return ctx_mul_u64((CTX_AT(1903, 26), e1957(CTX_ME (&(*l0)))), ((t9)(1000000ULL)), 1903, 39, &w_os__now, CTX_UPV);
+        return ctx_mul_u64((CTX_AT(1917, 26), e1957(CTX_ME (&(*l0)))), ((t9)(1000000ULL)), 1917, 39, &w_os__now, CTX_UPV);
     }
     __builtin_unreachable();
 }
@@ -62078,7 +62078,7 @@ static t9 f_os__event_make(CTX_UP t813 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__event_make);
     {
-        return (CTX_AT(1892, 28), e1960(CTX_ME (&(*l0)), ((t114)(0)), ((t0)(1ULL)), ((t0)(0ULL)), ((t166)(0))));
+        return (CTX_AT(1906, 28), e1960(CTX_ME (&(*l0)), ((t114)(0)), ((t0)(1ULL)), ((t0)(0ULL)), ((t166)(0))));
     }
     __builtin_unreachable();
 }
@@ -62089,7 +62089,7 @@ static t29 f_os__event_reset(CTX_UP t813 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__event_reset);
     {
-        (void)(CTX_AT(1896, 74), e1961(CTX_ME (&(*l0)), l1));
+        (void)(CTX_AT(1910, 74), e1961(CTX_ME (&(*l0)), l1));
     }
 }
 
@@ -80570,7 +80570,7 @@ static t1000 f_os__pipe_read(CTX_UP t40 l0, t110 l1, t9 l2, t8 l3) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__pipe_read);
     {
-        { t109 _t0 = (CTX_AT(1132, 24), f_task__check(CTX_ME (&(*l1)))); if ((_t0.tag == 0)) { {
+        { t109 _t0 = (CTX_AT(1146, 24), f_task__check(CTX_ME (&(*l1)))); if ((_t0.tag == 0)) { {
         } } else if ((_t0.tag == 1)) { l4 = _t0.p.v1.m_error; {
             return ((t1000){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t1; t107 _t2 = l4; if ((_t2.tag == 0)) { {
                 _t1 = ((t182){ .tag = 4 });
@@ -80583,22 +80583,22 @@ static t1000 f_os__pipe_read(CTX_UP t40 l0, t110 l1, t9 l2, t8 l3) {
         } else {
             _t3 = l7;
         } _t3; }); }); });
-        l8 = ({ t997 _t4; t1111 _t5 = (CTX_AT(1134, 35), f_os__overlapped(CTX_ME (&(*l0)))); if ((_t5.tag == 0)) { l9 = _t5.p.v0.m_value; {
+        l8 = ({ t997 _t4; t1111 _t5 = (CTX_AT(1148, 35), f_os__overlapped(CTX_ME (&(*l0)))); if ((_t5.tag == 0)) { l9 = _t5.p.v0.m_value; {
             _t4 = l9;
         } } else if ((_t5.tag == 1)) { l10 = _t5.p.v1.m_error; {
             return ((t1000){ .tag = 1, .p.v1 = { .m_error = l10, } });
         } } _t4; });
         /* defer */
-        if ((({ t40 _t6 = (&(*l0)); t9 _t7 = l2; t43 _t8 = (l3).m_ptr; t23 _t9 = ((t23)(ctx_as_u((uint64_t)(l5), UINT32_MAX, "u32", 1136, 73, &w_os__pipe_read, CTX_UPV))); t1112 _t10 = ((t1112)(0)); t998 _t11 = (&l8); CTX_AT(1136, 27); e2548(CTX_ME _t6, _t7, _t8, _t9, _t10, _t11); }) == ((t0)(0ULL)))) {
-            l11 = (CTX_AT(1137, 31), e480(CTX_ME (&(*l0))));
+        if ((({ t40 _t6 = (&(*l0)); t9 _t7 = l2; t43 _t8 = (l3).m_ptr; t23 _t9 = ((t23)(ctx_as_u((uint64_t)(l5), UINT32_MAX, "u32", 1150, 73, &w_os__pipe_read, CTX_UPV))); t1112 _t10 = ((t1112)(0)); t998 _t11 = (&l8); CTX_AT(1150, 27); e2548(CTX_ME _t6, _t7, _t8, _t9, _t10, _t11); }) == ((t0)(0ULL)))) {
+            l11 = (CTX_AT(1151, 31), e480(CTX_ME (&(*l0))));
             if ((l11 == ((t23)(109ULL)))) {
                 { t1000 _t12 = ((t1000){ .tag = 0, .p.v0 = { .m_value = ((t15)(0ULL)), } });
                 {
-                    (void)(CTX_AT(1135, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
+                    (void)(CTX_AT(1149, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
                 } return _t12; }
             }
             if ((l11 != ((t23)(997ULL)))) {
-                { t1000 _t13 = ({ t1000 _t14; t1113 _t15 = (CTX_AT(1139, 58), f_os__proc_failedusize_7f476a42(CTX_ME l11)); if ((_t15.tag == 0)) { l12 = _t15.p.v0.m_value; {
+                { t1000 _t13 = ({ t1000 _t14; t1113 _t15 = (CTX_AT(1153, 58), f_os__proc_failedusize_7f476a42(CTX_ME l11)); if ((_t15.tag == 0)) { l12 = _t15.p.v0.m_value; {
                     _t14 = ((t1000){ .tag = 0, .p.v0 = { .m_value = l12, } });
                 } } else if ((_t15.tag == 1)) { l13 = _t15.p.v1.m_error; {
                     _t14 = ((t1000){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t16; t323 _t17 = l13; if ((_t17.tag == 0)) { {
@@ -80612,31 +80612,31 @@ static t1000 f_os__pipe_read(CTX_UP t40 l0, t110 l1, t9 l2, t8 l3) {
                     } } _t16; }), } });
                 } } _t14; });
                 {
-                    (void)(CTX_AT(1135, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
+                    (void)(CTX_AT(1149, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
                 } return _t13; }
             }
         }
         l15 = ((t23)(0ULL));
-        l16 = (CTX_AT(1142, 25), f_os__finish(CTX_ME (&(*l0)), (&(*l1)), l2, (&l8), (&l15)));
+        l16 = (CTX_AT(1156, 25), f_os__finish(CTX_ME (&(*l0)), (&(*l1)), l2, (&l8), (&l15)));
         if ((!(l16).m_ok)) {
-            l17 = (CTX_AT(1144, 31), e480(CTX_ME (&(*l0))));
+            l17 = (CTX_AT(1158, 31), e480(CTX_ME (&(*l0))));
             if ((l17 == ((t23)(109ULL)))) {
                 { t1000 _t18 = ((t1000){ .tag = 0, .p.v0 = { .m_value = ((t15)(0ULL)), } });
                 {
-                    (void)(CTX_AT(1135, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
+                    (void)(CTX_AT(1149, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
                 } return _t18; }
             }
             if (((l16).m_stopped && (l17 == ((t23)(995ULL))))) {
-                { t1000 _t19 = ((t1000){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t20; t107 _t21 = (CTX_AT(1146, 90), f_task__get_stop_error(CTX_ME (&(*l1)))); if ((_t21.tag == 0)) { {
+                { t1000 _t19 = ((t1000){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t20; t107 _t21 = (CTX_AT(1160, 90), f_task__get_stop_error(CTX_ME (&(*l1)))); if ((_t21.tag == 0)) { {
                     _t20 = ((t182){ .tag = 4 });
                 } } else if ((_t21.tag == 1)) { {
                     _t20 = ((t182){ .tag = 5 });
                 } } _t20; }), } });
                 {
-                    (void)(CTX_AT(1135, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
+                    (void)(CTX_AT(1149, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
                 } return _t19; }
             }
-            { t1000 _t22 = ({ t1000 _t23; t1113 _t24 = (CTX_AT(1147, 31), f_os__proc_failedusize_7f476a42(CTX_ME l17)); if ((_t24.tag == 0)) { l18 = _t24.p.v0.m_value; {
+            { t1000 _t22 = ({ t1000 _t23; t1113 _t24 = (CTX_AT(1161, 31), f_os__proc_failedusize_7f476a42(CTX_ME l17)); if ((_t24.tag == 0)) { l18 = _t24.p.v0.m_value; {
                 _t23 = ((t1000){ .tag = 0, .p.v0 = { .m_value = l18, } });
             } } else if ((_t24.tag == 1)) { l19 = _t24.p.v1.m_error; {
                 _t23 = ((t1000){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t25; t323 _t26 = l19; if ((_t26.tag == 0)) { {
@@ -80650,25 +80650,25 @@ static t1000 f_os__pipe_read(CTX_UP t40 l0, t110 l1, t9 l2, t8 l3) {
                 } } _t25; }), } });
             } } _t23; });
             {
-                (void)(CTX_AT(1135, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
+                (void)(CTX_AT(1149, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
             } return _t22; }
         }
         if (((l16).m_stopped && (l15 == ((t23)(0ULL))))) {
-            { t1000 _t27 = ((t1000){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t28; t107 _t29 = (CTX_AT(1149, 67), f_task__get_stop_error(CTX_ME (&(*l1)))); if ((_t29.tag == 0)) { {
+            { t1000 _t27 = ((t1000){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t28; t107 _t29 = (CTX_AT(1163, 67), f_task__get_stop_error(CTX_ME (&(*l1)))); if ((_t29.tag == 0)) { {
                 _t28 = ((t182){ .tag = 4 });
             } } else if ((_t29.tag == 1)) { {
                 _t28 = ((t182){ .tag = 5 });
             } } _t28; }), } });
             {
-                (void)(CTX_AT(1135, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
+                (void)(CTX_AT(1149, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
             } return _t27; }
         }
-        { t1000 _t30 = ((t1000){ .tag = 0, .p.v0 = { .m_value = ((t15)(ctx_as_u((uint64_t)(l15), UINT64_MAX, "usize", 1150, 16, &w_os__pipe_read, CTX_UPV))), } });
+        { t1000 _t30 = ((t1000){ .tag = 0, .p.v0 = { .m_value = ((t15)(ctx_as_u((uint64_t)(l15), UINT64_MAX, "usize", 1164, 16, &w_os__pipe_read, CTX_UPV))), } });
         {
-            (void)(CTX_AT(1135, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
+            (void)(CTX_AT(1149, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
         } return _t30; }
         {
-            (void)(CTX_AT(1135, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
+            (void)(CTX_AT(1149, 31), e875(CTX_ME (&(*l0)), (l8).m_event));
         }
     }
     __builtin_unreachable();
@@ -80682,10 +80682,10 @@ static t15 f_os__ascii_into(CTX_UP t256 l0, t15 l1, t8 l2) {
     {
         l3 = ((t15)(0ULL));
         while ((l3 < (l2).m_len)) {
-            { t262 _t0 = ((t262)(ctx_as_u((uint64_t)((*({ t8 _t1 = (l2); uint64_t _t2 = l3; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 922, 38, &w_os__ascii_into, CTX_UPV); }))), UINT16_MAX, "u16", 922, 28, &w_os__ascii_into, CTX_UPV))); (*({ t256 _t3 = (l0); uint64_t _t4 = ctx_add_u64(l1, l3, 922, 21, &w_os__ascii_into, CTX_UPV); _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 922, 17, &w_os__ascii_into, CTX_UPV); })) = _t0; }
-            l3 = ctx_add_u64(l3, ((t15)(1ULL)), 923, 19, &w_os__ascii_into, CTX_UPV);
+            { t262 _t0 = ((t262)(ctx_as_u((uint64_t)((*({ t8 _t1 = (l2); uint64_t _t2 = l3; _t1.m_ptr + ctx_idx(_t2, _t1.m_len, 936, 38, &w_os__ascii_into, CTX_UPV); }))), UINT16_MAX, "u16", 936, 28, &w_os__ascii_into, CTX_UPV))); (*({ t256 _t3 = (l0); uint64_t _t4 = ctx_add_u64(l1, l3, 936, 21, &w_os__ascii_into, CTX_UPV); _t3.m_ptr + ctx_idx(_t4, _t3.m_len, 936, 17, &w_os__ascii_into, CTX_UPV); })) = _t0; }
+            l3 = ctx_add_u64(l3, ((t15)(1ULL)), 937, 19, &w_os__ascii_into, CTX_UPV);
         }
-        return ctx_add_u64(l1, (l2).m_len, 925, 19, &w_os__ascii_into, CTX_UPV);
+        return ctx_add_u64(l1, (l2).m_len, 939, 19, &w_os__ascii_into, CTX_UPV);
     }
     __builtin_unreachable();
 }
@@ -80774,7 +80774,7 @@ static t29 f_os__event_signal(CTX_UP t813 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__event_signal);
     {
-        (void)(CTX_AT(1895, 73), e2551(CTX_ME (&(*l0)), l1));
+        (void)(CTX_AT(1909, 73), e2551(CTX_ME (&(*l0)), l1));
     }
 }
 
@@ -80814,13 +80814,13 @@ static t7 f_os__condition_wait_for(CTX_UP t813 l0, t815 l1, t586 l2, t9 l3) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_wait_for);
     {
-        l4 = (CTX_AT(2101, 24), f_os__millis(CTX_ME l3));
-        l5 = ({ t23 _t0; if (({ t9 _t1 = l4; t9 _t2 = ((t9)(ctx_as_u((uint64_t)(((t23)(4294967295ULL))), UINT64_MAX, "u64", 2102, 34, &w_os__condition_wait_for, CTX_UPV))); (_t1 >= _t2); })) {
-            _t0 = ctx_sub_u32(((t23)(4294967295ULL)), ((t23)(1ULL)), 2102, 64, &w_os__condition_wait_for, CTX_UPV);
+        l4 = (CTX_AT(2115, 24), f_os__millis(CTX_ME l3));
+        l5 = ({ t23 _t0; if (({ t9 _t1 = l4; t9 _t2 = ((t9)(ctx_as_u((uint64_t)(((t23)(4294967295ULL))), UINT64_MAX, "u64", 2116, 34, &w_os__condition_wait_for, CTX_UPV))); (_t1 >= _t2); })) {
+            _t0 = ctx_sub_u32(((t23)(4294967295ULL)), ((t23)(1ULL)), 2116, 64, &w_os__condition_wait_for, CTX_UPV);
         } else {
-            _t0 = ((t23)(ctx_as_u((uint64_t)(l4), UINT32_MAX, "u32", 2102, 77, &w_os__condition_wait_for, CTX_UPV)));
+            _t0 = ((t23)(ctx_as_u((uint64_t)(l4), UINT32_MAX, "u32", 2116, 77, &w_os__condition_wait_for, CTX_UPV)));
         } _t0; });
-        return ((CTX_AT(2103, 41), e2556(CTX_ME (&(*l0)), (&(*l1)), (&(*l2)), l5, ((t23)(0ULL)))) != ((t0)(0ULL)));
+        return ((CTX_AT(2117, 41), e2556(CTX_ME (&(*l0)), (&(*l1)), (&(*l2)), l5, ((t23)(0ULL)))) != ((t0)(0ULL)));
     }
     __builtin_unreachable();
 }
@@ -80831,7 +80831,7 @@ static t29 f_os__condition_wait(CTX_UP t815 l0, t586 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_wait);
     {
-        (void)(CTX_AT(2097, 28), e2557(CTX_ME (&(*l0)), (&(*l1)), ((t23)(4294967295ULL)), ((t23)(0ULL))));
+        (void)(CTX_AT(2111, 28), e2557(CTX_ME (&(*l0)), (&(*l1)), ((t23)(4294967295ULL)), ((t23)(0ULL))));
     }
 }
 
@@ -80841,7 +80841,7 @@ static t29 f_os__condition_signal(CTX_UP t815 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_signal);
     {
-        (CTX_AT(2106, 77), e2558(CTX_ME (&(*l0))));
+        (CTX_AT(2120, 77), e2558(CTX_ME (&(*l0))));
     }
 }
 
@@ -80852,7 +80852,7 @@ static t97 f_os__thread_create(CTX_UP t813 l0, t43 l1, t15 l2) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_create);
     {
-        l3 = (CTX_AT(2008, 30), e2559(CTX_ME (&(*l0)), ((t114)(0)), l2, k_os__thread_entry, l1, ((t23)(65536ULL)), ((t1112)(0))));
+        l3 = (CTX_AT(2022, 30), e2559(CTX_ME (&(*l0)), ((t114)(0)), l2, k_os__thread_entry, l1, ((t23)(65536ULL)), ((t1112)(0))));
         if ((l3 == ((t9)(0ULL)))) {
             return ((t97){0});
         }
@@ -80867,7 +80867,7 @@ static t29 f_os__thread_yield(CTX_UP t813 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_yield);
     {
-        (void)(CTX_AT(2049, 26), e2560(CTX_ME (&(*l0))));
+        (void)(CTX_AT(2063, 26), e2560(CTX_ME (&(*l0))));
     }
 }
 
@@ -80877,7 +80877,7 @@ static t29 f_os__thread_detach(CTX_UP t813 l0, t9 l1) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_detach);
     {
-        (void)(CTX_AT(2015, 25), e2561(CTX_ME (&(*l0)), l1));
+        (void)(CTX_AT(2029, 25), e2561(CTX_ME (&(*l0)), l1));
     }
 }
 
@@ -100331,9 +100331,9 @@ static t1111 f_os__overlapped(CTX_UP t40 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__overlapped);
     {
-        l1 = (CTX_AT(1202, 33), e2987(CTX_ME (&(*l0)), ((t793)(0)), ((t0)(1ULL)), ((t0)(0ULL)), ((t166)(0))));
+        l1 = (CTX_AT(1216, 33), e2987(CTX_ME (&(*l0)), ((t793)(0)), ((t0)(1ULL)), ((t0)(0ULL)), ((t166)(0))));
         if ((l1 == ((t9)(0ULL)))) {
-            return ({ t1111 _t0; t1217 _t1 = ({ t23 _t2 = (CTX_AT(1203, 62), e480(CTX_ME (&(*l0)))); CTX_AT(1203, 43); f_os__proc_failedos__Overlapped_2d31dd7c(CTX_ME _t2); }); if ((_t1.tag == 0)) { l2 = _t1.p.v0.m_value; {
+            return ({ t1111 _t0; t1217 _t1 = ({ t23 _t2 = (CTX_AT(1217, 62), e480(CTX_ME (&(*l0)))); CTX_AT(1217, 43); f_os__proc_failedos__Overlapped_2d31dd7c(CTX_ME _t2); }); if ((_t1.tag == 0)) { l2 = _t1.p.v0.m_value; {
                 _t0 = ((t1111){ .tag = 0, .p.v0 = { .m_value = l2, } });
             } } else if ((_t1.tag == 1)) { l3 = _t1.p.v1.m_error; {
                 _t0 = ((t1111){ .tag = 1, .p.v1 = { .m_error = ({ t182 _t3; t323 _t4 = l3; if ((_t4.tag == 0)) { {
@@ -100373,7 +100373,7 @@ static t1113 f_os__proc_failedusize_7f476a42(CTX_UP t23 l0) {
                 _t4 = ((t323){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t1113){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 966, 36, &w_os__proc_failedusize_7f476a42, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t1113){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 980, 36, &w_os__proc_failedusize_7f476a42, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t323){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
     }
@@ -100387,14 +100387,14 @@ static t1110 f_os__finish(CTX_UP t40 l0, t110 l1, t9 l2, t998 l3, t248 l4) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__finish);
     {
-        if ((CTX_AT(1162, 26), f_task__can_stop(CTX_ME (&(*l1))))) {
-            if (((CTX_AT(1163, 28), f_os__await_handle(CTX_ME (&(*l1)), ((*l3)).m_event, ((t9)(18446744073709551615ULL)))) == ((t16)(2ULL)))) {
-                (void)(CTX_AT(1164, 30), e2989(CTX_ME (&(*l0)), l2, (&(*l3))));
-                l5 = ((CTX_AT(1165, 45), e2990(CTX_ME (&(*l0)), l2, (&(*l3)), (&(*l4)), ((t0)(1ULL)))) != ((t0)(0ULL)));
+        if ((CTX_AT(1176, 26), f_task__can_stop(CTX_ME (&(*l1))))) {
+            if (((CTX_AT(1177, 28), f_os__await_handle(CTX_ME (&(*l1)), ((*l3)).m_event, ((t9)(18446744073709551615ULL)))) == ((t16)(2ULL)))) {
+                (void)(CTX_AT(1178, 30), e2989(CTX_ME (&(*l0)), l2, (&(*l3))));
+                l5 = ((CTX_AT(1179, 45), e2990(CTX_ME (&(*l0)), l2, (&(*l3)), (&(*l4)), ((t0)(1ULL)))) != ((t0)(0ULL)));
                 return ((t1110){ .m_ok = l5, .m_stopped = ((bool)1), });
             }
         }
-        return ((t1110){ .m_ok = ((CTX_AT(1169, 48), e2990(CTX_ME (&(*l0)), l2, (&(*l3)), (&(*l4)), ((t0)(1ULL)))) != ((t0)(0ULL))), .m_stopped = ((bool)0), });
+        return ((t1110){ .m_ok = ((CTX_AT(1183, 48), e2990(CTX_ME (&(*l0)), l2, (&(*l3)), (&(*l4)), ((t0)(1ULL)))) != ((t0)(0ULL))), .m_stopped = ((bool)0), });
     }
     __builtin_unreachable();
 }
@@ -100405,7 +100405,7 @@ static t29 f_os__condition_broadcast(CTX_UP t815 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__condition_broadcast);
     {
-        (CTX_AT(2107, 83), e2991(CTX_ME (&(*l0))));
+        (CTX_AT(2121, 83), e2991(CTX_ME (&(*l0))));
     }
 }
 
@@ -100432,7 +100432,7 @@ static t29 f_os__cancel_synchronous(CTX_UP t813 l0, t9 l1) {
     CTX_FRAME(&w_os__cancel_synchronous);
     {
         if ((l1 != ((t9)(0ULL)))) {
-            (void)(CTX_AT(1974, 51), e2992(CTX_ME (&(*l0)), l1));
+            (void)(CTX_AT(1988, 51), e2992(CTX_ME (&(*l0)), l1));
         }
     }
 }
@@ -100451,7 +100451,7 @@ static t23 f_os__thread_entry(CTX_UP t43 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_entry);
     {
-        (CTX_AT(2001, 22), f_thread__entry(CTX_ME l0));
+        (CTX_AT(2015, 22), f_thread__entry(CTX_ME l0));
         return ((t23)(0ULL));
     }
     __builtin_unreachable();
@@ -114291,7 +114291,7 @@ static t1217 f_os__proc_failedos__Overlapped_2d31dd7c(CTX_UP t23 l0) {
                 _t4 = ((t323){ .tag = 2 });
             } } _t4; }), } });
         }
-        return ((t1217){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 966, 36, &w_os__proc_failedos__Overlapped_2d31dd7c, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
+        return ((t1217){ .tag = 1, .p.v1 = { .m_error = ({ t323 _t6; t557 _t7 = ((t557){ .tag = 0, .p.v0 = { .m_code = ((t57)(ctx_as_u((uint64_t)(l0), INT64_MAX, "i64", 980, 36, &w_os__proc_failedos__Overlapped_2d31dd7c, CTX_UPV))), } }); if ((_t7.tag == 0)) { l1 = _t7.p.v0.m_code; {
             _t6 = ((t323){ .tag = 3, .p.v3 = { .m_code = l1, } });
         } } _t6; }), } });
     }
@@ -143363,13 +143363,13 @@ static t29 f_os__thread_name(CTX_UP t813 l0, t8 l1) {
             _t7 = ((t15)(63ULL));
         } else {
             _t7 = (l1).m_len;
-        } _t7; }); ctx_range(_t5, _t6, _t4.m_len, 2060, 35, &w_os__thread_name, CTX_UPV); (t8){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); t256 _t3 = ({ t256 _t8 = (((t256){ .m_ptr = ((t163)((&l2))), .m_len = ((t15)(64ULL)), })); uint64_t _t9 = ((t15)(0ULL)); uint64_t _t10 = ((t15)(63ULL)); ctx_range(_t9, _t10, _t8.m_len, 2060, 93, &w_os__thread_name, CTX_UPV); (t256){ .m_ptr = _t8.m_ptr + _t9, .m_len = _t10 - _t9 }; }); CTX_AT(2060, 25); f_os__utf16_of(CTX_ME _t2, _t3); }); if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_value; {
+        } _t7; }); ctx_range(_t5, _t6, _t4.m_len, 2074, 35, &w_os__thread_name, CTX_UPV); (t8){ .m_ptr = _t4.m_ptr + _t5, .m_len = _t6 - _t5 }; }); t256 _t3 = ({ t256 _t8 = (((t256){ .m_ptr = ((t163)((&l2))), .m_len = ((t15)(64ULL)), })); uint64_t _t9 = ((t15)(0ULL)); uint64_t _t10 = ((t15)(63ULL)); ctx_range(_t9, _t10, _t8.m_len, 2074, 93, &w_os__thread_name, CTX_UPV); (t256){ .m_ptr = _t8.m_ptr + _t9, .m_len = _t10 - _t9 }; }); CTX_AT(2074, 25); f_os__utf16_of(CTX_ME _t2, _t3); }); if ((_t1.tag == 1)) { l4 = _t1.p.v1.m_value; {
             _t0 = l4;
         } } else if ((_t1.tag == 0)) { {
             return;
         } } _t0; });
-        (l2).a[ctx_idx(l3, 64, 2061, 13, &w_os__thread_name, CTX_UPV)] = ((t262)(0ULL));
-        (void)({ t813 _t11 = (&(*l0)); t9 _t12 = (CTX_AT(2062, 70), e4042(CTX_ME (&(*l0)))); t163 _t13 = (&(l2).a[ctx_idx(((t15)(0ULL)), 64, 2062, 96, &w_os__thread_name, CTX_UPV)]); CTX_AT(2062, 35); e4043(CTX_ME _t11, _t12, _t13); });
+        (l2).a[ctx_idx(l3, 64, 2075, 13, &w_os__thread_name, CTX_UPV)] = ((t262)(0ULL));
+        (void)({ t813 _t11 = (&(*l0)); t9 _t12 = (CTX_AT(2076, 70), e4042(CTX_ME (&(*l0)))); t163 _t13 = (&(l2).a[ctx_idx(((t15)(0ULL)), 64, 2076, 96, &w_os__thread_name, CTX_UPV)]); CTX_AT(2076, 35); e4043(CTX_ME _t11, _t12, _t13); });
     }
 }
 
@@ -152872,9 +152872,9 @@ static t9 f_os__thread_handle(CTX_UP t813 l0) {
     CTX_STACK_CHECK();
     CTX_FRAME(&w_os__thread_handle);
     {
-        l1 = (CTX_AT(1966, 32), e4203(CTX_ME (&(*l0))));
+        l1 = (CTX_AT(1980, 32), e4203(CTX_ME (&(*l0))));
         l2 = ((t9)(0ULL));
-        if ((({ t813 _t0 = (&(*l0)); t9 _t1 = l1; t9 _t2 = (CTX_AT(1968, 84), e4042(CTX_ME (&(*l0)))); t9 _t3 = l1; t253 _t4 = (&l2); t23 _t5 = ((t23)(0ULL)); t0 _t6 = ((t0)(0ULL)); t23 _t7 = ((t23)(2ULL)); CTX_AT(1968, 28); e4204(CTX_ME _t0, _t1, _t2, _t3, _t4, _t5, _t6, _t7); }) == ((t0)(0ULL)))) {
+        if ((({ t813 _t0 = (&(*l0)); t9 _t1 = l1; t9 _t2 = (CTX_AT(1982, 84), e4042(CTX_ME (&(*l0)))); t9 _t3 = l1; t253 _t4 = (&l2); t23 _t5 = ((t23)(0ULL)); t0 _t6 = ((t0)(0ULL)); t23 _t7 = ((t23)(2ULL)); CTX_AT(1982, 28); e4204(CTX_ME _t0, _t1, _t2, _t3, _t4, _t5, _t6, _t7); }) == ((t0)(0ULL)))) {
             return ((t9)(0ULL));
         }
         return l2;

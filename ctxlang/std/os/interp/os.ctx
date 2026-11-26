@@ -136,13 +136,22 @@ namespace os {
         return rt::c_args{ &mem, argc, argv }
     }
 
-    // ---- memory for arenas (mem::reserve, arena::alloc): pages, usable from the start
+    // ---- memory for arenas (mem::reserve, arena::alloc): pages, usable from the start; and
+    // pages given back (mem::release)
 
     fn reserve { mut mem: Mem, size: usize } -> ?*mut u8 {
         return host_pages{ &mem, size }
     }
 
     fn commit { first: *u8, last: *u8 } -> bool {
+        return true
+    }
+
+    // Gives back the region at p, of `size` bytes, that `pages` or `reserve` made: nothing, as
+    // for the heap's blocks below. The interpreter's memory is a run's until it ends, and a run
+    // is short; a program sees release's contract either way, since what it releases it
+    // doesn't use again.
+    fn release_pages { mut mem: Mem, p: *mut u8, size: usize } -> bool {
         return true
     }
 

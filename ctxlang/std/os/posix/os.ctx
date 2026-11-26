@@ -22,7 +22,6 @@ namespace os {
     #c_symbol{ name = "read" }
     extern fn c_read { mut io: Io, fd: i32, buf: *mut u8, count: usize } -> i64
 
-    extern fn aligned_alloc { mut mem: Mem, alignment: usize, size: usize } -> ?*mut u8
     extern fn memset { mut mem: Mem, dst: *mut u8, byte: i32, count: usize } -> *mut u8
 
     // Writes some of `bytes`, which isn't empty, to the stream. Returns how many; 0 after an error.
@@ -116,10 +115,26 @@ namespace os {
     const STOPPED: u8 = 2
 
     // `size` bytes, a multiple of mem::PAGE, zeroed and page-aligned. Null if there isn't enough
-    // memory.
+    // memory. A mapping of its own, so that release_pages can give it back.
     fn pages { mut mem: Mem, size: usize } -> ?*mut u8 {
-        let p = aligned_alloc{ &mem, alignment = mem::PAGE, size } ifnull { return null }
-        _ = memset{ &mem, dst = p, byte = 0, count = size }
+        return map{ &mem, size, flags = MAP_PRIVATE | sys::MAP_ANONYMOUS }
+    }
+
+    #c_symbol{ name = "mmap" }
+    extern fn c_mmap { mut mem: Mem, address: ?*mut u8, size: usize, prot: i32, flags: i32, fd: i32, offset: i64 } -> ?*mut u8
+    #c_symbol{ name = "munmap" }
+    extern fn c_munmap { mut mem: Mem, address: *mut u8, size: usize } -> i32
+
+    const PROT_READ: i32 = 0x1
+    const PROT_WRITE: i32 = 0x2
+    const MAP_PRIVATE: i32 = 0x2
+
+    // `size` bytes of new zeroed memory mapped with `flags`, readable and writable, at an
+    // address mmap picks, which is page-aligned; null if there isn't enough. mmap returns
+    // MAP_FAILED, all ones, where it fails.
+    fn map { mut mem: Mem, size: usize, flags: i32 } -> ?*mut u8 {
+        let p = c_mmap{ &mem, address = null, size, prot = PROT_READ | PROT_WRITE, flags, fd = -1, offset = 0 } ifnull { return null }
+        if @addr(p) == 18446744073709551615 { return null }
         return p
     }
 
@@ -335,18 +350,22 @@ namespace os {
         return rt::c_args{ &mem, argc, argv }
     }
 
-    // ---- memory for arenas (mem::reserve, arena::alloc)
+    // ---- memory for arenas (mem::reserve, arena::alloc), and pages given back (mem::release)
 
-    #c_symbol{ name = "calloc" }
-    extern fn c_calloc { mut mem: Mem, count: usize, size: usize } -> ?*mut u8
-
-    // `size` bytes, a multiple of mem::PAGE, for an arena: zeroed and page-aligned. calloc gives
-    // zeroed memory that the OS supplies on first use: it takes a big block from mmap without
-    // clearing it. Null if there isn't enough memory.
+    // `size` bytes, a multiple of mem::PAGE, for an arena: zeroed and page-aligned, a mapping of
+    // its own, whose pages the OS supplies on first use. MAP_NORESERVE has Linux count none of
+    // them against its overcommit heuristic, so that a generous size costs address space rather
+    // than memory, as on Windows. Null if there isn't enough address space.
     fn reserve { mut mem: Mem, size: usize } -> ?*mut u8 {
-        if size > 18446744073709551615 - mem::PAGE { return null }
-        let p = c_calloc{ &mem, count = 1, size = size + mem::PAGE } ifnull { return null }
-        return p + (mem::PAGE - @addr(p) % mem::PAGE) % mem::PAGE
+        return map{ &mem, size, flags = MAP_PRIVATE | sys::MAP_ANONYMOUS | sys::MAP_NORESERVE }
+    }
+
+    // Gives back the region at p, of `size` bytes, that `pages` or `reserve` mapped: munmap of
+    // it. False if the system refuses, which it does only for an address or a size that isn't
+    // a page's, which mem::release has checked: munmap unmaps whatever pages it is given, part
+    // of a mapping or several, so a wrong region is freed rather than refused.
+    fn release_pages { mut mem: Mem, p: *mut u8, size: usize } -> bool {
+        return c_munmap{ &mem, address = p, size } == 0
     }
 
     // Makes an arena's memory from first to last usable, which memory from `reserve` is here
@@ -359,6 +378,8 @@ namespace os {
     // may call. What they hand out is aligned to 16 bytes: glibc's, musl's and macOS's malloc on
     // 64-bit platforms.
 
+    #c_symbol{ name = "calloc" }
+    extern fn c_calloc { mut mem: Mem, count: usize, size: usize } -> ?*mut u8
     #c_symbol{ name = "realloc" }
     extern fn c_realloc { mut mem: Mem, p: *mut u8, size: usize } -> ?*mut u8
     #c_symbol{ name = "free" }

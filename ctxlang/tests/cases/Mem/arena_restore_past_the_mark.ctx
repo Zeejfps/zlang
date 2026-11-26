@@ -11,7 +11,7 @@ fn main { mut io: Io, mut mem: Mem } -> i32 {
 
 }
 
-//# panic: std/arena.ctx:67:29: panic: arena::restore: the arena was reset or restored past this mark
+//# panic: std/arena.ctx:72:29: panic: arena::restore: the arena was reset or restored past this mark
 //# path:
-//|   at arena::restore (std/arena.ctx:67:29)
+//|   at arena::restore (std/arena.ctx:72:29)
 //|   at main (arena_restore_past_the_mark.ctx:9:19)

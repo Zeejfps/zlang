@@ -36,6 +36,12 @@ namespace sys {
     const ENAMETOOLONG: i32 = 63
     const ENOTEMPTY: i32 = 66
 
+    // mmap's flags for memory of no file's (std/os/posix's pages and reserve), and for memory
+    // the system doesn't set aside room for until it is touched, which macOS never does
+    // anyway: it takes the flag and ignores it.
+    const MAP_ANONYMOUS: i32 = 0x1000
+    const MAP_NORESERVE: i32 = 0x40
+
     // The offset of d_name, the entry's name, in the struct dirent readdir returns: arm64's,
     // with 64-bit inode numbers. x86_64's readdir returns the older struct, with d_name at 8,
     // unless it is called as readdir$INODE64; that is left until an x86_64 Mac needs it.

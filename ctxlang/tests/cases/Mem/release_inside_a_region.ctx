@@ -1,0 +1,16 @@
+// Windows frees only a whole reservation, from its base: a slice that starts a page into a
+// region, page-aligned and a multiple of mem::PAGE long, is refused, and mem::release panics.
+// munmap would unmap those pages instead (std/os/posix), so elsewhere nothing can tell.
+//# only: windows: only Windows refuses a release that doesn't start at a region's base
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let some{ value = p } = mem::reserve{ &mem, size = 65536 } else { return 1 }
+    mem::release{ &mem, pages = p[4096..] }
+    return 0
+}
+
+//# interp: off: the interpreter gives nothing back, so it refuses nothing
+//# panic: std/mem.ctx:73:13: panic: mem::release: the system refused: the memory isn't a region from mem::pages or mem::reserve
+//# path:
+//|   at mem::release (std/mem.ctx:73:13)
+//|   at main (release_inside_a_region.ctx:8:17)

@@ -5,6 +5,11 @@
 //   let mut mem: [4096]u8
 //   let mut heap = arena::new{ buf = mem[..] }
 //   let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
+//
+// The arena doesn't own its buffer, so dropping one is up to whoever gave it the buffer: an
+// arena over memory from mem::pages or mem::reserve is dropped whole by releasing that memory,
+// the slice they returned, with mem::release. Neither the arena nor anything it handed out may
+// be used after that, nor anything that holds them, as a list does.
 
 namespace arena {
     struct Arena {

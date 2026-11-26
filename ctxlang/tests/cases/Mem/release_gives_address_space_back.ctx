@@ -1,0 +1,27 @@
+// What mem::release gives back is the address space too: 256 reservations of 1 TiB, each
+// released before the next, 256 TiB in all, twice the 128 TiB of a 64-bit program's user space
+// on Windows and on x86-64 Linux, so that without the release the reservations would fail
+// halfway (on Windows the 127th did). An arena over each touches a MiB of it, which reads zero.
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let mut sum: u64 = 0
+    for i in 0..256 {
+        let some{ value = buf } = mem::reserve{ &mem, size = 1099511627776 } else {
+            _ = @fmt(&io, "reservation {} failed\n", i)
+            return 1
+        }
+        let mut heap = arena::new{ buf }
+        let b = arena::alloc{ heap = &heap, mem = slice::empty(u8){}, new = 1048576, align = 8 } ifnull { return 2 }
+        sum = sum + b[0] + b[b.len - 1]
+        b[0] = 1
+        b[b.len - 1] = 1
+        sum = sum + b[0] + b[b.len - 1]
+        mem::release{ &mem, pages = buf }
+    }
+    io::println_u64{ &io, n = sum }
+    return 0
+}
+
+//# interp: cannot run
+//# stdout:
+//| 512

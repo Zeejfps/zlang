@@ -408,7 +408,8 @@ still hold a task.
 What the Threaded backend's build settled, where this document left room:
 
 1. **`task::Cancel`'s `current` is the running task's slot**, `?*mut Slot`, not a number: slots live
-   in pages that are never freed, so the pointer stays valid, and `check` is one load of its flag.
+   in pages `task` never releases (`mem::release`), so the pointer stays valid, and `check` is one
+   load of its flag.
 2. **Capabilities never conflict in a call** (spec §3.1, rule 6), not only at a start: one never
    changes (spec §15, rule 8), so `os::pipe_read{ &proc, cancel = &proc, ... }` passes one twice.
 3. **The namespace that declares a handle type implements it**: std's `task` keeps pointers to

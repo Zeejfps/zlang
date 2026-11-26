@@ -471,7 +471,8 @@ namespace os {
     }
 
     // ---- memory for arenas (mem::reserve, arena::alloc): reserved, and committed as an arena
-    // reaches it, so that a generous size costs address space rather than memory.
+    // reaches it, so that a generous size costs address space rather than memory. `pages`'
+    // memory, reserved and committed at once, is given back as this is (mem::release).
 
     const PAGE_NOACCESS: u32 = 0x01
 
@@ -479,6 +480,19 @@ namespace os {
     // address space.
     fn reserve { mut mem: Mem, size: usize } -> ?*mut u8 {
         return VirtualAlloc{ &mem, address = null, size, kind = MEM_RESERVE, protect = PAGE_NOACCESS }
+    }
+
+    #c_symbol{ name = "VirtualFree" }
+    extern fn free_pages { mut mem: Mem, address: *mut u8, size: usize, kind: u32 } -> i32
+
+    const MEM_RELEASE: u32 = 0x8000
+
+    // Gives back the region at p, of `size` bytes, that `pages` or `reserve` made: VirtualFree
+    // with MEM_RELEASE, which takes the base VirtualAlloc returned and a size of 0, and frees
+    // the whole reservation, its committed pages and the rest alike. False if Windows refuses,
+    // as it does an address that isn't a reservation's base.
+    fn release_pages { mut mem: Mem, p: *mut u8, size: usize } -> bool {
+        return free_pages{ &mem, address = p, size = 0, kind = MEM_RELEASE } != 0
     }
 
     // MEMORY_BASIC_INFORMATION.

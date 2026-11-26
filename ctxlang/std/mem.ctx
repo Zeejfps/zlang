@@ -1,9 +1,9 @@
 // std: mem. Memory beyond the stack.
 //
-// `pages` and `reserve` take `mut mem: Mem`. Only `main` receives a `Mem`, from the runtime, so
-// a function can get memory this way only if its caller passes it down, as it can from std's
-// heap (std/heap.ctx), which takes a Mem too. Everything else allocates from buffers it is given
-// (§14), usually an arena over reserved memory:
+// `pages`, `reserve` and `release` take `mut mem: Mem`. Only `main` receives a `Mem`, from the
+// runtime, so a function can get memory this way only if its caller passes it down, as it can
+// from std's heap (std/heap.ctx), which takes a Mem too. Everything else allocates from buffers
+// it is given (§14), usually an arena over reserved memory:
 //
 //   fn main { mut io: Io, mut mem: Mem } -> i32 {
 //       let buf = mem::reserve{ &mem, size = 1073741824 } ifnull { return 1 }   // 1 GiB, used as reached
@@ -11,6 +11,14 @@
 //       let mut xs = list::new(i32){ realloc = arena::alloc, &heap }
 //       ...
 //   }
+//
+// `release` gives such a region back whole, so an arena over it can be dropped at once, a
+// request's or a level's:
+//
+//   let buf = mem::reserve{ &mem, size = 67108864 } ifnull { return 1 }
+//   let mut scratch = arena::new{ buf }
+//   ...
+//   mem::release{ &mem, pages = buf }       // scratch, and all it handed out, is gone
 
 // Permission to take memory from the system.
 capability Mem
@@ -19,7 +27,7 @@ namespace mem {
     const PAGE: usize = 4096
 
     // At least `size` bytes of zeroed, page-aligned memory: `size` rounded up to a multiple of
-    // PAGE. They stay valid until the program ends. Null if there isn't enough memory. Asking for
+    // PAGE. They stay valid until `release` gives them back, or the program ends. Null if there isn't enough memory. Asking for
     // 0 bytes gives an empty slice.
     fn pages { mut mem: Mem, size: usize } -> ?alloc::Bytes {
         if size == 0 { return slice::empty(u8){} }
@@ -40,5 +48,29 @@ namespace mem {
         let n = (size + PAGE - 1) / PAGE * PAGE
         let p = os::reserve{ &mem, size = n } ifnull { return null }
         return @slice(p, n)
+    }
+
+    // Gives back to the operating system a region that `pages` or `reserve` returned: exactly
+    // the slice it returned, whole. Every platform frees only whole regions, since Windows
+    // can't free part of one (VirtualFree's MEM_RELEASE takes the base of what VirtualAlloc
+    // reserved, and frees all of it). An empty slice, which they return for 0 bytes, is
+    // released by doing nothing.
+    //
+    // It panics where `pages` doesn't start at a page or its length isn't a multiple of PAGE,
+    // which no region has, and on Windows where the system refuses it, as it does a slice that
+    // doesn't start where a region does. What it can't check is the rest: that `pages` is a
+    // whole region, not part of one or several. Releasing part of a region, releasing one
+    // twice, or using its memory after it is released, through an arena over it or anything
+    // else that holds a slice of it, is using memory that is gone (spec §13, Unchecked
+    // operations, rule 3), as is using a heap's block after it is freed. The interpreter
+    // checks what is checked here, and gives nothing back: a run's memory goes back when it
+    // ends (std/os/interp).
+    fn release { mut mem: Mem, pages: alloc::Bytes } {
+        if pages.len == 0 { return }
+        if @addr(pages.ptr) % PAGE != 0 { @panic("mem::release: the memory doesn't start at a page, as a region from mem::pages or mem::reserve does") }
+        if pages.len % PAGE != 0 { @panic("mem::release: the memory's length isn't a multiple of mem::PAGE, as a region's from mem::pages or mem::reserve is") }
+        if not os::release_pages{ &mem, p = pages.ptr, size = pages.len } {
+            @panic("mem::release: the system refused: the memory isn't a region from mem::pages or mem::reserve")
+        }
     }
 }

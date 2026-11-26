@@ -302,6 +302,10 @@ let p = try alloc::new(Point, arena::Arena){ realloc = arena::alloc, &heap, valu
   `arena::restore{ &heap, to = m }` around each item; a heap for everything with a lifetime of
   its own. For a big arena's buffer, `mem::reserve{ &mem, size }` commits only what the arena
   reaches (Windows commits all of `mem::pages` at once); nothing but an arena may use it.
+- `mem::release{ &mem, pages = buf }` gives back exactly what `mem::pages` or `mem::reserve`
+  returned, whole, and so drops an arena over it at once (a request's or a level's); nothing may
+  use that memory after, the arena included. It panics for a slice that isn't page-aligned or
+  a multiple of `mem::PAGE` long; releasing part of a region or one twice isn't caught.
 - There is no state at top level (§1, rule 2): what lives for the whole program is a local of
   `main`, passed down.
 

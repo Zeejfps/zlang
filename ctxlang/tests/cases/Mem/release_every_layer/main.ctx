@@ -1,0 +1,11 @@
+// mem::pages and mem::reserve, and mem::release of what each returned.
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let some{ value = p } = mem::pages{ &mem, size = 4096 } else { return 1 }
+    let some{ value = r } = mem::reserve{ &mem, size = 65536 } else { return 2 }
+    p[0] = 1
+    mem::release{ &mem, pages = p }
+    mem::release{ &mem, pages = r }
+    io::println{ &io, s = "ok" }
+    return 0
+}

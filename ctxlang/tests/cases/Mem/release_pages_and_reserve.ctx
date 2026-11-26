@@ -1,0 +1,43 @@
+// mem::release gives back what mem::pages and mem::reserve returned: pages that were written,
+// a reservation after an arena used part of it, again and again, and an empty slice, which
+// `pages` and `reserve` return for 0 bytes and release takes by doing nothing. A reservation
+// after a release is new memory, zeroed, as an arena over it finds.
+
+fn main { mut io: Io, mut mem: Mem } -> i32 {
+    let some{ value = p } = mem::pages{ &mem, size = 10000 } else { return 1 }
+    p[0] = 1
+    p[p.len - 1] = 2
+    io::println_u64{ &io, n = p.len }
+    mem::release{ &mem, pages = p }
+
+    for round in 0..3 {
+        let some{ value = buf } = mem::reserve{ &mem, size = 16777216 } else { return 2 }
+        let mut heap = arena::new{ buf }
+        let mut xs = list::new(u64){ realloc = arena::alloc, &heap }
+        for i in 0..100000 {
+            list::push{ list = &xs, item = @as(u64, i) } iferr { return 3 }
+        }
+        let b = arena::alloc{ heap = &heap, mem = slice::empty(u8){}, new = 4096, align = 8 } ifnull { return 4 }
+        let mut sum: u64 = 0
+        for i in 0..b.len { sum = sum + b[i] }
+        b[0] = 9
+        for x in list::items{ list = xs } { sum = sum + x }
+        _ = @fmt(&io, "round {}: {}\n", round, sum)
+        mem::release{ &mem, pages = buf }
+    }
+
+    let some{ value = e } = mem::pages{ &mem, size = 0 } else { return 5 }
+    mem::release{ &mem, pages = e }
+    let some{ value = r } = mem::reserve{ &mem, size = 0 } else { return 6 }
+    mem::release{ &mem, pages = r }
+    mem::release{ &mem, pages = slice::empty(u8){} }
+    io::println{ &io, s = "empty" }
+    return 0
+}
+
+//# stdout:
+//| 12288
+//| round 0: 4999950000
+//| round 1: 4999950000
+//| round 2: 4999950000
+//| empty

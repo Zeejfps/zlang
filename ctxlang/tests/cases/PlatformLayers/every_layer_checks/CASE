@@ -17,9 +17,7 @@
 //# file linux.c has:
 //| CTX_SYMBOL("read")
 //# file linux.c has:
-//| CTX_SYMBOL("aligned_alloc")
-//# file linux.c has:
-//| CTX_SYMBOL("memset")
+//| CTX_SYMBOL("mmap")
 //# file linux.c has:
 //| CTX_SYMBOL("open")
 //# file linux.c has:
@@ -61,9 +59,7 @@
 //# file macos.c has:
 //| CTX_SYMBOL("read")
 //# file macos.c has:
-//| CTX_SYMBOL("aligned_alloc")
-//# file macos.c has:
-//| CTX_SYMBOL("memset")
+//| CTX_SYMBOL("mmap")
 //# file macos.c has:
 //| CTX_SYMBOL("open")
 //# file macos.c has:
