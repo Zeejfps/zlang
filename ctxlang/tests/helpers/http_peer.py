@@ -3,12 +3,15 @@
 # a ctxlang server on 127.0.0.1:PORT, with http.client where it can say what is wanted and raw
 # sockets where it can't (pipelining, broken heads, Expect, HTTP/1.0), and prints a line for
 # each. SHORT_PORT is a server whose Limits have a short head_ns and allow 2 requests per
-# connection. Lines end in "\n" on every platform.
+# connection. After each connection it asks the server how that connection ended (GET
+# /ending/PORT, by the client's port): serve_connection's Ending, or the error it failed with.
+# Lines end in "\n" on every platform.
 #
 # Every socket times out after 30 seconds, so a case that fails doesn't leave it running.
 
 import http.client
 import socket
+import struct
 import sys
 import time
 
@@ -93,6 +96,17 @@ def connect(port):
     return sock, Reader(sock)
 
 
+def ending(port, sock):
+    """How the server on `port` says the connection from `sock` ended; `sock` is closed first."""
+    local = sock.getsockname()[1]
+    sock.close()
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=TIMEOUT)
+    c.request("GET", "/ending/%d" % local)
+    text = c.getresponse().read().decode()
+    c.close()
+    return text
+
+
 def show(status, headers, body):
     conn = headers.get("connection")
     text = "%d %r" % (status, body.decode())
@@ -110,8 +124,7 @@ def keep_alive(port):
     c.request("GET", "/hello")
     r = c.getresponse()
     r.read()
-    say("keep-alive: %s, one connection: %s" % (bodies, c.sock is first))
-    c.close()
+    say("keep-alive: %s, one connection: %s, ended: %s" % (bodies, c.sock is first, ending(port, c.sock)))
 
 
 def chunked_request(port):
@@ -156,12 +169,11 @@ def handler_sent_nothing(port):
     say("sent nothing: %d %r" % (r.status, r.read().decode()))
     c.request("GET", "/hello")
     r = c.getresponse()
-    say("then: %d %r" % (r.status, r.read().decode()))
-    c.close()
+    say("then: %d %r, ended: %s" % (r.status, r.read().decode(), ending(port, c.sock)))
     sock, reader = connect(port)
     sock.sendall(b"GET /fail HTTP/1.1\r\nHost: x\r\n\r\n")
-    say("handler failed: %s, closed: %s" % (show(*reader.response()), reader.is_closed()))
-    sock.close()
+    said = "handler failed: %s, closed: %s" % (show(*reader.response()), reader.is_closed())
+    say("%s, ended: %s" % (said, ending(port, sock)))
 
 
 def pipelined(port):
@@ -173,8 +185,7 @@ def pipelined(port):
         b"GET /hello HTTP/1.1\r\nHost: x\r\n\r\n"
     )
     got = [show(*reader.response()) for _ in range(4)]
-    say("pipelined: %s" % "; ".join(got))
-    sock.close()
+    say("pipelined: %s, ended: %s" % ("; ".join(got), ending(port, sock)))
 
 
 def expect_continue(port):
@@ -186,15 +197,15 @@ def expect_continue(port):
     # A handler that answers without reading the body: no 100, and the connection ends, since
     # the client may never send the body.
     sock.sendall(b"POST /hello HTTP/1.1\r\nHost: x\r\nExpect: 100-continue\r\nContent-Length: 5\r\n\r\n")
-    say("unread with 100-continue: %s, closed: %s" % (show(*reader.response()), reader.is_closed()))
-    sock.close()
+    said = "unread with 100-continue: %s, closed: %s" % (show(*reader.response()), reader.is_closed())
+    say("%s, ended: %s" % (said, ending(port, sock)))
 
 
 def refused(port, what, head):
     sock, reader = connect(port)
     sock.sendall(head)
-    say("%s: %s, closed: %s" % (what, show(*reader.response()), reader.is_closed()))
-    sock.close()
+    said = "%s: %s, closed: %s" % (what, show(*reader.response()), reader.is_closed())
+    say("%s, ended: %s" % (said, ending(port, sock)))
 
 
 def errors(port):
@@ -211,43 +222,68 @@ def errors(port):
 def closing(port):
     sock, reader = connect(port)
     sock.sendall(b"GET /hello HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
-    say("client's close: %s, closed: %s" % (show(*reader.response()), reader.is_closed()))
-    sock.close()
+    said = "client's close: %s, closed: %s" % (show(*reader.response()), reader.is_closed())
+    say("%s, ended: %s" % (said, ending(port, sock)))
     sock, reader = connect(port)
     sock.sendall(b"GET /close HTTP/1.1\r\nHost: x\r\n\r\n")
-    say("server's close: %s, closed: %s" % (show(*reader.response()), reader.is_closed()))
-    sock.close()
+    said = "server's close: %s, closed: %s" % (show(*reader.response()), reader.is_closed())
+    say("%s, ended: %s" % (said, ending(port, sock)))
 
 
 def http_1_0(port):
     sock, reader = connect(port)
     sock.sendall(b"GET /hello HTTP/1.0\r\n\r\n")
-    say("HTTP/1.0: %s, closed: %s" % (show(*reader.response()), reader.is_closed()))
-    sock.close()
+    said = "HTTP/1.0: %s, closed: %s" % (show(*reader.response()), reader.is_closed())
+    say("%s, ended: %s" % (said, ending(port, sock)))
     sock, reader = connect(port)
     sock.sendall(b"GET /hello HTTP/1.0\r\nConnection: keep-alive\r\n\r\n")
     first = show(*reader.response())
     sock.sendall(b"GET /stream HTTP/1.0\r\nConnection: keep-alive\r\n\r\n")
     status, headers, body = reader.response()
-    say("HTTP/1.0 keep-alive: %s, then %s (%s)" % (first, show(status, headers, body), headers.get("transfer-encoding", "no chunks")))
-    sock.close()
+    said = "HTTP/1.0 keep-alive: %s, then %s (%s)" % (first, show(status, headers, body), headers.get("transfer-encoding", "no chunks"))
+    say("%s, ended: %s" % (said, ending(port, sock)))
 
 
-def short_limits(port):
+def short_limits(port, plain):
+    """`port` is the short server's; `plain` the other's, which says how they ended."""
     sock, reader = connect(port)
     sock.sendall(b"GET /hello HTTP/1.1\r\nHost: x\r\n\r\n")
     a = show(*reader.response())
     sock.sendall(b"GET /hello HTTP/1.1\r\nHost: x\r\n\r\n")
-    say("2 requests a connection: %s, then %s, closed: %s" % (a, show(*reader.response()), reader.is_closed()))
-    sock.close()
-    for what, send in (("nothing", b""), ("half a head", b"GET /hello HTTP/1.1\r\nHo")):
+    said = "2 requests a connection: %s, then %s, closed: %s" % (a, show(*reader.response()), reader.is_closed())
+    say("%s, ended: %s" % (said, ending(plain, sock)))
+    # Idle: nothing sent, empty lines, or a request answered and then nothing, as a browser
+    # keeps a connection. Stalled: half a head, or a whole request and half the next one's head.
+    for what, first, send in (
+        ("nothing", False, b""),
+        ("empty lines", False, b"\r\n\r\n"),
+        ("a request, then nothing", True, b""),
+        ("half a head", False, b"GET /hello HTTP/1.1\r\nHo"),
+        ("a request, then half a head", True, b"GET /hello HTTP/1.1\r\nHo"),
+    ):
         sock, reader = connect(port)
+        if first:
+            sock.sendall(b"GET /hello HTTP/1.1\r\nHost: x\r\n\r\n")
+            reader.response()
         began = time.monotonic()
         sock.sendall(send)
         closed = reader.is_closed()
         took = time.monotonic() - began
-        say("sends %s: closed: %s, after the deadline: %s" % (what, closed, 0.4 < took < 10))
-        sock.close()
+        say("sends %s: closed: %s, after the deadline: %s, ended: %s" % (what, closed, 0.4 < took < 10, ending(plain, sock)))
+
+
+def broken_off(port):
+    """A client that resets its connection inside a head, and one that finishes sending there."""
+    sock, reader = connect(port)
+    sock.sendall(b"GET /hello HTTP/1.1\r\nHo")
+    time.sleep(0.1)
+    # A close with SO_LINGER of 0 resets the connection.
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+    say("reset inside a head, ended: %s" % ending(port, sock))
+    sock, reader = connect(port)
+    sock.sendall(b"GET /hello HTTP/1.1\r\nHo")
+    sock.shutdown(socket.SHUT_WR)
+    say("finished inside a head: closed: %s, ended: %s" % (reader.is_closed(), ending(port, sock)))
 
 
 if __name__ == "__main__":
@@ -261,4 +297,5 @@ if __name__ == "__main__":
     errors(port)
     closing(port)
     http_1_0(port)
-    short_limits(short)
+    broken_off(port)
+    short_limits(short, port)

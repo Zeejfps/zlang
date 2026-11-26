@@ -187,14 +187,6 @@ as the write-ups gave them.
     a cast. *Hit by 1:* std (stop's
     handler on every layer, and task's and thread's thread entries).
 
-42. **serve_connection doesn't say what it answered.** A request it refuses (400, 431, 501,
-    505) never reaches the handler, and its error doesn't say whether a response went out, so a
-    server's access log can't have a line for it from what std gives. Written: serve's
-    `find_refusal` (serve/src/run.ctx) maps http's errors back to the statuses std's `refuse`
-    chose, and logs them from the connection's task; a handler's own error of the same kind (a
-    response head too large for the buffer) would be logged twice. A callback for refusals, or
-    the status in the error, would say it. *Hit by 1:* serve.
-
 44. **A task's standard output is its thread's own buffer.** What a task prints comes out when
     its worker's 64 KiB fills or its thread ends (10 seconds after its last task), so lines from
     many tasks come out late and in any order. Flushing after each line makes each one a write

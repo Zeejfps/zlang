@@ -79,7 +79,7 @@
 //       let mut fields: [100]http::Header
 //       let mut headers = fields[..]
 //       let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-//       http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer } iferr {}
+//       _ = try http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer }
 //   }
 //
 //   fn answer { mut net: Net, exchange: http::Exchange } -> ! {
@@ -89,11 +89,11 @@
 // serve_connection reads each request's head (read_request) under a deadline (run_within);
 // the handler reads the body (read_body, discard_body) and answers (respond, or send_response,
 // write_body and finish_body for a body it streams); a request it can't read is answered 400,
-// 431, 501 or 505. Keep-alive, pipelining, HTTP/1.0 and Expect: 100-continue are the
-// connection's. A connection's calls block, and fail with task::cancelled in a task asked to
-// stop, and with task::deadline_passed past a deadline. The connection's misuse panics, as a
-// task handle's does: a second response to a request, a body written that the response said it
-// hadn't, a request read while the last one's body is unread.
+// 431, 501 or 505. It returns how the connection ended, an Ending (a refusal among them), and
+// fails only for a failure. Keep-alive, pipelining, HTTP/1.0 and Expect: 100-continue are the
+// connection's; its calls block, and fail with task::cancelled in a task asked to stop, and
+// with task::deadline_passed past a deadline. Its misuse panics, as a task handle's does: a
+// second response, a body written that the response said it hadn't, a read with a body unread.
 
 namespace http {
     // A header field: a name and a value, slices of the buffer the head was read into or of the
@@ -466,7 +466,7 @@ namespace http {
 
     error ended_early                   // the connection ended inside a message, or a `length` body wasn't all written
     error body_too_large                // past a `length` body's length
-    error timed_out                     // serve_connection: a head didn't arrive within its Limits
+    error timed_out                     // serve_connection: a head that began didn't arrive whole within its Limits
 
     // A connection over `stream`, with `buffer` for heads and what arrives past them. An empty
     // buffer panics.
@@ -616,10 +616,7 @@ namespace http {
             }
             if conn.end == conn.buffer.len { return head_too_large }
             if try receive_more{ &net, &conn } == 0 {
-                // Empty lines before a request are no request (RFC 9112 §2.2).
-                for c in conn.buffer[conn.start..conn.end] {
-                    if c != '\r' and c != '\n' { return ended_early }
-                }
+                if not is_between_requests{ conn } { return ended_early }
                 conn.keep = false
                 return null
             }
@@ -712,33 +709,59 @@ namespace http {
     // that the connection can carry the next request; past it, the connection ends instead.
     const DISCARD_MOST: u64 = 65536
 
-    // Answers one connection's requests, each with `handle`, until the peer finishes sending
-    // between requests, a response ends the connection (`close`, the request's, an until_close
-    // body, `Limits.requests`), or a request's head doesn't arrive within `limits.head_ns`
-    // (timed_out). It returns then, and the program closes the connection's stream.
+    // How a connection that serve_connection served ended, when nothing failed: each is an
+    // ordinary end, after which the program closes the connection's stream. With it, a server's
+    // access log has a line for every response: a handler's, which the handler writes, and a
+    // refusal's, which no handler saw, from `refused`.
+    union Ending {
+        peer_finished,                          // the peer finished sending between requests
+        idle,                                   // no byte of a next request arrived within Limits.head_ns
+        closed,                                 // a response ended it: Connection: close from either end, an until_close body, 101, Limits.requests' last
+        refused{ status: u16, why: error },     // a request it couldn't read, answered with `status`; `why` is what was wrong with it
+    }
+
+    // Answers one connection's requests, each with `handle`, until the connection ends, and
+    // says how it ended: the peer finished sending between requests (peer_finished), no byte
+    // of a next request arrived within `limits.head_ns` (idle: how a browser's kept-alive
+    // connection ends), a response ended it (closed: `close`, the request's, an until_close
+    // body, 101, `Limits.requests`), or a request was refused (refused). The program closes the
+    // connection's stream then.
     //
-    // A request it can't read is answered and ends the connection, with the error it read:
-    // 400 for malformed, 431 for head_too_large and too_many_headers (RFC 6585), 501 for
-    // unsupported_coding, 505 for unsupported_version. A handler that fails is answered 500 if
-    // it sent nothing, and its error returned. One that returns having sent nothing is answered
-    // 500, and the connection goes on; one that left its response's body unfinished ends it,
-    // ended_early. A request's body the handler didn't read is discarded, up to DISCARD_MOST
-    // bytes, before the next request; past that, or when it expected 100 Continue that wasn't
-    // sent (so its client may never send it), the connection ends instead. A connection that
-    // ends after a response does so in stages (linger), so that the client reads the response
-    // whatever it was still sending.
+    // A request it can't read is answered, which ends the connection, refused{ status, why }
+    // with the error it read as `why`: 400 for malformed, 431 for head_too_large and
+    // too_many_headers (RFC 6585), 501 for unsupported_coding, 505 for unsupported_version. A
+    // refusal isn't an error: the client sent something wrong, and the server answered it as
+    // HTTP says, as a handler's 404 is a response and not an error.
+    //
+    // Its errors are failures, the connection's or the program's: the stream's (a reset), a
+    // head that stalled (timed_out: some of it arrived, but not all within `limits.head_ns`), a
+    // peer that finished sending inside a head (ended_early), a handler's, a response's body
+    // cut short, a deadline the caller put around it (task::deadline_passed) and a cancel
+    // (task::cancelled). A handler that fails is answered 500 if it sent nothing, and its error
+    // returned. One that returns having sent nothing is answered 500, and the connection goes
+    // on; one that left its response's body unfinished ends it, ended_early. A request's body
+    // the handler didn't read is discarded, up to DISCARD_MOST bytes, before the next request;
+    // past that, or when it expected 100 Continue that wasn't sent (so its client may never
+    // send it), the connection ends instead, closed. A connection that ends after a response
+    // does so in stages (linger), so that the client reads the response whatever it was still
+    // sending.
     //
     // A head's deadline (Limits.head_ns) is put on its read with task::run_within, here on the
     // caller's thread: no task of its own. Everything runs on the caller's thread, `handle` too,
     // as a plain function value, so a connection takes one thread, the caller's.
-    fn serve_connection { mut net: Net, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, exchange: Exchange } -> ! } -> ! {
+    fn serve_connection { mut net: Net, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, exchange: Exchange } -> ! } -> !Ending {
         let mut served: u32 = 0
         while true {
             let got = read_request_within{ &net, &conn, &headers, nanoseconds = limits.head_ns } iferr err{ error } {
-                if refuse{ &net, &conn, error } { linger{ &net, &conn } }
-                return error
+                // A deadline before any of a next request arrived is a client keeping its
+                // connection without using it; one inside a head is a client that stalled.
+                if error is timed_out and is_between_requests{ conn } { return Ending::idle }
+                let status = find_refusal{ error } ifnull { return error }
+                try refuse{ &net, &conn, status }
+                linger{ &net, &conn }
+                return Ending::refused{ status, why = error }
             }
-            let request = got ifnull { return }
+            let request = got ifnull { return Ending::peer_finished }
             served = served + 1
             if limits.requests != 0 and served >= limits.requests { conn.keep = false }
             handle{ &net, exchange = Exchange{ conn = &conn, request } } iferr err{ error } {
@@ -762,9 +785,10 @@ namespace http {
             }
             if not conn.keep {
                 linger{ &net, &conn }
-                return
+                return Ending::closed
             }
         }
+        return Ending::closed
     }
 
     // A whole response, for a handler: `status`, `headers`, and `body`, with its Content-Length.
@@ -916,7 +940,8 @@ namespace http {
     }
 
     // read_request, under the head's deadline, `nanoseconds` from now (task::run_within): a
-    // head that hasn't arrived whole by then is timed_out. A head the buffer already holds
+    // head that hasn't arrived whole by then is timed_out, which serve_connection tells from a
+    // connection left idle by what the buffer holds (is_between_requests). A head the buffer already holds
     // whole is read without waiting, and a receive that got bytes as the deadline came gives
     // them. A deadline the caller put on the connection that passed first is its own error, as
     // a cancel is, not this one's.
@@ -932,19 +957,32 @@ namespace http {
         return got
     }
 
-    // The response to a request that couldn't be read, by what was wrong with it, which ends
-    // the connection: whether one was sent. An error of the stream gets none, and neither does
-    // ended_early, a peer that finished sending inside a head.
-    fn refuse { mut net: Net, mut conn: Connection, error: error } -> bool {
-        let status: u16 = match error {
-            malformed => 400
-            head_too_large | too_many_headers => 431
-            unsupported_coding => 501
-            unsupported_version => 505
-            else => 0
+    // Whether the buffer holds nothing of a next request: no bytes, or only the empty lines a
+    // request may follow, which are no request (RFC 9112 §2.2).
+    fn is_between_requests { conn: Connection } -> bool {
+        for c in conn.buffer[conn.start..conn.end] {
+            if c != '\r' and c != '\n' { return false }
         }
+        return true
+    }
+
+    // The status serve_connection refuses a request with, by what was wrong with it; null for
+    // an error that gets no response: the stream's, a stalled head (timed_out), and
+    // ended_early, a peer that finished sending inside a head.
+    fn find_refusal { error: error } -> ?u16 {
+        return match error {
+            malformed => { 400 }
+            head_too_large | too_many_headers => { 431 }
+            unsupported_coding => { 501 }
+            unsupported_version => { 505 }
+            else => { null }
+        }
+    }
+
+    // Sends the response to a request that couldn't be read, with `status`, which ends the
+    // connection.
+    fn refuse { mut net: Net, mut conn: Connection, status: u16 } -> ! {
         conn.keep = false
-        if status == 0 { return false }
         // What was received is dropped with the request, and the response is written in its place:
         // a head too large for the buffer leaves no room beside it.
         conn.start = 0
@@ -953,8 +991,7 @@ namespace http {
         conn.responded = false
         conn.method_head = false
         conn.version = 11
-        send_response{ &net, &conn, status, headers = [], body = Body::none, close = true } iferr { return false }
-        return true
+        return send_response{ &net, &conn, status, headers = [], body = Body::none, close = true }
     }
 
     // How long serve_connection reads and drops what a client still sends once a response has

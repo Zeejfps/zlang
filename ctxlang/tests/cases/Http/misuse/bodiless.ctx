@@ -6,7 +6,7 @@ fn main { mut net: Net } {
     _ = http::send_response{ &net, &conn, status = 204, headers = [], body = http::Body::bytes{ bytes = "x" }, close = false }
 }
 
-//# panic: std/http.ctx:657:46: panic: http::send_response: a 1xx, 204 or 304 response has no body
+//# panic: std/http.ctx:654:46: panic: http::send_response: a 1xx, 204 or 304 response has no body
 //# path:
-//|   at http::send_response (std/http.ctx:657:46)
+//|   at http::send_response (std/http.ctx:654:46)
 //|   at main (bodiless.ctx:6:28)

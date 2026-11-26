@@ -7,7 +7,7 @@ fn main { mut net: Net } {
     _ = http::send_response{ &net, &conn, status = 200, headers = [], body = http::Body::none, close = false }
 }
 
-//# panic: std/http.ctx:655:29: panic: http::send_response: the request has its response already
+//# panic: std/http.ctx:652:29: panic: http::send_response: the request has its response already
 //# path:
-//|   at http::send_response (std/http.ctx:655:29)
+//|   at http::send_response (std/http.ctx:652:29)
 //|   at main (respond_twice.ctx:7:28)

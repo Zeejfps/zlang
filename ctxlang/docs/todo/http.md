@@ -543,12 +543,21 @@ namespace http {
     // response on. It must send one response (serve_connection sends 500 if it didn't).
     struct Exchange { conn: *mut Connection, request: Incoming, responded: bool }
 
-    // Answers one connection's requests, each with `handle`, until the peer closes, a response
-    // ends the connection, a limit is reached, or `handle` fails. A request it can't parse gets
-    // 400 (431 for a head larger than the buffer, 501 for an unknown transfer coding, 505 for the
-    // version) and ends the connection. The head's deadline is put on its read with
-    // task::run_within, on the caller's thread, as everything here runs.
-    fn serve_connection { mut net: Net, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, mut exchange: Exchange } -> ! } -> !
+    // How a connection ended when nothing failed: each is an ordinary end.
+    union Ending {
+        peer_finished,                          // the peer finished sending between requests
+        idle,                                   // no byte of a next request arrived within Limits.head_ns
+        closed,                                 // a response ended it: Connection: close, an until_close body, 101, Limits.requests
+        refused{ status: u16, why: error },     // a request it couldn't read, answered with `status`; `why` is what was wrong
+    }
+
+    // Answers one connection's requests, each with `handle`, until the connection ends, and
+    // says how it ended. A request it can't parse gets 400 (431 for a head larger than the
+    // buffer, 501 for an unknown transfer coding, 505 for the version), which ends the
+    // connection, `refused`. Its errors are failures: a reset, a head that stalled (timed_out),
+    // `handle`'s, a body cut short, a caller's deadline, a cancel. The head's deadline is put on
+    // its read with task::run_within, on the caller's thread, as everything here runs.
+    fn serve_connection { mut net: Net, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, mut exchange: Exchange } -> ! } -> !Ending
 
     // A whole response, for a handler: status, headers, and the body as bytes.
     fn respond { mut net: Net, mut exchange: Exchange, status: u16, headers: []Header, body: []u8 } -> !
@@ -562,6 +571,16 @@ connection's own thread: the receive that is waiting when it passes stops, and t
 ends. A connection holds one thread, its own, whether it is busy or idle between requests. A handler that reads a body slowly is the handler's to bound the
 same way; `serve_connection` doesn't time a body, whose size and pace only the handler knows.
 
+**How a connection ended is a value; only a failure is an error.** A kept-alive browser leaves
+its connection idle between requests until the server's deadline closes it, every time: that,
+the peer finishing between requests, and a response that ends the connection are how
+connections end, and `serve_connection` returns them as an `Ending`. A deadline that passes
+with part of a head received is a client that stalled, `timed_out`, an error with a reset, a
+handler's error and a body cut short, so that a program that logs or counts its connections'
+errors sees failures only. A request it refuses was answered, so it is an `Ending` too,
+`refused`, with the status sent and the parser's error: the program's access log has a line for
+it as for any response, from the value, which no handler saw.
+
 **The accept loop is the program's**, a task per connection in a `task::Group`, as net.md's server
 is (TCP, A server). `http` has no `serve` that accepts and starts tasks itself: a start's `run` must be
 a bind written in the call (spec §15, Tasks, rule 3), so a `serve` of std's would start its own bind
@@ -573,15 +592,17 @@ and what each connection costs.
 ### A small server
 
 ```
-// A connection's task. What ends it otherwise than the client leaving (a reset, a head that
-// didn't arrive) is its error, and fails it alone: the group keeps its failures.
+// A connection's task. How it ended, an http::Ending (the client left or went idle, a response
+// closed it, a request was refused), is ordinary, and dropped; what fails it (a reset, a head
+// that stalled, a handler's error) is its error, and fails it alone: the group keeps its
+// failures.
 fn connection { mut net: Net, socket: net::Socket, site: *Site } -> ! {
     defer net::close{ &net, socket }
     let mut buffer: [16384]u8
     let mut fields: [100]http::Header
     let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-    return http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } }
+    _ = try http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } }
 }
 
 fn answer { site: *Site, mut net: Net, exchange: http::Exchange } -> ! {
@@ -715,7 +736,8 @@ namespace http {
     struct Exchange { conn: *mut Connection, request: Incoming }
     const DISCARD_MOST: u64 = 65536
     const LINGER_NS: u64 = 2000000000
-    fn serve_connection { mut net: Net, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, exchange: Exchange } -> ! } -> !
+    union Ending { peer_finished, idle, closed, refused{ status: u16, why: error } }
+    fn serve_connection { mut net: Net, mut conn: Connection, mut headers: []mut Header, limits: Limits, handle: &fn{ mut net: Net, exchange: Exchange } -> ! } -> !Ending
     fn respond { mut net: Net, exchange: Exchange, status: u16, headers: []Header, body: []u8 } -> !
 }
 ```
@@ -755,13 +777,30 @@ The design predates `&thread fn` (spec §5, rule 5; §15, Tasks), which replaced
 
 And what building it settled:
 
-- **A head's deadline ends the connection silently**: `serve_connection` returns `timed_out`, and
-  the program's `defer` closes the stream. No 408 is sent: on an idle kept-alive connection a
-  client may send a request as the deadline comes, and would read a 408 as that request's answer.
+- **A head's deadline ends the connection silently**, and the program's `defer` closes the
+  stream. No 408 is sent: on an idle kept-alive connection a client may send a request as the
+  deadline comes, and would read a 408 as that request's answer.
+- **`serve_connection` returns an `Ending`** (Decision 19), `peer_finished`, `idle`, `closed` or
+  `refused{ status, why }`, and fails only for a failure. It returned `!` at first, the
+  ordinary ends as success with nothing in it and both the head's deadline and a refusal as
+  errors: serve logged every idle browser connection as `a connection failed: http::timed_out`,
+  and mapped http's errors back to the statuses `refuse` chose to log its refusals
+  (friction.md's entry 42, fixed by this change), which would have logged twice a handler's own
+  error of the same kind. A head's deadline is `idle` when the buffer holds nothing of a next
+  request, no bytes or only the empty lines a request may follow (RFC 9112 §2.2), as
+  `read_request` already judged a peer that finished sending, and `timed_out` otherwise. A reset
+  is an error wherever it comes: it is the stream's, and says the peer aborted, which a server
+  can't tell from a client that lost what it sent. Rejected: an `on_refused` hook beside the
+  handler. A refusal's log line needs the status, and the program has the peer and the time; the
+  method and target it would want aren't known for most refusals (a head that doesn't parse
+  has none, and its bytes are dropped to make room for the response), so a hook could give no
+  more than the value does, and would be a second function value to bind.
 - **Error responses** are 400, 431, 501 and 505 as designed, with `Content-Length: 0` and
-  `Connection: close`. What was received is dropped first, since a head that filled the buffer
-  leaves no room beside it for the response's head. A peer that finished sending inside a head
-  (`ended_early`) or a stream error gets none.
+  `Connection: close`, returned as `Ending::refused` with the parser's error. What was received
+  is dropped first, since a head that filled the buffer leaves no room beside it for the
+  response's head. A peer that finished sending inside a head (`ended_early`) or a stream error
+  gets none, and is the error `serve_connection` returns; a refusal whose send fails returns the
+  send's error, since no response went out.
 - **A connection that ends after a response ends in stages** (RFC 9112 §9.6): its sending side is
   shut, and what the client still sends is read and dropped, under a deadline (`run_within`), until
   the client finishes, `LINGER_NS` (2 s) pass or `DISCARD_MOST` bytes came. Closing a socket with
@@ -797,10 +836,15 @@ that sends nothing and one that fails; four requests pipelined in one send, one 
 handler doesn't read; Expect: 100-continue, read and unread; 400 for a broken field, no Host and
 both lengths, 431 for a head larger than the buffer and for too many fields, 501 for gzip, 505 for
 HTTP/2.0; `Connection: close` from either end; HTTP/1.0, closed and kept alive, with a chunked body
-sent until the close; and on a server with a 500 ms head deadline and two requests a connection,
-the limit, a client that sends nothing and one that sends half a head, each closed after the
-deadline. small_server runs the design's server and both ways of stopping, with a kept connection
-served during the grace period and closed at its end. misuse/ holds the connection's panics. The
+sent until the close; a client that resets its connection inside a head (`net::reset`) and one
+that finishes sending there (`ended_early`); and on a server with a 500 ms head deadline and two
+requests a connection, the limit, and clients that send nothing, empty lines, or a request and
+then nothing (each `idle`), and half a head, or a request and half the next one's head (each
+`timed_out`), each closed after the deadline. After each connection the peer asks the server how
+it ended, by its port (`/ending/PORT`), and checks the Ending or error: `peer_finished`,
+`closed`, each refusal's status and why, the handler's error. small_server runs the design's
+server and both ways of stopping, with a kept connection served during the grace period and
+closed at its end. misuse/ holds the connection's panics. The
 socket cases passed 5 runs in a row with `--fresh`.
 
 ## WebSocket
@@ -880,7 +924,7 @@ namespace http {
     error unsupported_scheme            // fetch: not http or https
     error too_many_redirects
     error insecure_redirect             // fetch: from https to http
-    error timed_out                     // serve_connection: a head didn't arrive within Limits
+    error timed_out                     // serve_connection: a head that began didn't arrive whole within Limits
 
     type Error = error(tls::Error, url::bad_url, alloc::out_of_memory, malformed, head_too_large, too_many_headers,
                        body_too_large, unsupported_version, unsupported_coding, ended_early, unsupported_scheme,
@@ -1017,6 +1061,15 @@ Each package also updates spec §17's table for what it adds.
    a second buffer, which every connection would pay for to serve a client that pipelines more than
    its buffer less a head; and a buffer on `send_response`'s stack, a limit of its own besides the
    caller's.
+19. **`serve_connection` returns how the connection ended, an `Ending`; its errors are failures**
+   (Serving, Built). A connection idle past its head's deadline with nothing of a next request
+   received is `idle`, one with part of a head is `timed_out`, an error. A refusal is
+   `Ending::refused{ status, why }`: the response went out, so the server did its job, and a
+   client's bad request is a response's status, as a handler's 404 is, not a failure of the
+   server's. Rejected: refusals and every deadline as errors, which made each idle browser
+   connection a failure and a program map errors back to statuses to log its refusals; a refusal
+   as an error that carries the status, which would put a client's mistake among the server's
+   failures; and an `on_refused` hook, which could give a log no more than the value does.
 
 ## Open questions
 

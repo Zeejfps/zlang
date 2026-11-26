@@ -33,7 +33,7 @@ namespace site {
         accepted: u64,              // connections accepted
         refused: u64,               // connections closed at once: too many, or no thread for their task
         open: u64,                  // connections being served
-        failed: u64,                // connections that failed (a reset, a head past its deadline), each logged
+        failed: u64,                // connections that failed (a reset, a head that stalled past its deadline, a handler's error), each logged
         dropped: u64,               // connections that failed past what their group holds, counted only
         requests: u64,              // requests answered, those refused before a request line included
         status_2xx: u64,

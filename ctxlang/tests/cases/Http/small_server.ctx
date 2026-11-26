@@ -32,15 +32,17 @@ fn site_page { site: *Site, path: []u8 } -> ?[]u8 {
 
 // ---- the design's server
 
-// A connection's task. What ends it otherwise than the client leaving (a reset, a head that
-// didn't arrive) is its error, and fails it alone: the group keeps its failures.
+// A connection's task. How it ended, an http::Ending (the client left or went idle, a response
+// closed it, a request was refused), is ordinary, and dropped; what fails it (a reset, a head
+// that stalled, a handler's error) is its error, and fails it alone: the group keeps its
+// failures.
 fn connection { mut net: Net, socket: net::Socket, site: *Site } -> ! {
     defer net::close{ &net, socket }
     let mut buffer: [16384]u8
     let mut fields: [100]http::Header
     let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-    return http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } }
+    _ = try http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } }
 }
 
 fn answer { site: *Site, mut net: Net, exchange: http::Exchange } -> ! {

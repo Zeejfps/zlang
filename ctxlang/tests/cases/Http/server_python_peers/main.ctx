@@ -1,7 +1,8 @@
 // A ctxlang HTTP server for tests/helpers/http_peer.py: two listeners, each with its accept
 // loop in a task and a task per connection, the second with a short head deadline and two
-// requests a connection. The program starts the peer with both ports, prints what it printed
-// once it has ended, and stops the servers.
+// requests a connection. Each connection's task notes how it ended, and /ending/PORT says it
+// for the connection from that client port. The program starts the peer with both ports,
+// prints what it printed once it has ended, and stops the servers.
 
 error failed_here
 
@@ -55,23 +56,99 @@ fn answer { mut net: Net, exchange: http::Exchange } -> ! {
     return http::respond{ &net, exchange, status = 404, headers = [], body = "not found\n" }
 }
 
-// A connection's task. Its error (a reset, a head past its deadline, the handler's
-// failed_here) fails it alone: the group keeps it, unread, since the peer checks what each
-// connection got, and drops it when the server is cancelled.
-fn connection { mut net: Net, socket: net::Socket, limits: http::Limits } -> ! {
+// How each connection ended, by the client's port, for /ending/PORT: what serve_connection
+// returned, its Ending or its error.
+struct Ending { port: u16, len: usize, text: [120]u8 }
+struct Endings { lock: mutex::Mutex, count: usize, all: [256]Ending }
+
+// Notes how the connection from `port` ended. Past the 256 it holds, it notes nothing.
+fn note_ending { endings: *mut Endings, port: u16, text: []u8 } {
+    mutex::lock{ mutex = &endings.lock }
+    if endings.count < endings.all.len {
+        let n = @min(text.len, 120)
+        let e = &endings.all[endings.count]
+        e.port = port
+        e.len = n
+        slice::copy(u8){ dst = e.text[..n], src = text[..n] }
+        endings.count = endings.count + 1
+    }
+    mutex::unlock{ mutex = &endings.lock }
+}
+
+// How the connection from `port` ended, into `into`: its length, or null if it hasn't ended.
+// The latest of that port's, should the system have given it twice.
+fn find_ending { endings: *mut Endings, port: u16, into: []mut u8 } -> ?usize {
+    mutex::lock{ mutex = &endings.lock }
+    defer mutex::unlock{ mutex = &endings.lock }
+    let mut i = endings.count
+    while i > 0 {
+        i = i - 1
+        let e = &endings.all[i]
+        if e.port == port {
+            slice::copy(u8){ dst = into[..e.len], src = e.text[..e.len] }
+            return e.len
+        }
+    }
+    return null
+}
+
+// /ending/PORT: how the connection from PORT ended, once it has, waiting up to 10 seconds.
+fn answer_ending { mut threads: Threads, endings: *mut Endings, mut net: Net, exchange: http::Exchange } -> ! {
+    let target = exchange.request.target
+    let port = utf8::parse_u64{ s = utf8::of{ chars = target[8..] } } ifnull {
+        return http::respond{ &net, exchange, status = 400, headers = [], body = "no port\n" }
+    }
+    let mut text: [120]u8
+    for _ in 0..1000 {
+        if let n = find_ending{ endings, port = @as(u16, port), into = text[..] } {
+            return http::respond{ &net, exchange, status = 200, headers = [], body = text[..n] }
+        }
+        thread::sleep{ &threads, nanoseconds = 10000000 }
+    }
+    return http::respond{ &net, exchange, status = 200, headers = [], body = "not ended" }
+}
+
+fn answer_any { mut threads: Threads, endings: *mut Endings, mut net: Net, exchange: http::Exchange } -> ! {
+    let target = exchange.request.target
+    if target.len > 8 and slice::eq_bytes{ a = target[..8], b = "/ending/" } {
+        return answer_ending{ &threads, endings, &net, exchange }
+    }
+    return answer{ &net, exchange }
+}
+
+// A connection's task. It notes how the connection ended, an Ending or an error; its error (a
+// reset, a head that stalled, the handler's failed_here) fails it alone: the group keeps it,
+// unread, since the peer asks how each connection ended, and drops it when the server is
+// cancelled.
+fn connection { mut net: Net, mut threads: Threads, socket: net::Socket, limits: http::Limits, endings: *mut Endings } -> ! {
     defer net::close{ &net, socket }
+    let port = (net::peer_address{ &net, socket } iferr { net::Address{ ip = net::ANY_V4, port = 0 } }).port
     let mut buffer: [16384]u8
     let mut fields: [100]http::Header
     let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-    return http::serve_connection{ &net, &conn, &headers, limits, handle = answer }
+    let mut said: [256]u8
+    let mut heap = arena::new{ buf = said[..] }
+    let mut b = utf8::builder(arena::Arena){ realloc = arena::alloc, &heap }
+    let ending = http::serve_connection{ &net, &conn, &headers, limits, handle = answer_any{ &threads, endings, _ } } iferr err{ error } {
+        _ = @fmt(&b, "failed: {}", error)
+        note_ending{ endings, port, text = utf8::view{ b }.bytes }
+        return error
+    }
+    match ending {
+        peer_finished => { _ = @fmt(&b, "peer_finished") }
+        idle => { _ = @fmt(&b, "idle") }
+        closed => { _ = @fmt(&b, "closed") }
+        refused{ status, why } => { _ = @fmt(&b, "refused {}: {}", status, why) }
+    }
+    note_ending{ endings, port, text = utf8::view{ b }.bytes }
 }
 
-fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, limits: http::Limits } -> ! {
+fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, limits: http::Limits, endings: *mut Endings } -> ! {
     let mut connections = task::Group{ failures = task::Failures::keep, .. }
     while true {
         let socket = try net::accept{ &net, listener }
-        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, socket, limits, _ } } iferr {
+        task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, &threads, socket, limits, endings, _ } } iferr {
             net::close{ &net, socket }
         }
     }
@@ -85,10 +162,12 @@ fn main { mut io: Io, mut net: Net, mut proc: Proc, mut threads: Threads, args: 
     let at = net::listener_address{ &net, listener } iferr { return 1 }
     let short_at = net::listener_address{ &net, listener = short } iferr { return 1 }
 
+    let mut endings: Endings
+    endings.lock = mutex::make{}
     let mut plain: task::Task(!)
-    task::start_concurrent{ &threads, task = &plain, run = serve{ &net, &threads, listener, limits = http::Limits{ .. }, _ } } iferr { return 2 }
+    task::start_concurrent{ &threads, task = &plain, run = serve{ &net, &threads, listener, limits = http::Limits{ .. }, endings = &endings, _ } } iferr { return 2 }
     let mut limited: task::Task(!)
-    task::start_concurrent{ &threads, task = &limited, run = serve{ &net, &threads, listener = short, limits = http::Limits{ head_ns = SHORT_HEAD_NS, requests = 2 }, _ } } iferr { return 2 }
+    task::start_concurrent{ &threads, task = &limited, run = serve{ &net, &threads, listener = short, limits = http::Limits{ head_ns = SHORT_HEAD_NS, requests = 2 }, endings = &endings, _ } } iferr { return 2 }
 
     let mut text: [20]u8
     let port = utf8::fmt_u64{ n = at.port, into = text[..] }
