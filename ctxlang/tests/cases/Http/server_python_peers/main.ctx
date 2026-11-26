@@ -55,18 +55,20 @@ fn answer { mut net: Net, exchange: http::Exchange } -> ! {
     return http::respond{ &net, exchange, status = 404, headers = [], body = "not found\n" }
 }
 
-// A connection's task, whose error is dropped: one client's is no reason to end the others.
+// A connection's task. Its error (a reset, a head past its deadline, the handler's
+// failed_here) fails it alone: the group keeps it, unread, since the peer checks what each
+// connection got, and drops it when the server is cancelled.
 fn connection { mut net: Net, socket: net::Socket, limits: http::Limits } -> ! {
     defer net::close{ &net, socket }
     let mut buffer: [16384]u8
     let mut fields: [100]http::Header
     let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-    http::serve_connection{ &net, &conn, &headers, limits, handle = answer } iferr {}
+    return http::serve_connection{ &net, &conn, &headers, limits, handle = answer }
 }
 
 fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, limits: http::Limits } -> ! {
-    let mut connections: task::Group
+    let mut connections = task::Group{ failures = task::Failures::keep, .. }
     while true {
         let socket = try net::accept{ &net, listener }
         task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, socket, limits, _ } } iferr {

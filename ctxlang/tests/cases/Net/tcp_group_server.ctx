@@ -1,16 +1,21 @@
 // A group's server (docs/todo/net.md, Testing 4; TCP, A server): the design's accept loop,
-// with a handler task per connection in a group and connections reused from a free list, and
-// 50 clients at once, each a task that connects and has one line echoed. The clients keep
-// their connections open, so every handler is blocked in a receive when the server's task is
-// cancelled: `serve` then fails with `cancelled`, and its group's scope ends every handler,
-// each of which closes its socket, so each client's next receive gives 0 (or `reset`).
+// with a handler task per connection in a group that keeps its failures and connections reused
+// from a free list, and 50 clients at once, each a task that connects and has one line echoed.
+// One more client then resets its connection (it closes with its echo unread): its handler
+// fails alone, `serve` counts the failure, and each of the 50 connections still echoes. The
+// clients keep their connections open, so every handler is blocked in a receive when the
+// server's task is cancelled: `serve` then fails with `cancelled`, and its group's scope ends
+// every handler, each of which closes its socket, so each client's next receive gives 0 (or
+// `reset`).
 //# interp: cannot run
 //# timeout: 120
 //# stdout:
 //| 50 clients echoed
+//| a reset connection's handler failed alone: 1 failed, with reset true
+//| the others still echo: 50
 //| server: cancelled
-//| handlers ended: 50
-//| handlers that served: 50
+//| handlers ended: 51
+//| handlers that served: 51
 //| clients whose connection ended: 50
 
 const CLIENTS: usize = 50
@@ -21,6 +26,8 @@ struct Server {
     free: ?*mut Connection,         // connections to reuse
     served: u32,                    // handlers that echoed a line, atomically
     ended: u32,                     // handlers that ended, atomically
+    failed: u32,                    // handlers that failed, atomically
+    resets: u32,                    // of those, the ones whose peer reset the connection, atomically
 }
 
 fn give_back { server: *mut Server, c: *mut Connection } {
@@ -59,16 +66,29 @@ fn serve_requests { mut net: Net, socket: net::Socket, server: *mut Server } -> 
 
 fn handle { mut net: Net, c: *mut Connection } -> ! {
     let server = c.server
-    serve_requests{ &net, socket = c.socket, server } iferr {}
-    net::close{ &net, socket = c.socket }
-    give_back{ server, c }
-    _ = @atomic_add(&server.ended, 1)
+    defer _ = @atomic_add(&server.ended, 1)
+    defer give_back{ server, c }
+    defer net::close{ &net, socket = c.socket }
+    return serve_requests{ &net, socket = c.socket, server }   // a reset fails this handler alone
+}
+
+// Counts the failures `handlers` holds, without waiting for more.
+fn count_failures { mut threads: Threads, server: *mut Server, mut handlers: task::Group } {
+    while true {
+        let failure = task::run_within{ cancel = &threads, nanoseconds = 0, run = task::wait_failure{ &threads, group = &handlers, _ } } iferr { return } ifnull { return }
+        if failure is net::reset { _ = @atomic_add(&server.resets, 1) }
+        _ = @atomic_add(&server.failed, 1)
+    }
 }
 
 fn serve { mut net: Net, mut mem: Mem, mut threads: Threads, server: *mut Server, listener: net::Listener } -> ! {
-    let mut handlers: task::Group
+    let mut handlers = task::Group{ failures = task::Failures::keep, .. }
     while true {
-        let socket = try net::accept{ &net, listener }      // fails with cancelled when serve's task is
+        count_failures{ &threads, server, &handlers }
+        let socket = task::run_within{ cancel = &threads, nanoseconds = 100000000, run = net::accept{ &net, listener, _ } } iferr err{ error } {
+            if error is task::deadline_passed { continue }  // no client meanwhile: count again
+            return error                                    // cancelled when serve's task is
+        }
         let c = take_connection{ &mem, server } ifnull {
             net::close{ &net, socket }
             continue
@@ -98,11 +118,24 @@ fn client { mut net: Net, at: net::Address, slot: *mut net::Socket, n: usize } -
     if got[0] != line[0] or got[1] != '\n' { return net::closed }
 }
 
+// Whether the connection still echoes: a line sent on `socket` comes back.
+fn ask_again { mut net: Net, socket: net::Socket } -> !bool {
+    _ = try net::send{ &net, socket, bytes = "y\n" }
+    let mut got: [2]u8
+    let mut have: usize = 0
+    while have < 2 {
+        let k = try net::receive{ &net, socket, into = got[have..] }
+        if k == 0 { return false }
+        have = have + k
+    }
+    return got[0] == 'y' and got[1] == '\n'
+}
+
 fn main { mut io: Io, mut net: Net, mut mem: Mem, mut threads: Threads } -> i32 {
     let listener = net::listen{ &net, address = "127.0.0.1:0", backlog = 0 } iferr { return 1 }
     defer net::close_listener{ &net, listener }
     let at = net::listener_address{ &net, listener } iferr { return 1 }
-    let mut server = Server{ lock = mutex::make{}, free = null, served = 0, ended = 0 }
+    let mut server = Server{ lock = mutex::make{}, free = null, served = 0, ended = 0, failed = 0, resets = 0 }
     let mut accepting: task::Task(!)
     task::start_concurrent{ &threads, task = &accepting, run = serve{ &net, &mem, &threads, server = &server, listener, _ } } iferr { return 2 }
 
@@ -116,8 +149,29 @@ fn main { mut io: Io, mut net: Net, mut mem: Mem, mut threads: Threads } -> i32 
     task::wait_all{ &threads, group = &clients } iferr { return 4 }
     io::println{ &io, s = "50 clients echoed" }
 
-    // Every handler has echoed; wait until each has noted it, then stop the server.
+    // Every handler has echoed; wait until each has noted it.
     while @atomic_load(&server.served) < @trunc(u32, CLIENTS) { thread::sleep{ &threads, nanoseconds = 1000000 } }
+
+    // One more client resets its connection, by closing it with its echo unread: its handler
+    // fails, alone, and `serve` counts it within its accept's deadline.
+    let resetting = net::connect{ &net, address = at } iferr { return 5 }
+    _ = net::send{ &net, socket = resetting, bytes = "x\n" } iferr { return 5 }
+    while @atomic_load(&server.served) < @trunc(u32, CLIENTS) + 1 { thread::sleep{ &threads, nanoseconds = 1000000 } }
+    thread::sleep{ &threads, nanoseconds = 50000000 }      // the echo arrives, unread
+    net::close{ &net, socket = resetting }
+    let mut waited: u32 = 0
+    while @atomic_load(&server.failed) == 0 and waited < 10000 {
+        thread::sleep{ &threads, nanoseconds = 1000000 }
+        waited = waited + 1
+    }
+    _ = @fmt(&io, "a reset connection's handler failed alone: {} failed, with reset {}\n", @atomic_load(&server.failed), @atomic_load(&server.resets) == 1)
+    let mut echoing: usize = 0
+    for socket in sockets[..] {
+        if ask_again{ &net, socket } iferr { false } { echoing = echoing + 1 }
+    }
+    _ = @fmt(&io, "the others still echo: {}\n", echoing)
+
+    // Stop the server.
     match task::cancel{ &threads, task = &accepting } {
         ok => { io::println{ &io, s = "server: ended" } }
         err{ error } => {

@@ -96,11 +96,19 @@ Step 10, in serve/: `kotor/tools/ctxc exe serve -o serve/out/serve.exe` from the
 - **The access log** is a line per request, from the task that answered it, with the time (std's
   new `clock`, below), the client, the request line escaped, the status, the body's bytes and the
   duration; serve_connection's refusals (400, 431, 501, 505) are logged by the connection's task.
+  A connection that fails otherwise (a reset, a head past its 30-second deadline, a handler's
+  error) fails alone: the connections' group keeps its failures (`task::Failures::keep`), and the
+  acceptor logs each as a `serve: a connection failed: net::reset` line after each accept, or
+  once a second without one (the accept runs under `task::run_within`). Only the group's holder
+  reads them, and the acceptor holds it while it runs, so a reporter task of its own couldn't;
+  once the acceptor is cancelled, `run` reads what is left, before `cancel_all` drops it.
   Lines go through a journal, a shared buffer under a mutex, which one writer task writes out:
   whole, in the order the answers ended, at once when the server is quiet and in batches under
   load (Findings 2 says why not a flush per line).
 - **/stats** is JSON of counters that every task changes with relaxed atomics: connections
-  accepted, open and refused; requests, by status class; body bytes; uptime.
+  accepted, open, refused, failed (each logged) and dropped (failed past the 64 the group holds
+  between looks, counted with `task::count_dropped` and logged as a number); requests, by status
+  class; body bytes; uptime.
 - **Stopping**: the first Ctrl-C stops the acceptor, sets a flag that makes each response say
   `Connection: close`, and gives the connections `--grace` seconds (5, or 3 when the system asks)
   with `task::wait_all_for`, then cancels the rest; a second Ctrl-C ends it at once (std's stop).
@@ -152,8 +160,9 @@ start a task in a group, the buffers, `open`, `serve_connection`).
   each, or a config struct, and would still leave stopping (the group held outside the acceptor,
   `wait_all_for`, the flag) to the program.
 - **Recommendation: keep Decision 7.** What would help instead is smaller: serve_connection
-  saying what it refused (friction.md, 42), and a start into a group whose tasks fail alone
-  (friction.md, 40), which would let `connection` return its error instead of dropping it.
+  saying what it refused (friction.md, 42). A group whose tasks fail alone, the other thing
+  this asked for, is std's now (`task::Failures::keep`, 910508b2), and `connection` returns its
+  error instead of dropping it.
 
 ### 2. What the Threaded backend costs
 
@@ -239,7 +248,9 @@ Entries added to ctxlang/docs/todo/friction.md during this plan:
   a `Clock` that starts no thread, which the test runner can take.
 - 39 (step 7): storing through a read-only slice of `mut` elements needs the slice `mut` too
   (`mut headers` on every parser).
-- 40 (step 8): a group's tasks can't fail alone, so a connection's task drops its error.
+- 40 (*Fixed*, step 8): a group's tasks couldn't fail alone, so a connection's task dropped its
+  error; a handle declared with its settings (583add53) and a group that keeps its failures
+  (910508b2) answer it, and serve's connections fail alone, each failure logged and counted.
 - 41 (step 9): a callback any thread calls can't reach its namespace's statics without a forged
   capability (stop's handler).
 - 42: serve_connection doesn't say what it answered, so a log maps errors back to statuses.

@@ -72,7 +72,7 @@
 //|   log: "-" 400 0
 //| GET /stats: 200, Content-Type: application/json, Content-Length: {n}
 //|   log: "GET /stats HTTP/1.1" 200 {n}
-//|   stats: {"bytes_sent": 3146316, "connections": {"accepted": 3, "refused": 0}, "requests": {"2xx": 8, "3xx": 1, "4xx": 8, "5xx": 0, "total": 17}}
+//|   stats: {"bytes_sent": 3146316, "connections": {"accepted": 3, "dropped": 0, "failed": 0, "refused": 0}, "requests": {"2xx": 8, "3xx": 1, "4xx": 8, "5xx": 0, "total": 17}}
 //| GET /hello.txt: 200, Content-Type: text/plain; charset=utf-8, Content-Length: 6, 'hello\n'
 //|   log: "GET /hello.txt HTTP/1.1" 200 6
 //| GET /hello.txt: 200, Content-Type: text/plain; charset=utf-8, Content-Length: 6, 'hello\n'

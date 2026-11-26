@@ -35,7 +35,7 @@ fn main { mut io: Io, mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threa
         started_ns = clock::read_monotonic{ &clock },
         stopping = 0,
         connections_most = options.connections,
-        stats = site::Stats{ accepted = 0, refused = 0, open = 0, requests = 0, status_2xx = 0, status_3xx = 0, status_4xx = 0, status_5xx = 0, bytes = 0 },
+        stats = site::Stats{ accepted = 0, refused = 0, open = 0, failed = 0, dropped = 0, requests = 0, status_2xx = 0, status_3xx = 0, status_4xx = 0, status_5xx = 0, bytes = 0 },
         journal = access::make_journal{ buffer = buffers[..JOURNAL_SIZE] },
     }
     let r = run{ &io, &fs, &mem, &net, &threads, &stop, &clock, listener, at, site = &site, batch = buffers[JOURNAL_SIZE..], grace_ns = options.grace_ns }
@@ -67,8 +67,16 @@ fn write_count { mut b: utf8::Builder(arena::Arena), text: []u8, n: u64, rest: [
     try @fmt(&b, "{}{}{}", text, n, rest)
 }
 
+fn write_failure { mut b: utf8::Builder(arena::Arena), failure: error } -> ! {
+    try @fmt(&b, "a connection failed: {}", failure)
+}
+
 // Serves until the program is asked to stop, then stops gracefully. The group and the tasks'
 // handles are this function's locals: however it returns, every task has ended first.
+//
+// The connections' group keeps its failures (spec §17, `task`): a connection that fails ends
+// alone, and its error waits in the group to be logged. Only the group's holder reads them: the
+// acceptor while it runs (accept_into), and this function once the acceptor has ended.
 fn run { mut io: Io, mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, mut stop: Stop, mut clock: Clock, listener: net::Listener, at: net::Address, site: *mut site::Site, batch: []mut u8, grace_ns: u64 } -> ! {
     let mut writer: task::Task(!)
     try task::start_concurrent{ &threads, task = &writer, run = access::run_writer{ &io, &threads, journal = &site.journal, batch, _ } }
@@ -76,7 +84,7 @@ fn run { mut io: Io, mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Thread
     defer access::close_journal{ journal = &site.journal }
     say{ &clock, site, write = write_serving{ root = site.root, at, _ } }
 
-    let mut connections: task::Group
+    let mut connections = task::Group{ failures = task::Failures::keep, .. }
     let mut acceptor: task::Task(!)
     try task::start_concurrent{ &threads, task = &acceptor, run = accept_into{ &fs, &mem, &net, &threads, &stop, &clock, listener, site, &connections, _ } }
     let reason = try stop::wait{ &stop }
@@ -87,9 +95,13 @@ fn run { mut io: Io, mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Thread
     let grace = if reason is terminate { @min(grace_ns, 3000000000) } else { grace_ns }
     say{ &clock, site, write = write_count{ text = "stopping: ", n = @atomic_load_relaxed(&site.stats.open), rest = " connections open", _ } }
     if task::wait_all_for{ &threads, group = &connections, nanoseconds = grace } {
-        // A connection's task never fails (connection): this is the group's end.
+        // A keep group's wait_all doesn't fail: what its tasks failed with is still held.
         try task::wait_all{ &threads, group = &connections }
+        read_failures{ &threads, &clock, site, &connections }
     } else {
+        // What failed in the grace period is logged before cancel_all drops it; what the
+        // cancel ends fails with `cancelled`, which is the stop's, not the connections'.
+        read_failures{ &threads, &clock, site, &connections }
         say{ &clock, site, write = write_count{ text = "grace period over: cancelling ", n = @atomic_load_relaxed(&site.stats.open), rest = " connections", _ } }
         task::cancel_all{ &threads, group = &connections }
     }
@@ -97,12 +109,19 @@ fn run { mut io: Io, mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Thread
     if failed { return accepting }
 }
 
+// How long an accept waits before the acceptor looks at the connections' failures: a failure
+// is logged at most this long after it happened, when no client connects meanwhile.
+const LOOK_NS: u64 = 1000000000
+
 // Accepts until cancelled, starting a task in `connections` for each. An error it can't go on
 // after (the listener broke) asks the program to stop, as Ctrl-C would, and is its result.
+// It logs the connections' failures after each accept, and once LOOK_NS pass without one.
 fn accept_into { mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, mut stop: Stop, mut clock: Clock, listener: net::Listener, site: *mut site::Site, mut connections: task::Group } -> ! {
     while true {
-        let socket = net::accept{ &net, listener } iferr err{ error } {
+        read_failures{ &threads, &clock, site, &connections }
+        let socket = task::run_within{ cancel = &threads, nanoseconds = LOOK_NS, run = net::accept{ &net, listener, _ } } iferr err{ error } {
             match error {
+                task::deadline_passed => { continue }                   // no client: look again
                 net::aborted => { continue }                            // a client gave up while queued
                 net::too_many_open => {
                     thread::sleep{ &threads, nanoseconds = 100000000 }  // let connections end
@@ -128,10 +147,31 @@ fn accept_into { mut fs: Fs, mut mem: Mem, mut net: Net, mut threads: Threads, m
     }
 }
 
-// A connection's task. It never fails: a group's task that fails cancels the others
-// (docs/todo/friction.md, 40), and one client's reset is no reason to end every connection.
-// What serve_connection refused before a request line is logged here, since no handler saw it,
-// with the connection's age for its duration, since when that head began isn't known.
+// Logs and counts the failures `connections` holds, without waiting for more, and says how
+// many the group dropped since the last look: past the 64 it holds (task::KEPT), a failure is
+// counted only. Only the group's holder calls it, one at a time, so the counters' loads and
+// stores here race with nothing but /stats' reads.
+fn read_failures { mut threads: Threads, mut clock: Clock, site: *mut site::Site, mut connections: task::Group } {
+    while true {
+        // A deadline of 0 gives a failure held already, and fails rather than wait for one.
+        let failure = task::run_within{ cancel = &threads, nanoseconds = 0, run = task::wait_failure{ &threads, group = &connections, _ } } iferr { break } ifnull { break }
+        _ = @atomic_add_relaxed(&site.stats.failed, 1)
+        say{ &clock, site, write = write_failure{ failure, _ } }
+    }
+    let dropped = task::count_dropped{ &threads, group = &connections }
+    let before = @atomic_load_relaxed(&site.stats.dropped)
+    if dropped > before {
+        @atomic_store_relaxed(&site.stats.dropped, dropped)
+        say{ &clock, site, write = write_count{ text = "", n = dropped - before, rest = " more connections failed, unlogged: too many at once", _ } }
+    }
+}
+
+// A connection's task. What ends the connection otherwise than the client leaving between
+// requests (a reset, a head that missed its deadline, a handler's error) is its error, and fails
+// it alone: the group keeps it for read_failures, and the other connections go on. What serve_connection
+// refused before a request line was answered with a status, and is logged here as a request
+// is, since no handler saw it, with the connection's age for its duration, since when that head
+// began isn't known; the connection then ends without failing.
 fn connection { mut fs: Fs, mut mem: Mem, mut net: Net, mut clock: Clock, socket: net::Socket, site: *mut site::Site } -> ! {
     defer net::close{ &net, socket }
     _ = @atomic_add_relaxed(&site.stats.open, 1)
@@ -143,7 +183,7 @@ fn connection { mut fs: Fs, mut mem: Mem, mut net: Net, mut clock: Clock, socket
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
     let began = clock::read_monotonic{ &clock }
     http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = site::answer{ &fs, &mem, &clock, site, peer, _ } } iferr err{ error } {
-        let status = find_refusal{ error } ifnull { return }
+        let status = find_refusal{ error } ifnull { return error }
         site::record{ site, line = access::Line{
             unix_ns = clock::read_wall{ &clock }, peer, method = "", target = "", version = 11, status, bytes = 0,
             took_ns = clock::read_monotonic{ &clock } - began, failure = null,

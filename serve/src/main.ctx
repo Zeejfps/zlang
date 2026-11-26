@@ -18,8 +18,9 @@
 // closed as soon as it is accepted, and counted as refused in /stats. Each connection costs one
 // thread while it waits for a request, and about 73 KiB (serve/PLAN.md, Findings).
 //
-// Standard output is the access log (access.ctx), with a line when the server starts and lines
-// as it stops; errors in starting go to standard error, with exit code 2 for a bad command line
+// Standard output is the access log (access.ctx), with a line when the server starts, a line for
+// each connection that failed (a reset, a head that missed its deadline), and lines as it stops;
+// errors in starting go to standard error, with exit code 2 for a bad command line
 // and 1 for anything else.
 
 const USAGE: []u8 = "usage: serve DIR [--port N] [--address A] [--grace SECONDS] [--connections N]\n"

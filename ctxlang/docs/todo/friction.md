@@ -175,16 +175,6 @@ as the write-ups gave them.
     slice's elements, as through a `mut` field, would drop the extra local. *Hit by 1:* http
     (`parse_request_head`, `parse_response_head`, and the connection and server fns over them).
 
-40. **A group's tasks can't fail alone.** A server keeps a task per connection in a
-    `task::Group`, so that stopping it ends them all, and a connection's task wants to return
-    its error (a reset, a head that missed its deadline) as any fn does. But a group's task that
-    fails cancels the group's others (std/task.ctx, `start_in`), so one client's reset would end
-    every connection. Written: each connection's fn ends in `serve_connection{ ... } iferr {}`,
-    still returning `!` that never fails, and its errors are lost unless it logs them itself. A
-    start into a group whose tasks' failures are their own, kept or counted for `wait_all`
-    without cancelling the rest, would say it. *Hit by 1:* http (the small server's
-    `connection`, and the tests' servers).
-
 41. **A callback that any thread calls can't reach its own namespace's statics.** std's stop
     handler (a console control handler on Windows, a signal handler on Linux and macOS) only sets
     the layer's atomics and signals its object, all `os::Stop` statics, which are global anyway;

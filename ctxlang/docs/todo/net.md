@@ -53,20 +53,25 @@ fn echo { mut net: Net, socket: net::Socket } -> ! {
     defer net::close{ &net, socket }
     let mut buf: [4096]u8
     while true {
-        // A handler's error would be its group's, which cancels every other handler: a reset
-        // or a stop ends this connection alone.
-        let n = net::receive{ &net, socket, into = buf[..] } iferr { return }
+        let n = try net::receive{ &net, socket, into = buf[..] }   // a reset fails this handler alone
         if n == 0 { return }                                    // the peer finished sending
-        _ = net::send{ &net, socket, bytes = buf[..n] } iferr { return }
+        _ = try net::send{ &net, socket, bytes = buf[..n] }
     }
 }
 
-fn main { mut net: Net, mut threads: Threads } -> i32 {
+fn main { mut io: Io, mut net: Net, mut threads: Threads } -> i32 {
+    let mut err = io::to_stderr{ &io }
     let listener = net::listen{ &net, address = "127.0.0.1:7000", backlog = 0 } iferr { return 1 }
     defer net::close_listener{ &net, listener }
-    let mut handlers: task::Group
+    // A handler's failure cancels no other handler: the group keeps it for wait_failure.
+    let mut handlers = task::Group{ failures = task::Failures::keep, .. }
     while true {
         let socket = net::accept{ &net, listener } iferr { break }
+        // What failed since the last accept, without waiting for more.
+        while true {
+            let failure = task::run_within{ cancel = &threads, nanoseconds = 0, run = task::wait_failure{ &threads, group = &handlers, _ } } iferr { break } ifnull { break }
+            _ = @fmt(&err, "a connection failed: {}\n", failure)
+        }
         task::start_concurrent_in{ &threads, group = &handlers, run = echo{ &net, socket, _ } } iferr {
             net::close{ &net, socket }
         }
@@ -433,6 +438,11 @@ fn connect_racing { mut net: Net, mut threads: Threads, addresses: []net::Addres
 
 A task per connection, in a group, so stopping the server (cancelling the task that runs `serve`)
 stops every handler, and `serve` returning, by any path, waits for them: the group is its local.
+The group keeps its tasks' failures (`task::Failures::keep`, spec §17, `task`), so a handler whose
+peer resets its connection fails alone, and its error waits in the group until `serve`, its
+holder and so the only task that may read it, takes it with `task::wait_failure`: between
+accepts, with a deadline of 0, and once a second when no client connects, its accept's deadline.
+This one counts them; a program's would log them.
 `mem` gives pages and never takes them back, so a connection's memory is reused: a handler that ends
 puts its `Connection` on the server's free list, under a mutex. A handler borrows nothing of `serve`'s
 frame: `c` points into pages, which tasks share as threads do (spec §3.1, rule 6). It compiles
@@ -441,7 +451,11 @@ runs it (Testing 4).
 
 ```
 struct Connection { socket: net::Socket, server: *mut Server, next: ?*mut Connection }
-struct Server { lock: mutex::Mutex, free: ?*mut Connection }        // connections to reuse
+struct Server {
+    lock: mutex::Mutex,
+    free: ?*mut Connection,         // connections to reuse
+    failed: u64,                    // handlers that failed, atomically
+}
 
 fn give_back { server: *mut Server, c: *mut Connection } {
     mutex::lock{ mutex = &server.lock }
@@ -462,15 +476,27 @@ fn take_connection { mut mem: Mem, server: *mut Server } -> ?*mut Connection {
 }
 
 fn handle { mut net: Net, c: *mut Connection } -> ! {
-    serve_requests{ &net, socket = c.socket } iferr {}  // requests and responses until the peer closes
-    net::close{ &net, socket = c.socket }
-    give_back{ server = c.server, c }
+    defer give_back{ server = c.server, c }
+    defer net::close{ &net, socket = c.socket }
+    return serve_requests{ &net, socket = c.socket }    // requests and responses until the peer closes
+}
+
+// Counts the failures `handlers` holds, without waiting for more.
+fn count_failures { mut threads: Threads, server: *mut Server, mut handlers: task::Group } {
+    while true {
+        _ = task::run_within{ cancel = &threads, nanoseconds = 0, run = task::wait_failure{ &threads, group = &handlers, _ } } iferr { return } ifnull { return }
+        _ = @atomic_add(&server.failed, 1)
+    }
 }
 
 fn serve { mut net: Net, mut mem: Mem, mut threads: Threads, server: *mut Server, listener: net::Listener } -> ! {
-    let mut handlers: task::Group
+    let mut handlers = task::Group{ failures = task::Failures::keep, .. }
     while true {
-        let socket = try net::accept{ &net, listener }      // fails with cancelled when serve's task is
+        count_failures{ &threads, server, &handlers }
+        let socket = task::run_within{ cancel = &threads, nanoseconds = 1000000000, run = net::accept{ &net, listener, _ } } iferr err{ error } {
+            if error is task::deadline_passed { continue }  // no client for a second: count again
+            return error                                    // cancelled when serve's task is
+        }
         let c = take_connection{ &mem, server } ifnull {
             net::close{ &net, socket }
             continue

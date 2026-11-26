@@ -573,16 +573,15 @@ and what each connection costs.
 ### A small server
 
 ```
-// A connection's task. Its error is dropped: a group's task that fails cancels the group's
-// others, and a client's misstep (a reset, a head that didn't arrive) is no reason to end
-// every connection.
+// A connection's task. What ends it otherwise than the client leaving (a reset, a head that
+// didn't arrive) is its error, and fails it alone: the group keeps its failures.
 fn connection { mut net: Net, socket: net::Socket, site: *Site } -> ! {
     defer net::close{ &net, socket }
     let mut buffer: [16384]u8
     let mut fields: [100]http::Header
     let mut headers = fields[..]
     let mut conn = http::open{ stream = http::Stream::plain{ socket }, buffer = buffer[..] }
-    http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } } iferr {}
+    return http::serve_connection{ &net, &conn, &headers, limits = http::Limits{ .. }, handle = answer{ site, _ } }
 }
 
 fn answer { site: *Site, mut net: Net, exchange: http::Exchange } -> ! {
@@ -596,13 +595,27 @@ fn answer { site: *Site, mut net: Net, exchange: http::Exchange } -> ! {
     return http::respond{ &net, exchange, status = 200, headers = [http::Header{ name = "Content-Type", value = "text/html" }], body = page }
 }
 
-// Accepts until cancelled. The group is this function's local: however it returns, every
-// connection's task ends first.
-fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site } -> ! {
-    let mut connections: task::Group
+// Writes what the connections failed with to standard error, as far as the group holds them,
+// without waiting for more: a deadline of 0 gives a failure held already, and fails rather
+// than wait.
+fn report_failures { mut io: Io, mut threads: Threads, mut connections: task::Group } {
+    let mut err = io::to_stderr{ &io }
     while true {
-        let socket = net::accept{ &net, listener } iferr err{ error } {
+        let failure = task::run_within{ cancel = &threads, nanoseconds = 0, run = task::wait_failure{ &threads, group = &connections, _ } } iferr { return } ifnull { return }
+        _ = @fmt(&err, "a connection failed: {}\n", failure)
+    }
+}
+
+// Accepts until cancelled. The group is this function's local: however it returns, every
+// connection's task ends first. Only the group's holder reads its failures, so the loop does,
+// after each accept, and once a second when no client connects.
+fn serve { mut io: Io, mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site } -> ! {
+    let mut connections = task::Group{ failures = task::Failures::keep, .. }
+    while true {
+        report_failures{ &io, &threads, &connections }
+        let socket = task::run_within{ cancel = &threads, nanoseconds = 1000000000, run = net::accept{ &net, listener, _ } } iferr err{ error } {
             match error {
+                task::deadline_passed => { continue }                 // no client for a second
                 net::aborted => { continue }                          // a client gave up while queued
                 net::too_many_open => {
                     thread::sleep{ &threads, nanoseconds = 100000000 }  // let connections end
@@ -617,6 +630,14 @@ fn serve { mut net: Net, mut threads: Threads, listener: net::Listener, site: *S
     }
 }
 ```
+
+**A connection fails alone.** The group keeps its tasks' failures (`task::Failures::keep`, spec
+§17, `task`): a connection's error cancels no other connection, and waits in the group, in order,
+until the group's holder reads it with `task::wait_failure`. Only the holder may touch the group,
+so a reporter task of its own can't read it while `serve` accepts; `serve` reads them itself,
+between accepts, with a deadline of 0, and puts a second's deadline on its accept so that a quiet
+server still reports them. Past the 64 failures a group holds at once (its `kept` setting), the
+rest are counted, `task::count_dropped`, not held.
 
 Each connection's buffers are its task's locals, on the worker's stack: nothing is allocated per
 connection, and nothing needs returning to a free list. `site` is shared read-only through a pointer
@@ -635,27 +656,37 @@ accept loop, so it can stop accepting first and then give the connections a grac
 `task::wait_all_for`, a group's `wait_for` (net.md, Order of work, 1: a change to std/task.ctx):
 
 ```
-fn accept_into { mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site, mut connections: task::Group } -> ! {
+fn accept_into { mut io: Io, mut net: Net, mut threads: Threads, listener: net::Listener, site: *Site, mut connections: task::Group } -> ! {
     while true {
-        let socket = try net::accept{ &net, listener }
+        report_failures{ &io, &threads, &connections }
+        let socket = task::run_within{ cancel = &threads, nanoseconds = 1000000000, run = net::accept{ &net, listener, _ } } iferr err{ error } {
+            if error is task::deadline_passed { continue }
+            return error
+        }
         task::start_concurrent_in{ &threads, group = &connections, run = connection{ &net, socket, site, _ } } iferr {
             net::close{ &net, socket }
         }
     }
 }
 
-fn serve_until { mut net: Net, mut threads: Threads, mut stop: Stop, listener: net::Listener, site: *Site, grace_ns: u64 } -> ! {
-    let mut connections: task::Group
+fn serve_until { mut io: Io, mut net: Net, mut threads: Threads, mut stop: Stop, listener: net::Listener, site: *Site, grace_ns: u64 } -> ! {
+    let mut connections = task::Group{ failures = task::Failures::keep, .. }
     let mut acceptor: task::Task(!)
-    try task::start_concurrent{ &threads, task = &acceptor, run = accept_into{ &net, &threads, listener, site, &connections, _ } }
+    try task::start_concurrent{ &threads, task = &acceptor, run = accept_into{ &io, &net, &threads, listener, site, &connections, _ } }
     _ = try stop::wait{ &stop }                             // Ctrl-C, or the system asking
     _ = task::cancel{ &threads, task = &acceptor }          // no new connections
-    if task::wait_all_for{ &threads, group = &connections, nanoseconds = grace_ns } {
-        return task::wait_all{ &threads, group = &connections }     // at once: the first error of the connections
+    let ended = task::wait_all_for{ &threads, group = &connections, nanoseconds = grace_ns }
+    report_failures{ &io, &threads, &connections }          // the acceptor's are the group's holder's now
+    if not ended {
+        task::cancel_all{ &threads, group = &connections }  // the grace period is over
     }
-    task::cancel_all{ &threads, group = &connections }      // the grace period is over
 }
 ```
+
+The connections' failures don't end `serve_until`: the group holds them, and once the acceptor
+is cancelled the group is `serve_until`'s alone, which reports what is left after the grace
+period, before `cancel_all` drops what is unread. What the cancel ends fails with
+`cancelled`, which is the stop's, not a connection's, and is dropped with it.
 
 `stop::wait` (spec §17, `stop`) returns when the console or the system asks the program to stop:
 Ctrl-C, Ctrl-Break or the console closing on Windows, SIGINT or SIGTERM on Linux and macOS, or the
@@ -715,11 +746,12 @@ The design predates `&thread fn` (spec §5, rule 5; §15, Tasks), which replaced
   `respond` takes `exchange` read-only too (`respond{ &net, exchange, ... }`).
 - **`Limits` has no `headers`**: the caller's array is the field limit, as everywhere (Decision 2),
   and a second number could only disagree with it.
-- **The examples changed in two places to compile and run**: `answer` and `respond` take the
-  exchange read-only, and `connection` drops `serve_connection`'s error (`iferr {}`) instead of
-  `try`: a group's task that fails cancels its others (std/task.ctx, `start_in`), so a client's
-  reset or a head that didn't arrive in time would have ended every connection of the server
-  (docs/todo/friction.md, 40).
+- **The examples changed to compile and run**: `answer` and `respond` take the exchange
+  read-only. `connection` dropped `serve_connection`'s error (`iferr {}`) until a group could
+  keep its tasks' failures: a group's task that failed cancelled its others, so a client's reset
+  or a head that didn't arrive in time would have ended every connection of the server. The
+  groups are `Failures::keep` groups now (910508b2), `connection` returns its error, and the
+  accept loops report what the connections failed with.
 
 And what building it settled:
 

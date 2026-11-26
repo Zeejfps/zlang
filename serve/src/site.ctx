@@ -33,6 +33,8 @@ namespace site {
         accepted: u64,              // connections accepted
         refused: u64,               // connections closed at once: too many, or no thread for their task
         open: u64,                  // connections being served
+        failed: u64,                // connections that failed (a reset, a head past its deadline), each logged
+        dropped: u64,               // connections that failed past what their group holds, counted only
         requests: u64,              // requests answered, those refused before a request line included
         status_2xx: u64,
         status_3xx: u64,
@@ -310,8 +312,9 @@ namespace site {
         let mut b = utf8::builder(arena::Arena){ realloc = arena::alloc, &heap }
         let s = &site.stats
         let up = clock::read_monotonic{ &clock } - site.started_ns
-        try @fmt(&b, "{{\"connections\": {{\"accepted\": {}, \"open\": {}, \"refused\": {}}}, ",
-            @atomic_load_relaxed(&s.accepted), @atomic_load_relaxed(&s.open), @atomic_load_relaxed(&s.refused))
+        try @fmt(&b, "{{\"connections\": {{\"accepted\": {}, \"open\": {}, \"refused\": {}, \"failed\": {}, \"dropped\": {}}}, ",
+            @atomic_load_relaxed(&s.accepted), @atomic_load_relaxed(&s.open), @atomic_load_relaxed(&s.refused),
+            @atomic_load_relaxed(&s.failed), @atomic_load_relaxed(&s.dropped))
         try @fmt(&b, "\"requests\": {{\"total\": {}, \"2xx\": {}, \"3xx\": {}, \"4xx\": {}, \"5xx\": {}}}, ",
             @atomic_load_relaxed(&s.requests), @atomic_load_relaxed(&s.status_2xx), @atomic_load_relaxed(&s.status_3xx),
             @atomic_load_relaxed(&s.status_4xx), @atomic_load_relaxed(&s.status_5xx))
