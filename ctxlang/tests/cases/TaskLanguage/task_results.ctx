@@ -1,0 +1,136 @@
+// What a task returns is judged as a direct call's result would be (§14, Escape check, rule
+// 9): it may point into what the task read only where that is still alive. Each fn here has a
+// direct-call twin that compiles too; errors/38.ctx to errors/40.ctx have the ones that don't.
+error bad_path{ path: []u8 }
+error empty
+
+fn read_all { buf: []u8 } -> ! { if buf.len > 0 { return bad_path{ path = buf } } }
+
+// It reads buf, but fails with nothing that points into it.
+fn count { buf: []u8 } -> ! { if buf.len == 0 { return empty } }
+
+fn head { buf: []u8 } -> ![]u8 { return buf[0..1] }
+
+// It changes buf, a `mut` field's, and returns a pointer into it, which isn't checked (rule 4),
+// as for a direct call.
+fn fill { mut buf: [8]u8, n: u8 } -> !*u8 {
+    buf[0] = n
+    return &buf[0]
+}
+
+// The error is handled where buf lives.
+fn handled { mut io: Io, mut threads: Threads } {
+    let mut buf: [4]u8 = [1, 2, 3, 4]
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = read_all{ buf = buf[..], _ } }
+    task::wait{ &threads, task = &t } iferr err{ error } {
+        if error is bad_path{ path } { io::println_u64{ &io, n = @as(u64, path.len) } }
+    }
+}
+
+fn handled_twin { mut io: Io } {
+    let mut buf: [4]u8 = [1, 2, 3, 4]
+    read_all{ buf = buf[..] } iferr err{ error } {
+        if error is bad_path{ path } { io::println_u64{ &io, n = @as(u64, path.len) } }
+    }
+}
+
+// The task borrows buf, and its error can't point into it, though bad_path could.
+fn counted { mut threads: Threads } -> ! {
+    let mut buf: [4]u8
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = count{ buf = buf[..], _ } }
+    try task::wait{ &threads, task = &t }
+}
+
+fn counted_twin {} -> ! {
+    let mut buf: [4]u8
+    try count{ buf = buf[..] }
+}
+
+// What it returns points into buf, and is used where buf lives.
+fn first { mut io: Io, mut threads: Threads } -> ! {
+    let mut buf: [4]u8 = [7, 8, 9, 10]
+    let mut t: task::Task(![]u8)
+    task::start{ &threads, task = &t, run = head{ buf = buf[..], _ } }
+    let s = try task::wait{ &threads, task = &t }
+    io::println_u64{ &io, n = @as(u64, s[0]) }
+}
+
+fn first_twin { mut io: Io } -> ! {
+    let mut buf: [4]u8 = [7, 8, 9, 10]
+    let s = try head{ buf = buf[..] }
+    io::println_u64{ &io, n = @as(u64, s[0]) }
+}
+
+// A group's tasks that read buf, none failing with what points into it.
+fn grouped { mut threads: Threads } -> ! {
+    let mut buf: [4]u8
+    let mut g: task::Group
+    task::start_in{ &threads, group = &g, run = count{ buf = buf[..], _ } }
+    task::start_in{ &threads, group = &g, run = count{ buf = buf[0..2], _ } }
+    try task::wait_all{ &threads, group = &g }
+}
+
+fn grouped_twin {} -> ! {
+    let mut buf: [4]u8
+    try count{ buf = buf[..] }
+    try count{ buf = buf[0..2] }
+}
+
+// A keep group's failures may point into buf, and are read where it lives; wait_failure's own
+// error, Stopped, holds no pointer, so `try` of it returns nothing of buf.
+fn kept { mut io: Io, mut threads: Threads } -> ! {
+    let mut buf: [4]u8 = [1, 2, 3, 4]
+    let mut g = task::Group{ failures = task::Failures::keep, .. }
+    task::start_in{ &threads, group = &g, run = read_all{ buf = buf[..], _ } }
+    let failure = try task::wait_failure{ &threads, group = &g } ifnull { return }
+    if failure is bad_path{ path } { io::println_u64{ &io, n = @as(u64, path.len) } }
+}
+
+fn kept_twin { mut io: Io } -> ! {
+    let mut buf: [4]u8 = [1, 2, 3, 4]
+    read_all{ buf = buf[..] } iferr err{ error } {
+        if error is bad_path{ path } { io::println_u64{ &io, n = @as(u64, path.len) } }
+    }
+}
+
+// Through a `mut` field, as a direct call's is.
+fn filled { mut io: Io, mut threads: Threads } -> ! {
+    let mut buf: [8]u8
+    let mut t: task::Task(!*u8)
+    task::start{ &threads, task = &t, run = fill{ &buf, n = 5, _ } }
+    let p = try task::wait{ &threads, task = &t }
+    io::println_u64{ &io, n = @as(u64, p.*) }
+}
+
+fn filled_twin { mut io: Io } -> ! {
+    let mut buf: [8]u8
+    let p = try fill{ &buf, n = 5 }
+    io::println_u64{ &io, n = @as(u64, p.*) }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> ! {
+    handled{ &io, &threads }
+    handled_twin{ &io }
+    try counted{ &threads }
+    try counted_twin{}
+    try first{ &io, &threads }
+    try first_twin{ &io }
+    try grouped{ &threads }
+    try grouped_twin{}
+    try kept{ &io, &threads }
+    try kept_twin{ &io }
+    try filled{ &io, &threads }
+    try filled_twin{ &io }
+}
+
+//# stdout:
+//| 4
+//| 4
+//| 7
+//| 7
+//| 4
+//| 4
+//| 5
+//| 5

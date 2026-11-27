@@ -1,0 +1,17 @@
+// `from` names a `mut` field only of a fn, and only one of a loan holder type, whose tasks'
+// results the fn returns; such a fn is only called (§14, Escape check, rule 5).
+type Waits = fn{ mut threads: Threads, mut task: task::Task(!) } -> ! from task  //~ error at 76: `from task`: `task` is a `mut` field, whose argument is a place of the caller's; `from` names the read-only fields whose arguments the result may point into, or a fn's `mut` loan holder field whose tasks' results it returns
+
+struct Box { name: []u8 }
+
+fn not_a_holder { mut b: Box } -> []u8 from b { return b.name }  //~ error at 45: `from b`: `b` is a `mut` field, whose argument is a place of the caller's; `from` names the read-only fields whose arguments the result may point into, or a fn's `mut` loan holder field whose tasks' results it returns
+
+fn as_a_value {} {
+    let w = task::wait_failure  //~ error at 13: `task::wait_failure` returns what the tasks in a loan holder return, and is only called: its calls are checked for where that points
+}
+
+fn main {} {
+    let mut b = Box{ name = "" }
+    _ = not_a_holder{ &b }
+    as_a_value{}
+}

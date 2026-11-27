@@ -162,7 +162,7 @@ namespace task {
     }
 
     // Waits for the task to end and gives its result; `task` is zero again.
-    fn wait(R) { mut threads: Threads, mut task: Task(R) ends } -> R {
+    fn wait(R) { mut threads: Threads, mut task: Task(R) ends } -> R from task {
         if task.state == NONE { rt::fail{ msg = "task::wait on a handle that holds no task" } }
         if task.state == RUNNING {
             let t = table{ state = &threads }
@@ -190,7 +190,7 @@ namespace task {
 
     // Asks the task to stop (Cancellation), waits for it to end, and gives its result, which is
     // usually `cancelled`; `task` is zero again.
-    fn cancel(R) { mut threads: Threads, mut task: Task(R) ends } -> R {
+    fn cancel(R) { mut threads: Threads, mut task: Task(R) ends } -> R from task {
         if task.state == NONE { rt::fail{ msg = "task::cancel on a handle that holds no task" } }
         if task.state == RUNNING {
             let t = table{ state = &threads }
@@ -276,7 +276,7 @@ namespace task {
     // Waits until the group has no task, those started meanwhile included: the first error of
     // its tasks, or success. The group is empty again. A keep group's is success: the failures
     // it holds stay for wait_failure and wait_all_failures until its scope ends.
-    fn wait_all { mut threads: Threads, mut group: Group ends } -> ! {
+    fn wait_all { mut threads: Threads, mut group: Group ends } -> ! from group {
         let t = table{ state = &threads }
         mutex::lock{ mutex = &t.lock }
         defer mutex::unlock{ mutex = &t.lock }
@@ -323,7 +323,7 @@ namespace task {
     // with `deadline_passed`, the group untouched, as std's blocking reads do; a failure held
     // already is returned first. So a deadline of 0 looks without waiting. A stop group panics:
     // it holds no failure but its first, which is wait_all's.
-    fn wait_failure { mut threads: Threads, mut group: Group } -> Stopped!?error {
+    fn wait_failure { mut threads: Threads, mut group: Group } -> Stopped!?error from group {
         if group.failures != Failures::keep { rt::fail{ msg = "task::wait_failure on a group whose failures stop it: only a `Failures::keep` group holds them" } }
         let t = table{ state = &threads }
         let mine = me{ &threads }
@@ -356,7 +356,7 @@ namespace task {
     // then nothing is allocated. The group holds none after, and its memory for them is freed.
     // Fails with alloc::out_of_memory if `realloc` has no room, and the group keeps them, for
     // wait_failure or another try. A stop group panics, as in wait_failure.
-    fn wait_all_failures(S) { mut threads: Threads, mut group: Group ends, realloc: alloc::Fn(S), mut heap: S } -> ![]mut error {
+    fn wait_all_failures(S) { mut threads: Threads, mut group: Group ends, realloc: alloc::Fn(S), mut heap: S } -> ![]mut error from group {
         if group.failures != Failures::keep { rt::fail{ msg = "task::wait_all_failures on a group whose failures stop it: only a `Failures::keep` group holds them" } }
         let t = table{ state = &threads }
         mutex::lock{ mutex = &t.lock }

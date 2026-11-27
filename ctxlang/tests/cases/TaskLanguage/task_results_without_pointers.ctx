@@ -1,0 +1,38 @@
+// An error that only an error with a pointer in its payload could make real isn't reported
+// where no error can hold one (§14, Escape check, rule 3), for what a task returns as for a
+// direct call (rule 9). pass's result is generic, so its success and error parts are one, and
+// the error `try` passes up may hold what head's success points into. With an error such as
+// `bad{ path: []u8 }` in the program, by_task is an error: its handle's type, `Task(![]u8)`,
+// says the task may fail with any error, as `let r: ![]u8 = head{ buf = buf[..] }` would, and
+// by_call isn't, since head's own errors hold no pointer.
+error empty
+
+fn head { buf: []u8 } -> ![]u8 {
+    if buf.len == 0 { return empty }
+    return buf[0..1]
+}
+
+fn pass(R) { r: R } -> R { return r }
+
+fn by_task { mut io: Io, mut threads: Threads } -> ! {
+    let mut buf: [4]u8 = [3, 2, 1, 0]
+    let mut t: task::Task(![]u8)
+    task::start{ &threads, task = &t, run = head{ buf = buf[..], _ } }
+    let s = try pass{ r = task::wait{ &threads, task = &t } }
+    io::println_u64{ &io, n = @as(u64, s[0]) }
+}
+
+fn by_call { mut io: Io } -> ! {
+    let mut buf: [4]u8 = [3, 2, 1, 0]
+    let s = try pass{ r = head{ buf = buf[..] } }
+    io::println_u64{ &io, n = @as(u64, s[0]) }
+}
+
+fn main { mut io: Io, mut threads: Threads } -> ! {
+    try by_task{ &io, &threads }
+    try by_call{ &io }
+}
+
+//# stdout:
+//| 3
+//| 3

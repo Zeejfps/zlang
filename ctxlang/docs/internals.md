@@ -367,10 +367,10 @@ group whose tasks fail alone, as a server's connections do:
   and `count_dropped` is 0.
 - **Errors are values.** A held failure is a copy of the task's error, as a stop group's `error`
   and a `Task`'s result are: its payload's pointers point where the task's did. The checker treats
-  them the same way: each is read through the handle's `mut` field, which the escape check
-  doesn't follow (spec §14, Escape check, rule 4). So a payload that points into a local the
-  task read is valid only within that local's scope, and nothing checks that a program keeps
-  to it, for `wait` and `wait_all` as for these; keeping several adds no case of its own.
+  them the same way: `wait_failure` and `wait_all_failures` say `from group`, as `wait` and
+  `wait_all` say `from task` and `from group`, so what they give may point into what the group's
+  tasks read, and can't outlive it (spec §14, Escape check, rule 9); keeping several adds no
+  case of its own.
 
 ### The interpreter
 
@@ -716,6 +716,20 @@ and why they are as they are.
   is, or what its pointees hold (`PRIME`), so a value read through `&doc` holds what `doc`
   holds, not `doc`; a local's origins put there by a call that stores through `&local` are
   marked `DEEP`, what its pointees hold, so that they don't say where a store through it goes.
+  What the tasks in a handle return (spec §14, Escape check, rule 9) is kept apart from what
+  they borrow, which the task walk follows. In a summary, origin `k | TASK_OK` is what the
+  tasks in `mut` handle field k return when they succeed and `k | TASK_ERR` what they fail
+  with; a call maps them, as it maps a field's, to what the starts into the handle it passes
+  there found (`borrow_map_args`), and a summary's `results` say what the tasks a fn starts into
+  its handle fields return, which its caller adds to its own handle's (`put_results` in the
+  summary, `check_keeps` in the body). A start adds what a direct call of the bind it lends
+  would return (`borrow_lent`, `lend_results`, the `lend` Late), and a fn written `-> R from
+  task` returns them, success and error apart when R is the tasks' result type
+  (`returns_tasks_result`). In a body, each handle has two derived sets, its tasks' success and
+  error; each local's derived set has a plain twin, what it holds by any other way, so that an
+  escape that only a task's result makes says so (`describe_task_escape`). A body that starts
+  a task is replayed twice, the first time quietly (`replay_bodies`), so that a wait at a loop's
+  top sees the task the loop's last time round started.
   Cycles of calls are found as the summaries are made, Tarjan's way (`borrow_fn`): a call
   into a cycle still being made sees what it has, empty at first, and when the walk is back at
   the cycle's first fn the fns that saw too little are made again, and those calling one that

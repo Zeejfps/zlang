@@ -1,0 +1,39 @@
+// What a task returns may point into what it read (§14, Escape check, rule 9): `try` of a
+// wait is judged as `try` of the direct call would be. Each fn has a direct-call twin with the
+// same verdict.
+error bad_path{ path: []u8 }
+
+fn read_all { buf: []u8 } -> ! { if buf.len > 0 { return bad_path{ path = buf } } }
+
+fn by_wait { mut threads: Threads } -> ! {
+    let mut buf: [256]u8
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = read_all{ buf = buf[..], _ } }
+    try task::wait{ &threads, task = &t }  //~ error at 5: this error may point into `buf`, which the task read: `read_all` returns `buf` in its error; handle the error here, or give the task data that outlives this function //~ note at -3:5: `buf` is declared here //~ note at -1:16: the task that reads it starts here
+}
+
+fn by_call {} -> ! {
+    let mut buf: [256]u8
+    try read_all{ buf = buf[..] }  //~ error at 5: `try` would return an error that may hold the address of local `buf` //~ note at -1:5: `buf` is declared here
+}
+
+fn by_cancel { mut threads: Threads } -> ! {
+    let mut buf: [256]u8
+    let mut t: task::Task(!)
+    task::start{ &threads, task = &t, run = read_all{ buf = buf[..], _ } }
+    try task::cancel{ &threads, task = &t }  //~ error at 5: this error may point into `buf`, which the task read: `read_all` returns `buf` in its error; handle the error here, or give the task data that outlives this function //~ note at -3:5: `buf` is declared here //~ note at -1:16: the task that reads it starts here
+}
+
+fn by_wait_all { mut threads: Threads } -> ! {
+    let mut buf: [256]u8
+    let mut g: task::Group
+    task::start_in{ &threads, group = &g, run = read_all{ buf = buf[..], _ } }
+    try task::wait_all{ &threads, group = &g }  //~ error at 5: this error may point into `buf`, which the task read: `read_all` returns `buf` in its error; handle the error here, or give the task data that outlives this function //~ note at -3:5: `buf` is declared here //~ note at -1:19: the task that reads it starts here
+}
+
+fn main { mut threads: Threads } {
+    by_wait{ &threads } iferr {}
+    by_call{} iferr {}
+    by_cancel{ &threads } iferr {}
+    by_wait_all{ &threads } iferr {}
+}

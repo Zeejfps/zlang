@@ -4,7 +4,7 @@
 struct Box { name: []u8 }
 fn first { xs: []u32 } -> *u32 from xs { return &xs[0] }
 fn keep { mut b: Box, name: []u8 into b } { b.name = name }
-fn mut_from { mut b: Box } -> []u8 from b { return b.name }  //~ error at 41: `from b`: `b` is a `mut` field, whose argument is a place of the caller's; `from` names the read-only fields whose arguments the result may point into
+fn mut_from { mut b: Box } -> []u8 from b { return b.name }  //~ error at 41: `from b`: `b` is a `mut` field, whose argument is a place of the caller's; `from` names the read-only fields whose arguments the result may point into, or a fn's `mut` loan holder field whose tasks' results it returns
 fn mut_into { mut b: Box into c, mut c: Box } {}  //~ error at 31: `b into c`: `b` is a `mut` field, a place of the caller's, which the function can't keep; `into` follows a read-only field whose argument it keeps
 fn unknown { xs: []u8 } -> []u8 from ys { return xs }  //~ error at 38: `from ys`: the function has no field `ys`
 fn itself { p: *mut []u8 into p } {}  //~ error at 31: `p into p`: a field isn't kept in itself

@@ -1,0 +1,63 @@
+// What a task returns, through a loop, a group of several tasks, and fns that start or wait for
+// the tasks of their caller's handle (§14, Escape check, rule 9). Each has a direct-call twin
+// with the same verdict, in errors/38.ctx and errors/39.ctx: `try read_all{ buf = buf[..] }`.
+error bad_path{ path: []u8 }
+error empty
+
+fn read_all { buf: []u8 } -> ! { if buf.len > 0 { return bad_path{ path = buf } } }
+
+fn count { buf: []u8 } -> ! { if buf.len == 0 { return empty } }
+
+// A wait at the top of a loop is for the task the loop's last time round started.
+fn in_a_loop { mut threads: Threads } -> ! {
+    let mut buf: [256]u8
+    let mut t: task::Task(!)
+    let mut started = false
+    let mut i: u32 = 0
+    while i < 3 {
+        if started { try task::wait{ &threads, task = &t } }  //~ error at 22: this error may point into `buf`, which the task read: `read_all` returns `buf` in its error; handle the error here, or give the task data that outlives this function //~ note at -5:5: `buf` is declared here //~ note at +1:20: the task that reads it starts here
+        task::start{ &threads, task = &t, run = read_all{ buf = buf[..], _ } }
+        started = true
+        i = i + 1
+    }
+}
+
+// One task of a group may fail with what points into buf, the other not.
+fn mixed { mut threads: Threads } -> ! {
+    let mut buf: [256]u8
+    let mut g: task::Group
+    task::start_in{ &threads, group = &g, run = count{ buf = buf[..], _ } }
+    task::start_in{ &threads, group = &g, run = read_all{ buf = buf[0..8], _ } }
+    try task::wait_all{ &threads, group = &g }  //~ error at 5: this error may point into `buf`, which the task read: `read_all` returns `buf` in its error; handle the error here, or give the task data that outlives this function //~ note at -4:5: `buf` is declared here //~ note at -1:19: the task that reads it starts here
+}
+
+// A fn that starts a task into its caller's handle: the task returns what it was given.
+fn start_into { mut threads: Threads, mut h: task::Task(!), path: []u8 } {
+    task::start{ &threads, task = &h, run = read_all{ buf = path, _ } }
+}
+
+// A fn that waits for the task in its caller's handle: it returns what the task returns.
+fn finish { mut threads: Threads, mut h: task::Task(!) } -> ! {
+    try task::wait{ &threads, task = &h }
+}
+
+fn through_fns { mut threads: Threads } -> ! {
+    let mut buf: [256]u8
+    let mut t: task::Task(!)
+    start_into{ &threads, h = &t, path = buf[..] }
+    try finish{ &threads, h = &t }  //~ error at 5: this error may point into `buf`, which the task read: the task `start_into` starts may return its `path` in its error; handle the error here, or give the task data that outlives this function //~ note at -3:5: `buf` is declared here //~ note at -1:15: the task that reads it starts here
+}
+
+// What finish returns of its handle's task, no function type says.
+fn as_a_value { mut threads: Threads } {
+    let f = finish  //~ error at 13: `finish` may return what the tasks in its `h` return, which no function type can say: bind `h` too, or call it rather than make it a value
+    let mut t: task::Task(!)
+    f{ &threads, h = &t } iferr {}
+}
+
+fn main { mut threads: Threads } {
+    in_a_loop{ &threads } iferr {}
+    mixed{ &threads } iferr {}
+    through_fns{ &threads } iferr {}
+    as_a_value{ &threads }
+}

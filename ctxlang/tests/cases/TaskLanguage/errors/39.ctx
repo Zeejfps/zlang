@@ -1,0 +1,77 @@
+// What a group keeps of its tasks' failures, and what a task returns when it succeeds, may point
+// into what the tasks read (§14, Escape check, rule 9). Each fn has a direct-call twin with the
+// same verdict.
+error bad_path{ path: []u8 }
+
+fn read_all { buf: []u8 } -> ! { if buf.len > 0 { return bad_path{ path = buf } } }
+
+fn head { buf: []u8 } -> ![]u8 { return buf[0..1] }
+
+fn by_wait_failure { mut threads: Threads } -> ! {
+    let mut buf: [256]u8
+    let mut g = task::Group{ failures = task::Failures::keep, .. }
+    task::start_in{ &threads, group = &g, run = read_all{ buf = buf[..], _ } }
+    let failure = task::wait_failure{ &threads, group = &g } iferr { return } ifnull { return }
+    return failure  //~ error at 5: the returned value may point into `buf`, which the task read: `read_all` returns `buf` in its error; use it here, or give the task data that outlives this function //~ note at -4:5: `buf` is declared here //~ note at -2:19: the task that reads it starts here
+}
+
+// wait_failure's twin: the error, read as a value.
+fn by_call_failure {} -> ! {
+    let mut buf: [256]u8
+    let failure = match read_all{ buf = buf[..] } {
+        ok => { return }
+        err{ error } => { error }
+    }
+    return failure  //~ error at 5: returned value holds the address of local `buf` //~ note at -5:5: `buf` is declared here
+}
+
+fn by_wait_all_failures { mut threads: Threads } -> ![]mut error {
+    let mut space: [1024]u8
+    let mut heap = arena::new{ buf = space[..] }
+    let mut buf: [256]u8
+    let mut g = task::Group{ failures = task::Failures::keep, .. }
+    task::start_in{ &threads, group = &g, run = read_all{ buf = buf[..], _ } }
+    let failures = try task::wait_all_failures{ &threads, group = &g, realloc = arena::alloc, &heap }
+    return failures  //~ error at 5: the returned value may point into `buf`, which the task read: `read_all` returns `buf` in its error; use it here, or give the task data that outlives this function //~ note at -4:5: `buf` is declared here //~ note at -2:19: the task that reads it starts here
+}
+
+// wait_all_failures' twin: the errors, gathered in the caller's allocator's memory.
+fn gather(S) { buf: []u8, realloc: alloc::Fn(S), mut heap: S } -> ![]mut error {
+    let out = try alloc::make(error, S){ realloc, &heap, count = 1 }
+    match read_all{ buf } {
+        ok => {}
+        err{ error } => { out[0] = error }
+    }
+    return out
+}
+
+fn by_call_failures {} -> ![]mut error {
+    let mut space: [1024]u8
+    let mut heap = arena::new{ buf = space[..] }
+    let mut buf: [256]u8
+    let failures = try gather{ buf = buf[..], realloc = arena::alloc, &heap }
+    return failures  //~ error at 5: returned value holds the address of local `buf` //~ note at -2:5: `buf` is declared here
+}
+
+fn by_wait_success { mut threads: Threads } -> ![]u8 {
+    let mut buf: [256]u8
+    let mut t: task::Task(![]u8)
+    task::start{ &threads, task = &t, run = head{ buf = buf[..], _ } }
+    let first = try task::wait{ &threads, task = &t }
+    return first  //~ error at 5: the returned value may point into `buf`, which the task read: `head` returns `buf`; use it here, or give the task data that outlives this function //~ note at -4:5: `buf` is declared here //~ note at -2:16: the task that reads it starts here
+}
+
+fn by_call_success {} -> ![]u8 {
+    let mut buf: [256]u8
+    let first = try head{ buf = buf[..] }
+    return first  //~ error at 5: returned value holds the address of local `buf` //~ note at -2:5: `buf` is declared here
+}
+
+fn main { mut threads: Threads } {
+    by_wait_failure{ &threads } iferr {}
+    by_call_failure{} iferr {}
+    _ = by_wait_all_failures{ &threads } iferr { slice::empty(error){} }
+    _ = by_call_failures{} iferr { slice::empty(error){} }
+    _ = by_wait_success{ &threads } iferr { "" }
+    _ = by_call_success{} iferr { "" }
+}

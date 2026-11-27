@@ -1,0 +1,28 @@
+// What a task returns, kept where it outlives what the task read (§14, Escape check, rule 9),
+// with its direct-call twin, which has the same verdict.
+error bad_path{ path: []u8 }
+
+fn read_all { buf: []u8 } -> ! { if buf.len > 0 { return bad_path{ path = buf } } }
+
+fn kept_outside { mut threads: Threads } {
+    let mut last: []u8 = ""
+    if true {
+        let mut buf: [256]u8
+        let mut t: task::Task(!)
+        task::start{ &threads, task = &t, run = read_all{ buf = buf[..], _ } }
+        task::wait{ &threads, task = &t } iferr err{ error } { if error is bad_path{ path } { last = path } }  //~ error at 95: this value may point into `buf`, which the task read: `read_all` returns `buf` in its error; use it where local `buf` is, or give the task data that outlives this store //~ note at -3:9: `buf` is declared here //~ note at -1:20: the task that reads it starts here
+    }
+}
+
+fn kept_outside_twin {} {
+    let mut last: []u8 = ""
+    if true {
+        let mut buf: [256]u8
+        read_all{ buf = buf[..] } iferr err{ error } { if error is bad_path{ path } { last = path } }  //~ error at 87: `last` outlives local `buf` whose address it would hold //~ note at -1:9: `buf` is declared here //~ note at -3:5: `last` is declared here
+    }
+}
+
+fn main { mut threads: Threads } {
+    kept_outside{ &threads }
+    kept_outside_twin{}
+}

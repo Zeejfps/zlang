@@ -335,6 +335,7 @@ namespace check {
         stmt: ?u64 = null,
         // The sets of Var.derived and Var.held.
         derived:   list::List([]u32, Heap),
+        plain:     list::List([]u32, Heap),           // by derived set: what it holds by any other way than what a task returns
         held:      list::List([]Place, Heap),
         // Errors (§8, Errors): their declarations, numbered in this order, and each function's
         // set, inferred from what flows into it while its body is checked (infer_sets).
@@ -365,6 +366,15 @@ namespace check {
         borrow_callers: map::Map(u32, []u32, Heap),     // in a cycle, by fn: those of it that call it
         borrow_saw: map::Map(u32, bool, Heap),          // the fns given a summary still being made
         borrow_envs: map::Map(u32, map::Map(u32, []u32, Heap), Heap),  // by fn in a cycle: its locals' origins, made last
+        borrow_results: map::Map(u32, map::Map(u32, BorrowValue, Heap), Heap),  // and what its handles' tasks may return
+        // What the tasks started into a handle may return (§14, Escape check, rule 9), while a
+        // body is checked: by the handle's local or `mut` field, the index of a set of Checker.derived
+        // for their success, the next for their error; and where each local found there came from.
+        task_results: map::Map(u32, u32, Heap),
+        task_found: list::List(TaskFound, Heap),
+        task_sets: map::Map(u32, bool, Heap),         // those sets' indexes
+        tasks_off: bool = false,                      // derives leaves what tasks return out
+        quiet: bool = false,                          // a body's checks are replayed for what they find, not reported
         borrow_error: bool = false,
         borrow_success: bool = false,
         escapes:   list::List(Escape, Heap),          // escape errors that wait on the sets
@@ -399,6 +409,7 @@ namespace check {
         // (`run: &fn{} -> R into task`), and which of them it ends (`mut task: Task(R) ends`).
         lends:     map::Map(u32, []Lend, Heap),
         ends_of:   map::Map(u32, []u32, Heap),
+        task_from: map::Map(u32, []TaskFrom, Heap),     // the handle fields whose tasks' results it returns (`-> R from task`)
         scope_ends: map::Map(u32, u32, Heap),          // a loan holder's `#scope_end` fn
         scope_marks: list::List(ScopeMark, Heap),     // the `#scope_end` fns, checked in task_decls
         tdecl:     u32 = NONE,                         // the fn the task walk is in
@@ -477,6 +488,7 @@ namespace check {
         store{ root: u32, through: bool, rhs: syntax::Expr, at: source::Span },
         trying{ e: syntax::Expr, x: syntax::Expr, errs: Id },
         keeps{ e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, fields: []types::Field, name: utf8::String },
+        lend{ e: syntax::Expr, d: u32, items: []syntax::Item },
         order{ e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item },
         flow{ at: source::Span, msg: utf8::String, notes: []diag::Note, fixes: []diag::Fix },
     }
@@ -679,6 +691,7 @@ namespace check {
             view_list = list::new(syntax::Expr){ realloc = arena::alloc, &heap },
             view_values = map::new(u64, Val){ realloc = arena::alloc, &heap, hash = map::hash_u64, eq = map::eq_u64 },
             derived = list::new([]u32){ realloc = arena::alloc, &heap },
+            plain = list::new([]u32){ realloc = arena::alloc, &heap },
             held = list::new([]Place){ realloc = arena::alloc, &heap },
             faults = ids{ &heap },
             flows = map::new(u32, Flow){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
@@ -698,6 +711,10 @@ namespace check {
             borrow_callers = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             borrow_saw = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             borrow_envs = map::new(u32, map::Map(u32, []u32, Heap)){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            borrow_results = map::new(u32, map::Map(u32, BorrowValue, Heap)){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            task_results = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            task_found = list::new(TaskFound){ realloc = arena::alloc, &heap },
+            task_sets = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             escapes = list::new(Escape){ realloc = arena::alloc, &heap },
             fn_values = list::new(FnValue){ realloc = arena::alloc, &heap },
             lates = list::new(Late){ realloc = arena::alloc, &heap },
@@ -716,6 +733,7 @@ namespace check {
             tsum_busy = map::new(u32, bool){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             lends = map::new(u32, []Lend){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             ends_of = map::new(u32, []u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
+            task_from = map::new(u32, []TaskFrom){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             scope_ends = map::new(u32, u32){ realloc = arena::alloc, &heap, hash = map::hash_u32, eq = map::eq_u32 },
             scope_marks = list::new(ScopeMark){ realloc = arena::alloc, &heap },
             ord_cands = list::new(OrdCand){ realloc = arena::alloc, &heap },
@@ -1779,14 +1797,14 @@ namespace check {
             let fields = context{ &c, params, sc }
             let mut r = types::VOID
             if ret != null { r = ret_type{ &c, te = ret, sc, owner = d } }
-            let own = keeps_of{ &c, params, from, fields }
+            let own = keeps_of{ &c, params, from, fields, decl = not external }
             let mut keeps = own
             let mut contract = external or keeps.len > 0
             // A definition is held to its api.ctx half's contract, whose fields are its own
             // (compare_half).
             if x.api != NONE {
                 if get_decl{ c, d = x.api }.syn.k is func{ params = hp, from = hf } {
-                    keeps = keeps_of{ &c, params = hp, from = hf, fields }
+                    keeps = keeps_of{ &c, params = hp, from = hf, fields, decl = true }
                     contract = true
                 }
             }
@@ -1849,9 +1867,25 @@ namespace check {
         return n
     }
 
+    // Whether t is a struct written with `#loan_holder`, before the attributes are applied.
+    fn marked_holder { c: Checker, t: Id } -> bool {
+        let record{ decl } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t } } else { return false }
+        let x = get_decl{ c, d = decl }
+        for a in x.syn.attrs {
+            if let w = compiler_attr{ c, a, ns = x.ns } { if w == Attribute::loan_holder { return true } }
+        }
+        return false
+    }
+
+    // `from name` for a `mut` field that isn't a fn's of a loan holder type.
+    fn report_mut_from { mut c: Checker, at: source::Span, name: []u8 } {
+        errorf{ &c, at, msg = @fmt("`from {}`: `{}` is a `mut` field, whose argument is a place of the caller's; `from` names the read-only fields whose arguments the result may point into, or a fn's `mut` loan holder field whose tasks' results it returns", str{ s = name }, str{ s = name }) }
+    }
+
     // The contract written on a function or a function type (§14, Escape check): `from` after
-    // its result, and `into` after its fields, whose types are fields.
-    fn keeps_of { mut c: Checker, params: []syntax::Param, from: []syntax::Name, fields: []types::Field } -> []types::Keep {
+    // its result, and `into` after its fields, whose types are fields. A fn's `from` may name a
+    // `mut` field of a loan holder type (decl), whose tasks' results it returns (rule 5).
+    fn keeps_of { mut c: Checker, params: []syntax::Param, from: []syntax::Name, fields: []types::Field, decl: bool } -> []types::Keep {
         let mut out = list::new(types::Keep){ realloc = arena::alloc, heap = c.heap }
         for n in from {
             if n.text.len == 0 { continue }
@@ -1859,8 +1893,10 @@ namespace check {
                 errorf{ &c, at = n.span, msg = @fmt("`from {}`: the function has no field `{}`", str{ s = n.text }, str{ s = n.text }) }
                 continue
             }
-            if f.mutable {
-                errorf{ &c, at = n.span, msg = @fmt("`from {}`: `{}` is a `mut` field, whose argument is a place of the caller's; `from` names the read-only fields whose arguments the result may point into", str{ s = n.text }, str{ s = n.text }) }
+            // The attributes aren't applied yet: a loan holder is a struct written with
+            // `#loan_holder`, which holder_contracts checks again once they are.
+            if f.mutable and not (decl and marked_holder{ c, t = f.ty }) {
+                report_mut_from{ &c, at = n.span, name = n.text }
                 continue
             }
             try! list::push{ list = &out, item = types::Keep{ arg = n.text, into = "" } }
@@ -2892,8 +2928,22 @@ namespace check {
                 push{ xs = &ends, n = @as(u32, fi) }
             }
             let mut lends = list::new(Lend){ realloc = arena::alloc, heap = c.heap }
+            let mut froms = list::new(TaskFrom){ realloc = arena::alloc, heap = c.heap }
             let mut kept = list::new(types::Keep){ realloc = arena::alloc, heap = c.heap }
             for k in x.keeps {
+                if k.into.len == 0 {
+                    if let hi = types::field_index{ fields = x.fields, name = k.arg } {
+                        if x.fields[hi].mutable and handle_type{ c, t = x.fields[hi].ty } {
+                            try! list::push{ list = &froms, item = TaskFrom{ field = @as(u32, hi), split = false } }
+                            unchecked{ &c, at = find_from_span{ syn = x.syn, name = k.arg }, what = "`from` a loan holder", checked = "" }
+                            continue
+                        }
+                        if x.fields[hi].mutable {
+                            report_mut_from{ &c, at = find_from_span{ syn = x.syn, name = k.arg }, name = k.arg }
+                            continue
+                        }
+                    }
+                }
                 if k.into.len > 0 {
                     if let hi = types::field_index{ fields = x.fields, name = k.into } {
                         if x.fields[hi].mutable and handle_type{ c, t = x.fields[hi].ty } {
@@ -2907,15 +2957,84 @@ namespace check {
                 }
                 try! list::push{ list = &kept, item = k }
             }
-            if lends.len > 0 {
+            if lends.len + froms.len > 0 or kept.len != x.keeps.len {
                 let at = list::at{ list = c.decls, i = @as(u32, d) }
                 at.keeps = list::items{ list = kept }
                 at.contract = external or kept.len > 0
-                try! map::put{ m = &c.lends, key = @as(u32, d), value = list::items{ list = lends } }
             }
+            if lends.len > 0 { try! map::put{ m = &c.lends, key = @as(u32, d), value = list::items{ list = lends } } }
+            if froms.len > 0 { try! map::put{ m = &c.task_from, key = @as(u32, d), value = list::items{ list = froms } } }
             if ends.len > 0 { try! map::put{ m = &c.ends_of, key = @as(u32, d), value = list::items{ list = ends } } }
             d = d + 1
         }
+        // Whether each returns its tasks' results as their own, which needs every lend known.
+        d = 0
+        while d < c.decls.len {
+            if let fs = map::get{ m = c.task_from, key = @as(u32, d) } {
+                let mut now = list::new(TaskFrom){ realloc = arena::alloc, heap = c.heap }
+                for f in fs { try! list::push{ list = &now, item = TaskFrom{ field = f.field, split = returns_tasks_result{ c, d = @as(u32, d), k = f.field } } } }
+                try! map::put{ m = &c.task_from, key = @as(u32, d), value = list::items{ list = now } }
+            }
+            d = d + 1
+        }
+    }
+
+    // A fn's `-> R from h`, h a `mut` loan holder field (§14, Escape check, rule 5): it returns
+    // what the tasks in h return. split: its result is of their type, so its success is theirs
+    // and its error theirs, as `task::wait`'s is; otherwise any part of its result may hold
+    // either, as `task::wait_failure`'s holds their errors in its success.
+    struct TaskFrom { field: u32, split: bool }
+
+    // Where fn syn's `from` names `name`.
+    fn find_from_span { syn: syntax::Decl, name: []u8 } -> source::Span {
+        let func{ from } = syn.k else { return syn.span }
+        for n in from { if slice::eq_bytes{ a = n.text, b = name } { return n.span } }
+        return syn.span
+    }
+
+    // Whether fn d's result is of the type of what the tasks in its handle field k return: of
+    // the function value a fn lends into a holder of that type, `run: &thread fn{} -> R into
+    // task`, whose result is one of the holder's generic arguments (`Task(R)`'s) or a type of
+    // its own (`Group`'s `!`).
+    fn returns_tasks_result { c: Checker, d: u32, k: u32 } -> bool {
+        let x = get_decl{ c, d }
+        let record{ decl = hd, args = ha } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.fields[k].ty } } else { return false }
+        let r = types::prune{ s = c.ty, t = x.ret }
+        let mut e: usize = 0
+        while e < c.decls.len {
+            let ls = map::get{ m = c.lends, key = @as(u32, e) } ifnull {
+                e = e + 1
+                continue
+            }
+            let y = get_decl{ c, d = @as(u32, e) }
+            for l in ls {
+                let record{ decl = h2, args = a2 } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = y.fields[l.holder].ty } } else { continue }
+                if h2 != hd { continue }
+                let func{ ret = lr } = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = y.fields[l.arg].ty } } else { continue }
+                let lt = types::prune{ s = c.ty, t = lr }
+                let mut i: usize = 0
+                let mut arg = false
+                while i < a2.len {
+                    if types::prune{ s = c.ty, t = a2[i] } == lt {
+                        arg = true
+                        if i < ha.len and types::prune{ s = c.ty, t = ha[i] } == r { return true }
+                    }
+                    i = i + 1
+                }
+                if not arg and is_same_result{ c, a = lt, b = r } { return true }
+            }
+            e = e + 1
+        }
+        return false
+    }
+
+    // Whether a and b are one result type: the same, or `!T`s of one T, whatever errors each
+    // fails with.
+    fn is_same_result { c: Checker, a: Id, b: Id } -> bool {
+        if a == b { return true }
+        let res{ ok = x } = types::get{ s = c.ty, id = a } else { return false }
+        let res{ ok = y } = types::get{ s = c.ty, id = b } else { return false }
+        return types::prune{ s = c.ty, t = x } == types::prune{ s = c.ty, t = y }
     }
 
     // Where `arg: T into ... into ...` names `into`.
@@ -3865,7 +3984,7 @@ namespace check {
                 let fields = context{ &c, params, sc }
                 let mut r = types::VOID
                 if ret != null { r = ret_type{ &c, te = ret.*, sc, owner = NONE } }
-                let keeps = keeps_of{ &c, params, from, fields }
+                let keeps = keeps_of{ &c, params, from, fields, decl = false }
                 if bound and not allow_bound {
                     error{ &c, at = te.span, msg = "`&fn` can only be the type of a local or a read-only context field" }
                     return types::ERROR
@@ -5460,17 +5579,35 @@ namespace check {
     // body would do them: in the order the check met them, with the body's derived sets made
     // again from where each was made, and its flow errors counted from the start of the body as
     // begin_body counts them.
+    //
+    // A body that starts a task is done twice, the first time quietly, for what its starts find:
+    // what a handle's tasks return is known at a wait before a start that a loop brings round
+    // again (§14, Escape check, rule 9). The second time starts from the handles' sets as the
+    // first left them, and every other set made again.
     fn replay_bodies { mut c: Checker } {
         let lates = list::items{ list = c.lates }
         for r in list::items{ list = c.replays } {
             c.fn_decl = r.d
             c.body_errors = c.diags.errors
             c.flow_errors = 0
-            let sets = list::items{ list = c.derived }
-            let mut i = r.sets
-            while i < r.sets_to {
-                sets[i] = no_vars{}
+            let mut starts = false
+            let mut i = r.from
+            while i < r.to and not starts {
+                starts = lates[i] is lend
                 i = i + 1
+            }
+            clear_sets{ &c, from = r.sets, to = r.sets_to, keep = false }
+            if starts {
+                c.quiet = true
+                i = r.from
+                while i < r.to {
+                    replay{ &c, x = lates[i] }
+                    i = i + 1
+                }
+                c.quiet = false
+                clear_sets{ &c, from = r.sets, to = r.sets_to, keep = true }
+                c.body_errors = c.diags.errors
+                c.flow_errors = 0
             }
             i = r.from
             while i < r.to {
@@ -5482,14 +5619,22 @@ namespace check {
         c.depth = 0
     }
 
+    // Empties the derived sets from..to, but with keep those of what handles' tasks return.
+    fn clear_sets { mut c: Checker, from: usize, to: usize, keep: bool } {
+        let sets = list::items{ list = c.derived }
+        let plain = list::items{ list = c.plain }
+        let mut i = from
+        while i < to {
+            if not (keep and map::has{ m = c.task_sets, key = @as(u32, i) }) { sets[i] = no_vars{} }
+            plain[i] = no_vars{}
+            i = i + 1
+        }
+    }
+
     fn replay { mut c: Checker, x: Late } {
         match x {
-            derive{ d, e } => { list::items{ list = c.derived }[d] = derives{ &c, e } }
-            each{ d, iter, by_ref } => {
-                let mut origins = derives{ &c, e = iter }
-                if not by_ref { origins = contents{ c, xs = origins } }
-                list::items{ list = c.derived }[d] = origins
-            }
+            derive{ d, e } => { derive_set{ &c, d, e, contents_of = false } }
+            each{ d, iter, by_ref } => { derive_set{ &c, d, e = iter, contents_of = not by_ref } }
             give{ value, at } => { give_escape{ &c, value, at } }
             branch{ v, depth } => {
                 c.depth = depth
@@ -5498,8 +5643,13 @@ namespace check {
             store{ root, through, rhs, at } => { check_store{ &c, root, through, rhs, at } }
             trying{ e, x = tried, errs } => { try_escape{ &c, e, x = tried, errs } }
             keeps{ e, callee, items, fields, name } => { check_keeps{ &c, e, callee, items, fields, name } }
-            order{ e, callee, items } => { check_order{ &c, e, callee, items } }
+            lend{ e, d, items } => { lend_results{ &c, e, d, items } }
+            order{ e, callee, items } => {
+                if c.quiet { return }
+                check_order{ &c, e, callee, items }
+            }
             flow{ at, msg, notes, fixes } => {
+                if c.quiet { return }
                 for n in notes { diag::note{ diags = c.diags, span = n.span, msg = n.msg } }
                 for f in fixes { diag::fix{ diags = c.diags, safe = f.safe, msg = f.msg, edits = f.edits } }
                 flow_error{ &c, at, msg }
@@ -6599,6 +6749,10 @@ namespace check {
     // Reports a flow error, unless the body already has another error: what flow checks find
     // after a type error is mostly noise.
     fn flow_error { mut c: Checker, at: source::Span, msg: utf8::String } {
+        if c.quiet {
+            diag::unstage{ diags = c.diags }
+            return
+        }
         if c.recording {
             let notes = copied(diag::Note){ c, xs = list::items{ list = c.diags.staged } }
             let fixes = copied(diag::Fix){ c, xs = list::items{ list = c.diags.fixes } }
@@ -6953,6 +7107,12 @@ namespace check {
         let found = derives{ &c, e = value }
         if found.len > 0 {
             let ds = vars_in_order{ c, xs = found }
+            if comes_from_task{ &c, e = value, v = ds[0] } {
+                if let m = describe_task_escape{ &c, v = ds[0], part = 0, what = "the returned value", fix = "use it here, or give the task data that outlives this function" } {
+                    escape_error{ &c, t = value_ty{ c, k = expr_key{ e = value } }, at, msg = m }
+                    return
+                }
+            }
             let mut b = message{ c }
             try! @fmt(&b, "returned value holds the address of {}", describe_local{ c, v = ds[0] })
             note_local{ &c, v = ds[0] }
@@ -8746,15 +8906,22 @@ namespace check {
     // is where it goes (§14, Escape check, `into`): the fields whose places or pointees it is
     // in, WILD for a static's, or none for memory that no field reaches.
     struct BorrowWrite { ty: Id, origins: []u32, into: []u32 }
-    struct Borrow { ok: []u32, err: []u32, writes: []BorrowWrite }
+    // results: what the tasks a fn leaves in its `mut` handle fields may return (BorrowResult).
+    struct Borrow { ok: []u32, err: []u32, writes: []BorrowWrite, results: []BorrowResult }
     const WILD: u32 = 4294967294
     struct BorrowValue { ok: []u32, err: []u32 }
-    // first: the fn's first local, its first field's, of n.
+    // What the tasks a fn starts into its `mut` handle field `field` may return, as success and
+    // error apart (§14, Escape check, rule 9): what a call adds to where the handle it passes
+    // there may point once waited for.
+    struct BorrowResult { field: u32, ok: []u32, err: []u32 }
+    // first: the fn's first local, its first field's, of n. results: by a handle's local, or
+    // `mut` handle field, what the tasks started into it may return.
     struct BorrowBody {
         env: map::Map(u32, []u32, Heap),
         ok: []u32, err: []u32,
         writes: list::List(BorrowWrite, Heap),
         changed: bool,
+        results: map::Map(u32, BorrowValue, Heap),
         first: u32 = NONE,
         n: u32 = 0,
     }
@@ -8791,16 +8958,46 @@ namespace check {
         return x != WILD and x >= PRIME
     }
 
+    // A summary's origin k | TASK_OK is what the tasks in `mut` handle field k return when they
+    // succeed, and k | TASK_ERR what they fail with (§14, Escape check, rule 9): a call maps them
+    // to what the starts into the handle it passes there say. Primed, what their pointees hold.
+    // An index of a field never reaches them, so whatever reads a field's index past the fields
+    // passes them by.
+    const TASK_OK: u32 = 268435456
+    const TASK_ERR: u32 = 134217728
+
+    // Which of TASK_OK and TASK_ERR origin x is of, or 0 if it is neither.
+    fn get_task_part { x: u32 } -> u32 {
+        let u = unprime{ x }
+        if u == WILD or u >= DEEP { return 0 }
+        if u >= TASK_OK { return TASK_OK }
+        if u >= TASK_ERR { return TASK_ERR }
+        return 0
+    }
+
+    // The handle field that origin x, of a task's part, is of.
+    fn get_task_field { x: u32 } -> u32 {
+        return unprime{ x } - get_task_part{ x }
+    }
+
+    // Both parts of what the tasks in handle field k return, as they are and through them.
+    fn make_task_origins { c: Checker, k: u32, part: u32 } -> []u32 {
+        let mut out = no_vars{}
+        if part != TASK_ERR { out = set_add{ c, xs = set_add{ c, xs = out, n = k | TASK_OK }, n = k | TASK_OK | PRIME } }
+        if part != TASK_OK { out = set_add{ c, xs = set_add{ c, xs = out, n = k | TASK_ERR }, n = k | TASK_ERR | PRIME } }
+        return out
+    }
+
     // STRLIT is a sentinel for an unknown pointer-bearing store type.
     fn borrow_unknown { c: Checker, fields: []types::Field } -> Borrow {
         let all = borrow_all{ c, fields }
         let mut writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }
         try! list::push{ list = &writes, item = BorrowWrite{ ty = types::STRLIT, origins = all, into = no_vars{} } }
-        return Borrow{ ok = all, err = all, writes = list::items{ list = writes } }
+        return Borrow{ ok = all, err = all, writes = list::items{ list = writes }, results = slice::empty(BorrowResult){} }
     }
 
     fn borrow_none {} -> Borrow {
-        return Borrow{ ok = no_vars{}, err = no_vars{}, writes = slice::empty(BorrowWrite){} }
+        return Borrow{ ok = no_vars{}, err = no_vars{}, writes = slice::empty(BorrowWrite){}, results = slice::empty(BorrowResult){} }
     }
 
     // What a callee with contract keeps does (§14, Escape check): an extern fn, taken on its
@@ -8821,7 +9018,7 @@ namespace check {
             let to = set_add{ c, xs = one_id{ c, n = @as(u32, t) }, n = @as(u32, t) | PRIME }
             try! list::push{ list = &writes, item = BorrowWrite{ ty = fields[a].ty, origins = both, into = to } }
         }
-        return Borrow{ ok, err = ok, writes = list::items{ list = writes } }
+        return Borrow{ ok, err = ok, writes = list::items{ list = writes }, results = slice::empty(BorrowResult){} }
     }
 
     // Whether a value of type t reaches a mutable place that can hold a pointer: through a `*mut`
@@ -8888,6 +9085,7 @@ namespace check {
     fn borrow_size { s: Borrow } -> usize {
         let mut n = s.ok.len + s.err.len
         for w in s.writes { n = n + 1 + w.origins.len + w.into.len }
+        for r in s.results { n = n + 1 + r.ok.len + r.err.len }
         return n
     }
 
@@ -8985,9 +9183,10 @@ namespace check {
         // Made again, in a cycle, from summaries that only grew: its locals' origins start where
         // they ended last time, which they hold still, and grow from there.
         let env = map::get{ m = c.borrow_envs, key = d } ifnull { map::new(u32, []u32){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 } }
+        let results = map::get{ m = c.borrow_results, key = d } ifnull { map::new(u32, BorrowValue){ realloc = arena::alloc, heap = c.heap, hash = map::hash_u32, eq = map::eq_u32 } }
         let mut b = BorrowBody{
             env, ok = no_vars{}, err = no_vars{},
-            writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }, changed = false, ..
+            writes = list::new(BorrowWrite){ realloc = arena::alloc, heap = c.heap }, changed = false, results, ..
         }
         let first = map::get{ m = c.first_var, key = d }
         if first == null { return borrow_unknown{ c, fields = x.fields } }
@@ -9005,14 +9204,27 @@ namespace check {
             b.changed = false
             borrow_block{ &c, &b, block = body }
         }
+        // A fn that writes `from` a handle field says what its result holds of the tasks'
+        // results, and is taken on its word (holder_contracts): what its body reads of the
+        // handle's fields is no store it makes.
+        let froms = map::get{ m = c.task_from, key = d }
+        let mut ws = list::items{ list = b.writes }
+        i = 0
+        while i < ws.len {
+            ws[i].origins = name_handle_reads{ c, fields = x.fields, xs = ws[i].origins, drop = froms != null }
+            i = i + 1
+        }
         let mut taint = no_vars{}
-        let ws = list::items{ list = b.writes }
         i = 0
         while i < ws.len {
             taint = set_union{ c, a = taint, b = ws[i].origins }
             i = i + 1
         }
-        let mut out = Borrow{ ok = undeeped{ c, xs = b.ok }, err = undeeped{ c, xs = b.err }, writes = ws }
+        let mut out = Borrow{
+            ok = name_handle_reads{ c, fields = x.fields, xs = undeeped{ c, xs = b.ok }, drop = false },
+            err = name_handle_reads{ c, fields = x.fields, xs = undeeped{ c, xs = b.err }, drop = false },
+            writes = ws, results = collect_own_results{ c, b, fields = x.fields },
+        }
         let ret = types::get{ s = c.ty, id = types::prune{ s = c.ty, t = x.ret } }
         match ret {
             res{ ok, errs } => {
@@ -9021,8 +9233,79 @@ namespace check {
             }
             else => { if contains_ptr{ &c, t = x.ret, seen = no_vars{} } { out.ok = set_union{ c, a = out.ok, b = taint } } }
         }
-        if map::has{ m = c.borrow_on, key = d } or map::has{ m = c.borrow_envs, key = d } { try! map::put{ m = &c.borrow_envs, key = d, value = b.env } }
+        if let fs = froms {
+            let both = get_written_from{ c, fields = x.fields, keeps = x.keeps }
+            out.ok = both
+            out.err = both
+            for f in fs {
+                out.ok = set_union{ c, a = out.ok, b = make_task_origins{ c, k = f.field, part = if f.split { TASK_OK } else { 0 } } }
+                out.err = set_union{ c, a = out.err, b = make_task_origins{ c, k = f.field, part = if f.split { TASK_ERR } else { 0 } } }
+            }
+        }
+        if map::has{ m = c.borrow_on, key = d } or map::has{ m = c.borrow_envs, key = d } {
+            try! map::put{ m = &c.borrow_envs, key = d, value = b.env }
+            try! map::put{ m = &c.borrow_results, key = d, value = b.results }
+        }
         return out
+    }
+
+    // xs, with what a `mut` handle field holds, read through its fields, as what the tasks in it
+    // return, both parts: a handle holds no pointer but what its tasks return. drop: left out.
+    fn name_handle_reads { c: Checker, fields: []types::Field, xs: []u32, drop: bool } -> []u32 {
+        let mut out = no_vars{}
+        for x in xs {
+            let i = unprime{ x }
+            if i != WILD and @as(usize, i) < fields.len and fields[i].mutable and handle_type{ c, t = fields[i].ty } {
+                if not drop { out = set_union{ c, a = out, b = make_task_origins{ c, k = i, part = 0 } } }
+                continue
+            }
+            out = set_add{ c, xs = out, n = x }
+        }
+        return out
+    }
+
+    // The read-only fields a written contract's `from` names, as they are and through them.
+    fn get_written_from { c: Checker, fields: []types::Field, keeps: []types::Keep } -> []u32 {
+        let mut out = no_vars{}
+        for k in keeps {
+            if k.into.len > 0 { continue }
+            let a = types::field_index{ fields, name = k.arg } ifnull { continue }
+            out = set_add{ c, xs = set_add{ c, xs = out, n = @as(u32, a) }, n = @as(u32, a) | PRIME }
+        }
+        return out
+    }
+
+    // What the tasks a fn starts into its `mut` handle fields may return, by its body b.
+    fn collect_own_results { c: Checker, b: BorrowBody, fields: []types::Field } -> []BorrowResult {
+        let mut out = list::new(BorrowResult){ realloc = arena::alloc, heap = c.heap }
+        let mut i: usize = 0
+        while i < fields.len {
+            if fields[i].mutable and handle_type{ c, t = fields[i].ty } {
+                if let r = map::get{ m = b.results, key = b.first + @as(u32, i) } {
+                    if r.ok.len + r.err.len > 0 { try! list::push{ list = &out, item = BorrowResult{ field = @as(u32, i), ok = undeeped{ c, xs = r.ok }, err = undeeped{ c, xs = r.err } } } }
+                }
+            }
+            i = i + 1
+        }
+        return list::items{ list = out }
+    }
+
+    // What the tasks started into handle v, a local or a `mut` field of the fn being summarized,
+    // may return: those of a field's caller's starts too, as its own origins of their parts.
+    fn get_handle_value { c: Checker, b: BorrowBody, v: u32 } -> BorrowValue {
+        let had = map::get{ m = b.results, key = v } ifnull { borrow_empty{} }
+        if b.first == NONE or v < b.first or v >= b.first + b.n { return had }
+        let k = v - b.first
+        return BorrowValue{ ok = set_union{ c, a = had.ok, b = make_task_origins{ c, k, part = TASK_OK } }, err = set_union{ c, a = had.err, b = make_task_origins{ c, k, part = TASK_ERR } } }
+    }
+
+    // The tasks started into handle v may return what r says, too.
+    fn put_results { mut c: Checker, mut b: BorrowBody, v: u32, r: BorrowValue } {
+        let v = root_var{ c, v }
+        let old = map::get{ m = b.results, key = v } ifnull { borrow_empty{} }
+        let now = BorrowValue{ ok = set_union{ c, a = old.ok, b = r.ok }, err = set_union{ c, a = old.err, b = r.err } }
+        if now.ok.len > old.ok.len or now.err.len > old.err.len { b.changed = true }
+        try! map::put{ m = &b.results, key = v, value = now }
     }
 
     fn borrow_put { mut c: Checker, mut b: BorrowBody, v: u32, xs: []u32 } {
@@ -9267,10 +9550,19 @@ namespace check {
     }
 
     // A callee's origins xs as the caller's: field i is what its argument holds, actual[i], and
-    // what field i's pointees hold is what those of actual[i] hold.
-    fn borrow_map_args { mut c: Checker, xs: []u32, actual: [][]u32 } -> []u32 {
+    // what field i's pointees hold is what those of actual[i] hold. What the tasks in handle
+    // field k return is what those in the handle passed there do, tasks[k].
+    fn borrow_map_args { mut c: Checker, xs: []u32, actual: [][]u32, tasks: []BorrowValue } -> []u32 {
         let mut out = no_vars{}
         for x in xs {
+            let part = get_task_part{ x }
+            if part != 0 {
+                let k = get_task_field{ x }
+                if @as(usize, k) >= tasks.len { continue }
+                let ys = if part == TASK_OK { tasks[k].ok } else { tasks[k].err }
+                out = set_union{ c, a = out, b = if is_primed{ x } { through_set{ c, xs = ys } } else { ys } }
+                continue
+            }
             let i = unprime{ x }
             if i == WILD or @as(usize, i) >= actual.len { continue }
             out = set_union{ c, a = out, b = if is_primed{ x } { through_set{ c, xs = actual[i] } } else { actual[i] } }
@@ -9278,7 +9570,7 @@ namespace check {
         return out
     }
 
-    fn borrow_call { mut c: Checker, mut b: BorrowBody, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, bind: bool } -> BorrowValue {
+    fn borrow_call { mut c: Checker, mut b: BorrowBody, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, bind: bool, effects: bool } -> BorrowValue {
         let captured = borrow_origins{ c, v = borrow_expr{ &c, &b, e = callee } }
         let fields = callee_fields{ c, e }
         // By field: what a read-only argument holds, and where a store goes that the callee
@@ -9288,12 +9580,17 @@ namespace check {
         let mut place = list::new([]u32){ realloc = arena::alloc, heap = c.heap }
         let mut pointee = list::new([]u32){ realloc = arena::alloc, heap = c.heap }
         let mut local = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        // By `mut` handle field: the handle passed there, and what the tasks in it may return.
+        let mut handles = list::new(u32){ realloc = arena::alloc, heap = c.heap }
+        let mut tasks = list::new(BorrowValue){ realloc = arena::alloc, heap = c.heap }
         let mut i: usize = 0
         while i < fields.len {
             try! list::push{ list = &actual, item = no_vars{} }
             try! list::push{ list = &place, item = no_vars{} }
             try! list::push{ list = &pointee, item = no_vars{} }
             try! list::push{ list = &local, item = NONE }
+            try! list::push{ list = &handles, item = NONE }
+            try! list::push{ list = &tasks, item = borrow_empty{} }
             i = i + 1
         }
         let mut aggregate = captured
@@ -9309,6 +9606,11 @@ namespace check {
                     let mut done = false
                     if v.k is addr{ e = x } {
                         let p = place_path{ c, e = x.* }
+                        if p != null and fields[j].mutable and handle_type{ c, t = fields[j].ty } {
+                            let h = root_var{ c, v = p.root }
+                            list::items{ list = handles }[j] = h
+                            list::items{ list = tasks }[j] = get_handle_value{ c, b, v = h }
+                        }
                         if p != null and not get_var{ c, v = p.root }.indirect and not (b.first != NONE and p.root >= b.first and p.root < b.first + b.n) {
                             list::items{ list = local }[j] = p.root
                             done = true
@@ -9336,6 +9638,10 @@ namespace check {
                 let mut j: usize = 0
                 while j < fields.len {
                     if slice::eq_bytes{ a = fields[j].name, b = f.name } {
+                        if f.mutable and handle_type{ c, t = fields[j].ty } {
+                            list::items{ list = handles }[j] = rv
+                            list::items{ list = tasks }[j] = get_handle_value{ c, b, v = rv }
+                        }
                         if not f.mutable {
                             list::items{ list = actual }[j] = xs
                             list::items{ list = pointee }[j] = pointee_of{ c, xs }
@@ -9355,7 +9661,17 @@ namespace check {
             }
         }
         let literal = map::get{ m = c.literal, key = expr_key{ e } }
-        if bind or (literal != null and literal) { return BorrowValue{ ok = aggregate, err = aggregate } }
+        if literal != null and literal { return BorrowValue{ ok = aggregate, err = aggregate } }
+        if bind {
+            // A bind holds what calling it returns of the tasks in the handles it binds.
+            if nodes::get{ m = c.refs, key = expr_key{ e = callee } } is func{ decl } {
+                let s = borrow_fn{ &c, d = decl }
+                let mut flags = no_vars{}
+                for x in set_union{ c, a = s.ok, b = s.err } { if get_task_part{ x } != 0 { flags = set_add{ c, xs = flags, n = x } } }
+                if flags.len > 0 { aggregate = set_union{ c, a = aggregate, b = borrow_map_args{ &c, xs = flags, actual = list::items{ list = actual }, tasks = list::items{ list = tasks } } } }
+            }
+            return BorrowValue{ ok = aggregate, err = aggregate }
+        }
         let mut summary = borrow_unknown{ c, fields }
         let mut d = NONE
         let mut targs: []Id = slice::empty(Id){}
@@ -9370,15 +9686,33 @@ namespace check {
             if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = type_of_expr{ c, e = callee } } } is func{ keeps } {
                 summary = borrow_contract{ &c, fields, keeps }
             }
-            borrow_write{ &c, &b, t = types::STRLIT, xs = captured }
+            if effects { borrow_write{ &c, &b, t = types::STRLIT, xs = captured } }
         }
         let args = list::items{ list = actual }
+        let ts = list::items{ list = tasks }
+        let hs = list::items{ list = handles }
         let made = captured
+        // What the tasks it leaves in the handles passed to it may return (§14, Escape check,
+        // rule 9): by its summary, and by what a start lends into a handle, which returns what a
+        // direct call of the bind lent would. Without effects, only its result is wanted: the
+        // value a task returns, whose call's stores its start's summary has.
+        for r in summary.results {
+            if not effects or @as(usize, r.field) >= hs.len or hs[r.field] == NONE { continue }
+            put_results{ &c, &b, v = hs[r.field], r = BorrowValue{ ok = borrow_map_args{ &c, xs = r.ok, actual = args, tasks = ts }, err = borrow_map_args{ &c, xs = r.err, actual = args, tasks = ts } } }
+        }
+        if d != NONE and effects {
+            for l in map::get{ m = c.lends, key = d } ifnull { slice::empty(Lend){} } {
+                let h = hs[l.holder]
+                let run = tw_item{ items, name = fields[l.arg].name } ifnull { continue }
+                if h == NONE { continue }
+                put_results{ &c, &b, v = h, r = borrow_lent{ &c, &b, value = run.value } }
+            }
+        }
         i = 0
-        while i < summary.writes.len {
+        while effects and i < summary.writes.len {
             let w = summary.writes[i]
             let t = if d == NONE { w.ty } else { types::subst{ s = &c.ty, t = w.ty, decl = d, args = targs } }
-            let xs = borrow_map_args{ &c, xs = w.origins, actual = args }
+            let xs = borrow_map_args{ &c, xs = w.origins, actual = args, tasks = ts }
             if w.into.len == 0 {
                 borrow_write{ &c, &b, t, xs }
             } else {
@@ -9408,13 +9742,35 @@ namespace check {
             i = i + 1
         }
         let out = BorrowValue{
-            ok = set_union{ c, a = made, b = borrow_map_args{ &c, xs = summary.ok, actual = args } },
-            err = set_union{ c, a = made, b = borrow_map_args{ &c, xs = summary.err, actual = args } },
+            ok = set_union{ c, a = made, b = borrow_map_args{ &c, xs = summary.ok, actual = args, tasks = ts } },
+            err = set_union{ c, a = made, b = borrow_map_args{ &c, xs = summary.err, actual = args, tasks = ts } },
         }
         // Only a declared !T summary distinguishes success from failure. A generic T
-        // instantiated as !U carries an ordinary value, which may itself be either variant.
-        if d != NONE and not borrow_result{ c, d } { return borrow_project{ c, value = out } }
+        // instantiated as !U carries an ordinary value, which may itself be either variant;
+        // the result of a fn that returns its tasks' results is theirs, success and error apart.
+        if d != NONE and not borrow_result{ c, d } and not returns_tasks_apart{ c, d } { return borrow_project{ c, value = out } }
         return out
+    }
+
+    // What a lent value returns when the task calls it: a bind of a fn returns what a direct call
+    // of the fn with its arguments would, success and error apart, and any other value, a lent
+    // field passed on, what it holds (§14, Escape check, rule 9).
+    fn borrow_lent { mut c: Checker, mut b: BorrowBody, value: syntax::Expr } -> BorrowValue {
+        if value.k is braced{ callee, items, bind } and bind {
+            if nodes::get{ m = c.refs, key = expr_key{ e = callee.* } } is func {
+                return borrow_call{ &c, &b, e = value, callee = callee.*, items, bind = false, effects = false }
+            }
+        }
+        let xs = borrow_origins{ c, v = borrow_expr{ &c, &b, e = value } }
+        return BorrowValue{ ok = xs, err = xs }
+    }
+
+    // Whether fn d returns the results of the tasks in a handle field as their own, success and
+    // error apart: its result is of their type (holder_contracts).
+    fn returns_tasks_apart { c: Checker, d: u32 } -> bool {
+        let fs = map::get{ m = c.task_from, key = d } ifnull { return false }
+        for f in fs { if f.split { return true } }
+        return false
     }
 
     fn borrow_result { c: Checker, d: u32 } -> bool {
@@ -9496,7 +9852,7 @@ namespace check {
                 out = borrow_expr{ &c, &b, e = a.* }
                 _ = borrow_expr{ &c, &b, e = rhs.* }
             }
-            braced{ callee, items, bind } => { out = borrow_call{ &c, &b, e, callee = callee.*, items, bind } }
+            braced{ callee, items, bind } => { out = borrow_call{ &c, &b, e, callee = callee.*, items, bind, effects = true } }
             array{ elems } => {
                 let mut i: usize = 0
                 while i < elems.len {
@@ -9714,6 +10070,18 @@ namespace check {
             let mut kept = Kept{ keeps = slice::empty(types::Keep){}, wild = "" }
             let mut name: []u8 = "the function"
             if v.d != NONE {
+                // What the tasks in a handle return, no function type says (§14, Escape check,
+                // rule 9): a fn whose result may hold it is a value only bound to the handle,
+                // whose bind holds it.
+                if result_holds and not (map::has{ m = c.task_from, key = v.d } and v.bound.len == 0) {
+                    let s = borrow_fn{ &c, d = v.d }
+                    let k = find_task_result_field{ s, bound = v.bound, fields = get_decl{ c, d = v.d }.fields }
+                    if k != NONE {
+                        let x = get_decl{ c, d = v.d }
+                        errorf{ &c, at = v.at, msg = @fmt("`{}` may return what the tasks in its `{}` return, which no function type can say: bind `{}` too, or call it rather than make it a value", str{ s = x.qual }, str{ s = x.fields[k].name }, str{ s = x.fields[k].name }) }
+                        continue
+                    }
+                }
                 kept = borrow_keeps{ &c, d = v.d }
                 name = get_decl{ c, d = v.d }.qual
             } else if types::get{ s = c.ty, id = types::prune{ s = c.ty, t = v.callee } } is func{ keeps } {
@@ -9757,13 +10125,28 @@ namespace check {
         }
     }
 
+    // The handle field, of fields, whose tasks' results summary s says its result may hold, and
+    // which a bind doesn't give (bound), or NONE.
+    fn find_task_result_field { s: Borrow, bound: [][]u8, fields: []types::Field } -> u32 {
+        let mut i: usize = 0
+        while i < s.ok.len + s.err.len {
+            let x = if i < s.ok.len { s.ok[i] } else { s.err[i - s.ok.len] }
+            i = i + 1
+            if get_task_part{ x } == 0 { continue }
+            let k = get_task_field{ x }
+            if @as(usize, k) < fields.len and not has_name{ xs = bound, name = fields[k].name } { return k }
+        }
+        return NONE
+    }
+
     fn has_name { xs: [][]u8, name: []u8 } -> bool {
         for x in xs { if slice::eq_bytes{ a = x, b = name } { return true } }
         return false
     }
 
     // A call keeps what its callee says it does (§14, Escape check, `into`): an argument that
-    // holds a local's address can't be kept where it outlives the local.
+    // holds a local's address can't be kept where it outlives the local. What the tasks it
+    // leaves in the handles it is passed may return grows by what its summary says.
     fn check_keeps { mut c: Checker, e: syntax::Expr, callee: syntax::Expr, items: []syntax::Item, fields: []types::Field, name: utf8::String } {
         let s = direct_borrow{ &c, callee } ifnull { return }
         let mut d = NONE
@@ -9772,25 +10155,235 @@ namespace check {
             d = decl
             targs = ts
         }
+        for r in s.results {
+            if @as(usize, r.field) >= fields.len { continue }
+            let h = find_handle_arg{ c, e, items, name = fields[r.field].name }
+            if h == NONE { continue }
+            let at = get_handle_sets{ &c, v = h }
+            add_set{ &c, i = at, xs = map_summary{ &c, e, items, fields, xs = r.ok, note = TaskFound{ handle = h, local = NONE, task = d, field = "", part = TASK_OK, through = false, at = expr_at{ e }, started = true } } }
+            add_set{ &c, i = at + 1, xs = map_summary{ &c, e, items, fields, xs = r.err, note = TaskFound{ handle = h, local = NONE, task = d, field = "", part = TASK_ERR, through = false, at = expr_at{ e }, started = true } } }
+        }
         for w in s.writes {
             if w.into.len == 0 { continue }
             let t = if d == NONE { w.ty } else { types::subst{ s = &c.ty, t = w.ty, decl = d, args = targs } }
             if not contains_ptr{ &c, t, seen = no_vars{} } { continue }
             for x in w.origins {
-                let o = unprime{ x }
-                if @as(usize, o) >= fields.len or fields[o].mutable { continue }
-                let arg = fields[o].name
-                let mut found = arg_derives{ &c, e, items, name = arg }
-                if is_primed{ x } { found = contents{ c, xs = found } }
+                let mut o = unprime{ x }
+                let mut found = no_vars{}
+                // What it holds by any other way than what a task returns.
+                let mut plain = no_vars{}
+                if get_task_part{ x } != 0 {
+                    // What the tasks in a handle it is passed return, stored where it keeps it.
+                    o = get_task_field{ x }
+                    if @as(usize, o) >= fields.len { continue }
+                    found = map_summary{ &c, e, items, fields, xs = one_id{ c, n = x }, note = null }
+                } else {
+                    if @as(usize, o) >= fields.len or fields[o].mutable { continue }
+                    found = arg_derives{ &c, e, items, name = fields[o].name }
+                    if is_primed{ x } { found = contents{ c, xs = found } }
+                    plain = found
+                    if map::len{ m = c.task_results } > 0 {
+                        c.tasks_off = true
+                        plain = arg_derives{ &c, e, items, name = fields[o].name }
+                        if is_primed{ x } { plain = contents{ c, xs = plain } }
+                        c.tasks_off = false
+                    }
+                }
                 if found.len == 0 { continue }
+                let arg = fields[o].name
                 for y in w.into {
                     let j = unprime{ x = y }
                     // A store back into what the argument itself points to keeps nothing new.
                     if j == o { continue }
-                    if keep_into{ &c, e, items, fields, arg, j, found, callee = name } { return }
+                    if keep_into{ &c, e, items, fields, arg, j, found, plain, callee = name } { return }
                 }
             }
         }
+    }
+
+    // A local the result of a task may point into, and where the task got it (§14, Escape check,
+    // rule 9): handle's start at, of a bind of fn task, NONE for another value, through its field
+    // `field`, as it is or through it (through), in its success (TASK_OK) or error (TASK_ERR).
+    // started: task is a fn that starts the task, given the local through its field `field`.
+    struct TaskFound { handle: u32, local: u32, task: u32, field: []u8, part: u32, through: bool, at: source::Span, started: bool }
+
+    // Notes where a task got a local, once the summaries say it: before, every field counts.
+    fn note_found { mut c: Checker, item: TaskFound } {
+        if c.borrow_ready { try! list::push{ list = &c.task_found, item } }
+    }
+
+    // The derived sets of what the tasks started into handle v may return, its local's or `mut`
+    // field's: the first for their success, the next for their error. Made the first time.
+    fn get_handle_sets { mut c: Checker, v: u32 } -> u32 {
+        let r = root_var{ c, v }
+        if let i = map::get{ m = c.task_results, key = r } { return i }
+        let i = new_derived{ &c, xs = no_vars{} }
+        _ = new_derived{ &c, xs = no_vars{} }
+        try! map::put{ m = &c.task_results, key = r, value = i }
+        try! map::put{ m = &c.task_sets, key = i, value = true }
+        try! map::put{ m = &c.task_sets, key = i + 1, value = true }
+        return i
+    }
+
+    fn add_set { mut c: Checker, i: u32, xs: []u32 } {
+        let sets = list::items{ list = c.derived }
+        sets[i] = set_union{ c, a = sets[i], b = xs }
+    }
+
+    // What the tasks started into handle v may return, of part TASK_OK or TASK_ERR, by what
+    // the starts found so far.
+    fn get_handle_found { c: Checker, v: u32, part: u32 } -> []u32 {
+        let i = map::get{ m = c.task_results, key = root_var{ c, v } } ifnull { return no_vars{} }
+        return list::items{ list = c.derived }[if part == TASK_ERR { i + 1 } else { i }]
+    }
+
+    // The handle the argument of call e's `mut` field name is, `&h` or `..`'s: its root local or
+    // field, or NONE.
+    fn find_handle_arg { c: Checker, e: syntax::Expr, items: []syntax::Item, name: []u8 } -> u32 {
+        for it in items {
+            if not slice::eq_bytes{ a = it.name.text, b = name } or it.spread { continue }
+            if it.value.k is addr{ e = x } {
+                if let p = place_path{ c, e = x.* } { return root_var{ c, v = p.root } }
+            }
+            return NONE
+        }
+        if let fw = map::get{ m = c.forwards, key = expr_key{ e } } {
+            for f in fw {
+                if slice::eq_bytes{ a = f.name, b = name } and f.mutable { return root_var{ c, v = f.var } }
+            }
+        }
+        return NONE
+    }
+
+    // A callee's origins xs, of call e, as the locals they are: a read-only field's what its
+    // argument holds, and k | TASK_OK or k | TASK_ERR what the starts into the handle given for
+    // field k found; primed, what those hold.
+    // With a note, each local found is noted where its task got it: through which field of the
+    // callee, the one that starts the task.
+    fn map_summary { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, xs: []u32, note: ?TaskFound } -> []u32 {
+        let mut out = no_vars{}
+        for x in xs {
+            let part = get_task_part{ x }
+            let mut found = no_vars{}
+            let mut k = unprime{ x }
+            if part != 0 {
+                k = get_task_field{ x }
+                if @as(usize, k) >= fields.len { continue }
+                let h = find_handle_arg{ c, e, items, name = fields[k].name }
+                if h == NONE or c.tasks_off { continue }
+                found = get_handle_found{ c, v = h, part }
+            } else {
+                if k == WILD or @as(usize, k) >= fields.len or fields[k].mutable { continue }
+                found = arg_derives{ &c, e, items, name = fields[k].name }
+            }
+            if is_primed{ x } { found = contents{ c, xs = found } }
+            if let f = note {
+                for l in found {
+                    note_found{ &c, item = TaskFound{ handle = f.handle, local = l, task = f.task, field = fields[k].name, part = f.part, through = is_primed{ x }, at = f.at, started = true } }
+                }
+            }
+            out = set_union{ c, a = out, b = found }
+        }
+        return out
+    }
+
+    // A call e of fn d, which lends into its loan holder fields (§15, Tasks, rule 7): the tasks in
+    // each handle it lends into may return what the value it lends would, called directly.
+    fn lend_results { mut c: Checker, e: syntax::Expr, d: u32, items: []syntax::Item } {
+        let x = get_decl{ c, d }
+        for l in map::get{ m = c.lends, key = d } ifnull { slice::empty(Lend){} } {
+            let h = find_handle_arg{ c, e, items, name = x.fields[l.holder].name }
+            let run = tw_item{ items, name = x.fields[l.arg].name } ifnull { continue }
+            if h == NONE { continue }
+            let at = get_handle_sets{ &c, v = h }
+            add_set{ &c, i = at, xs = derive_lent{ &c, value = run.value, part = TASK_OK, handle = h, at = expr_at{ e } } }
+            add_set{ &c, i = at + 1, xs = derive_lent{ &c, value = run.value, part = TASK_ERR, handle = h, at = expr_at{ e } } }
+        }
+    }
+
+    // What the lent value returns when its task calls it, of part TASK_OK or TASK_ERR, with where
+    // each local found came from: a bind of a fn, what a direct call of the fn with its arguments
+    // would, by its summary as derives_raw has it; any other value, a lent field passed on,
+    // what it holds. Arguments for `mut` fields don't count (rule 4).
+    fn derive_lent { mut c: Checker, value: syntax::Expr, part: u32, handle: u32, at: source::Span } -> []u32 {
+        let braced{ callee, items, bind } = value.k else { return derive_lent_value{ &c, value, part, handle, at } }
+        let r = nodes::get{ m = c.refs, key = expr_key{ e = callee.* } } ifnull { return derive_lent_value{ &c, value, part, handle, at } }
+        let func{ decl } = r else { return derive_lent_value{ &c, value, part, handle, at } }
+        if not bind { return derive_lent_value{ &c, value, part, handle, at } }
+        let fields = callee_fields{ c, e = value }
+        let summary = if c.borrow_ready { direct_borrow{ &c, callee = callee.* } } else { null }
+        let select = borrow_result{ c, d = decl }
+        let err = select and part == TASK_ERR
+        let success = select and part == TASK_OK
+        let mut out = no_vars{}
+        for it in items {
+            if it.spread or field_is_mut{ fields, name = it.name.text } { continue }
+            let h = borrow_field{ fields, summary, name = it.name.text, err, success }
+            out = set_union{ c, a = out, b = note_lent{ &c, xs = derives_input{ &c, e = it.value }, h, f = TaskFound{ handle, local = NONE, task = decl, field = it.name.text, part, through = false, at, started = false } } }
+        }
+        if let fw = map::get{ m = c.forwards, key = expr_key{ e = value } } {
+            for f in fw {
+                if f.mutable { continue }
+                let conv_to = if f.conv == null { f.ty } else { conv_target{ conv = f.conv } }
+                if not contains_ptr{ &c, t = conv_to, seen = no_vars{} } { continue }
+                let h = borrow_field{ fields, summary, name = f.name, err, success }
+                out = set_union{ c, a = out, b = note_lent{ &c, xs = derived_of{ c, v = f.var }, h, f = TaskFound{ handle, local = NONE, task = decl, field = f.name, part, through = false, at, started = false } } }
+            }
+        }
+        // What the tasks of the handles it is given return, as it returns them.
+        let sum: ?Borrow = summary
+        let parts: [2]u32 = [TASK_OK, TASK_ERR]
+        let mut k: usize = 0
+        while k < fields.len {
+            if fields[k].mutable and handle_type{ c, t = fields[k].ty } {
+                let h = find_handle_arg{ c, e = value, items, name = fields[k].name }
+                if h != NONE {
+                    for p in parts {
+                        let held = get_task_held{ s = sum, k = @as(u32, k), p, err, success }
+                        let found = get_handle_found{ c, v = h, part = p }
+                        out = set_union{ c, a = out, b = note_lent{ &c, xs = found, h = held, f = TaskFound{ handle, local = NONE, task = decl, field = fields[k].name, part, through = false, at, started = false } } }
+                    }
+                }
+            }
+            k = k + 1
+        }
+        return out
+    }
+
+    fn derive_lent_value { mut c: Checker, value: syntax::Expr, part: u32, handle: u32, at: source::Span } -> []u32 {
+        let xs = derives{ &c, e = value }
+        for l in xs { note_found{ &c, item = TaskFound{ handle, local = l, task = NONE, field = "", part, through = false, at, started = false } } }
+        return xs
+    }
+
+    // The locals of xs a value holds as h says, each noted where its task got it, f.
+    fn note_lent { mut c: Checker, xs: []u32, h: Held, f: TaskFound } -> []u32 {
+        let mut out = no_vars{}
+        if h.direct {
+            for l in xs {
+                note_found{ &c, item = TaskFound{ handle = f.handle, local = l, task = f.task, field = f.field, part = f.part, through = false, at = f.at, started = f.started } }
+            }
+            out = xs
+        }
+        if h.through {
+            let ys = contents{ c, xs }
+            for l in ys {
+                note_found{ &c, item = TaskFound{ handle = f.handle, local = l, task = f.task, field = f.field, part = f.part, through = true, at = f.at, started = f.started } }
+            }
+            out = set_union{ c, a = out, b = ys }
+        }
+        return out
+    }
+
+    // How a call's result holds what the tasks in the handle given for `mut` field k return, of
+    // part p, by the callee's summary s: as it is, and what its pointees hold. Both without one.
+    // err: only its error is wanted; success: only its success.
+    fn get_task_held { s: ?Borrow, k: u32, p: u32, err: bool, success: bool } -> Held {
+        let x = k | p
+        if s == null { return Held{ direct = true, through = true } }
+        let direct = (not success and has_id{ xs = s.err, n = x }) or (not err and has_id{ xs = s.ok, n = x })
+        let through = (not success and has_id{ xs = s.err, n = x | PRIME }) or (not err and has_id{ xs = s.ok, n = x | PRIME })
+        return Held{ direct, through }
     }
 
     // What the argument of call e's field name holds the addresses of.
@@ -9811,7 +10404,7 @@ namespace check {
 
     // Field arg of call e, holding the addresses of locals found, kept in field j's place or
     // pointee (WILD: a static): an error if that outlives one of them. Whether it reported one.
-    fn keep_into { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, arg: []u8, j: u32, found: []u32, callee: utf8::String } -> bool {
+    fn keep_into { mut c: Checker, e: syntax::Expr, items: []syntax::Item, fields: []types::Field, arg: []u8, j: u32, found: []u32, plain: []u32, callee: utf8::String } -> bool {
         let ds = vars_in_order{ c, xs = found }
         let local = describe_local{ c, v = ds[0] }
         let mut at = expr_at{ e }
@@ -9879,7 +10472,7 @@ namespace check {
                 return true
             }
         }
-        add_derived{ &c, v = root, xs = ds }
+        add_derived{ &c, v = root, xs = ds, plain }
         return false
     }
 
@@ -9936,7 +10529,27 @@ namespace check {
     fn new_derived { mut c: Checker, xs: []u32 } -> u32 {
         let i = @as(u32, c.derived.len)
         try! list::push{ list = &c.derived, item = xs }
+        try! list::push{ list = &c.plain, item = xs }
         return i
+    }
+
+    // Derived set d is what e's value holds, and its plain set what it holds by any other way
+    // than what a task returns, which a message about an escape tells apart.
+    fn derive_set { mut c: Checker, d: u32, e: syntax::Expr, contents_of: bool } {
+        let mut xs = derives{ &c, e }
+        if contents_of { xs = contents{ c, xs } }
+        list::items{ list = c.derived }[d] = xs
+        list::items{ list = c.plain }[d] = if map::len{ m = c.task_results } == 0 { xs } else { derive_plain{ &c, e, contents_of } }
+    }
+
+    // The locals e's value holds the addresses of by any other way than what a task returns.
+    fn derive_plain { mut c: Checker, e: syntax::Expr, contents_of: bool } -> []u32 {
+        let off = c.tasks_off
+        c.tasks_off = true
+        let mut xs = derives{ &c, e }
+        if contents_of { xs = contents{ c, xs } }
+        c.tasks_off = off
+        return xs
     }
 
     fn new_held { mut c: Checker, xs: []Place } -> u32 {
@@ -9945,7 +10558,10 @@ namespace check {
         return i
     }
 
+    // What local v holds the addresses of; with tasks_off, by any other way than what a task
+    // returns.
     fn derived_of { c: Checker, v: u32 } -> []u32 {
+        if c.tasks_off { return list::items{ list = c.plain }[get_var{ c, v }.derived] }
         return list::items{ list = c.derived }[get_var{ c, v }.derived]
     }
 
@@ -9953,10 +10569,13 @@ namespace check {
         return list::items{ list = c.held }[get_var{ c, v }.held]
     }
 
-    fn add_derived { mut c: Checker, v: u32, xs: []u32 } {
+    // Local v holds the addresses of xs too, plain of them by any other way than what a task
+    // returns.
+    fn add_derived { mut c: Checker, v: u32, xs: []u32, plain: []u32 } {
         let i = get_var{ c, v }.derived
         let now = set_union{ c, a = list::items{ list = c.derived }[i], b = xs }
         list::items{ list = c.derived }[i] = now
+        list::items{ list = c.plain }[i] = set_union{ c, a = list::items{ list = c.plain }[i], b = plain }
     }
 
     fn add_held { mut c: Checker, v: u32, xs: []Place } {
@@ -10069,7 +10688,7 @@ namespace check {
     // or, if only a function's error set can make it hold one, once the sets are inferred
     // (finish_escapes).
     fn escape_error { mut c: Checker, t: Id, at: source::Span, msg: utf8::String } {
-        if not c.borrow_ready and c.fn_decl != NONE {
+        if c.quiet or (not c.borrow_ready and c.fn_decl != NONE) {
             diag::unstage{ diags = c.diags }
             return
         }
@@ -10136,7 +10755,12 @@ namespace check {
         match e.k {
             addr{ e = x } => { return derive_addr{ &c, x = x.* } }
             path => {
-                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } { return derived_of{ c, v = var } }
+                if nodes::get{ m = c.refs, key = expr_key{ e } } is local{ var } {
+                    // What is read out of a handle is what its tasks return.
+                    if c.tasks_off or not map::has{ m = c.task_results, key = root_var{ c, v = var } } { return derived_of{ c, v = var } }
+                    let both = set_union{ c, a = get_handle_found{ c, v = var, part = TASK_OK }, b = get_handle_found{ c, v = var, part = TASK_ERR } }
+                    return set_union{ c, a = derived_of{ c, v = var }, b = both }
+                }
             }
             range{ base } => { return derives_raw{ &c, e = base.* } }
             field{ base } => {
@@ -10190,6 +10814,31 @@ namespace check {
                             let h = borrow_field{ fields, summary, name = f.name, err, success }
                             let conv_to = if f.conv == null { f.ty } else { conv_target{ conv = f.conv } }
                             if (h.direct or h.through) and contains_ptr{ &c, t = conv_to, seen = no_vars{} } { out = set_union{ c, a = out, b = held_derives{ c, xs = derived_of{ c, v = f.var }, h } } }
+                        }
+                        i = i + 1
+                    }
+                }
+                // What the tasks in the handles it is given return, as its summary says it
+                // returns them (§14, Escape check, rule 9); a fn that returns them as their own
+                // keeps their success and error apart, whatever its result's type. A bind holds
+                // what calling it returns of them, either part.
+                if not is_lit and not c.tasks_off {
+                    let mut apart = select
+                    if nodes::get{ m = c.refs, key = expr_key{ e = callee.* } } is func{ decl } { apart = select or returns_tasks_apart{ c, d = decl } }
+                    let terr = apart and c.borrow_error and not bind
+                    let tsuccess = apart and c.borrow_success and not bind
+                    let tsum = if c.borrow_ready and bind { direct_borrow{ &c, callee = callee.* } } else { summary }
+                    let parts: [2]u32 = [TASK_OK, TASK_ERR]
+                    i = 0
+                    while i < fields.len {
+                        if fields[i].mutable and handle_type{ c, t = fields[i].ty } {
+                            let h = find_handle_arg{ c, e, items, name = fields[i].name }
+                            if h != NONE {
+                                for p in parts {
+                                    let held = get_task_held{ s = tsum, k = @as(u32, i), p, err = terr, success = tsuccess }
+                                    out = set_union{ c, a = out, b = held_derives{ c, xs = get_handle_found{ c, v = h, part = p }, h = held } }
+                                }
+                            }
                         }
                         i = i + 1
                     }
@@ -10501,6 +11150,17 @@ namespace check {
         let t = value_ty{ c, k = expr_key{ e = rhs } }
         let ds = vars_in_order{ c, xs = found }
         let name = describe_local{ c, v = ds[0] }
+        // One that holds it through what a task returns says so: the store outlives it, unless
+        // it is a local within its scope, which takes it.
+        let outlives = through or get_var{ c, v = root }.indirect or get_var{ c, v = root }.depth < get_var{ c, v = ds[0] }.depth
+        if outlives and comes_from_task{ &c, e = rhs, v = ds[0] } {
+            let mut f = message{ c }
+            try! @fmt(&f, "use it where {} is, or give the task data that outlives this store", name)
+            if let m = describe_task_escape{ &c, v = ds[0], part = 0, what = "this value", fix = utf8::view{ b = f }.bytes } {
+                escape_error{ &c, t, at, msg = m }
+                return
+            }
+        }
         if through {
             let mut b = message{ c }
             try! @fmt(&b, "cannot store the address of {} through a pointer", name)
@@ -10530,7 +11190,7 @@ namespace check {
             }
             i = i + 1
         }
-        add_derived{ &c, v = root, xs = ds }
+        add_derived{ &c, v = root, xs = ds, plain = if map::len{ m = c.task_results } == 0 { ds } else { derive_plain{ &c, e = rhs, contents_of = false } } }
     }
 
     // A bound function stored in local v can't hold a place that ends before v does (§6).
@@ -13367,11 +14027,80 @@ namespace check {
         c.borrow_error = false
         if found.len > 0 {
             let ds = vars_in_order{ c, xs = found }
+            c.borrow_error = true
+            let by_task = comes_from_task{ &c, e = x, v = ds[0] }
+            c.borrow_error = false
+            if by_task {
+                if let m = describe_task_escape{ &c, v = ds[0], part = TASK_ERR, what = "this error", fix = "handle the error here, or give the task data that outlives this function" } {
+                    escape_error{ &c, t = errs, at = expr_at{ e }, msg = m }
+                    return
+                }
+            }
             let mut b = message{ c }
             try! @fmt(&b, "`try` would return an error that may hold the address of {}", describe_local{ c, v = ds[0] })
             note_local{ &c, v = ds[0] }
             escape_error{ &c, t = errs, at = expr_at{ e }, msg = utf8::view{ b } }
         }
+    }
+
+    // Whether e's value may hold the address of local v only through what a task returns.
+    fn comes_from_task { mut c: Checker, e: syntax::Expr, v: u32 } -> bool {
+        if map::len{ m = c.task_results } == 0 { return false }
+        c.tasks_off = true
+        let plain = derives_raw{ &c, e }
+        c.tasks_off = false
+        return not has_id{ xs = plain, n = v }
+    }
+
+    // The message about a value, `what`, that may point into local v through what a task returns
+    // (§14, Escape check, rule 9), of part TASK_OK or TASK_ERR, or either for 0, with the notes
+    // that say where v is and where the task starts, and what to do, fix. Null if no start found v.
+    fn describe_task_escape { mut c: Checker, v: u32, part: u32, what: []u8, fix: []u8 } -> ?utf8::String {
+        let fs = list::items{ list = c.task_found }
+        let mut at = fs.len
+        let mut i = fs.len
+        while i > 0 {
+            i = i - 1
+            if fs[i].local != v { continue }
+            if part == 0 or fs[i].part == part {
+                at = i
+                break
+            }
+            if at == fs.len { at = i }
+        }
+        if at == fs.len { return null }
+        let f = fs[at]
+        let x = get_var{ c, v }
+        let mut b = message{ c }
+        if x.kind == VarKind::literal {
+            try! @fmt(&b, "{} may point into an array literal, which the task read: ", str{ s = what })
+        } else {
+            try! @fmt(&b, "{} may point into `{}`, which the task read: ", str{ s = what }, str{ s = x.name })
+        }
+        if f.task == NONE {
+            try! utf8::push{ &b, s = "the task returns it" }
+        } else if f.started {
+            // A fn that starts the task: what it was given for its field may be returned.
+            let name = get_decl{ c, d = f.task }.name.text
+            if f.through {
+                try! @fmt(&b, "the task `{}` starts may return what its `{}` points to", str{ s = name }, str{ s = f.field })
+            } else {
+                try! @fmt(&b, "the task `{}` starts may return its `{}`", str{ s = name }, str{ s = f.field })
+            }
+            if f.part == TASK_ERR { try! utf8::push{ &b, s = " in its error" } }
+        } else {
+            let name = get_decl{ c, d = f.task }.name.text
+            if f.through {
+                try! @fmt(&b, "`{}` returns what `{}` points to", str{ s = name }, str{ s = f.field })
+            } else {
+                try! @fmt(&b, "`{}` returns `{}`", str{ s = name }, str{ s = f.field })
+            }
+            if f.part == TASK_ERR { try! utf8::push{ &b, s = " in its error" } }
+        }
+        try! @fmt(&b, "; {}", str{ s = fix })
+        note_local{ &c, v }
+        note{ &c, at = f.at, msg = "the task that reads it starts here" }
+        return utf8::view{ b }
     }
 
     // An array in immutable const storage, including a field or element of a const. This
@@ -13796,6 +14525,8 @@ namespace check {
             func{ decl, targs } => {
                 if map::has{ m = c.lends, key = decl } {
                     errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` lends into a loan holder, and is only called: its calls are checked for what the loan holds", path_text{ c, segs }) }
+                } else if map::has{ m = c.task_from, key = decl } {
+                    errorf{ &c, at = expr_at{ e }, msg = @fmt("`{}` returns what the tasks in a loan holder return, and is only called: its calls are checked for where that points", path_text{ c, segs }) }
                 }
                 let ct = c_fn_value{ &c, d = decl, exp, at = expr_at{ e } }
                 if ct != types::NO_TYPE { return ct }
@@ -14475,6 +15206,10 @@ namespace check {
         let refs = check_exclusive{ &c, e, items, fields, callee = call_decl, name }
         c.cap_shared = false
         if not bind and not starting { if e.k is braced{ callee } { late{ &c, x = Late::keeps{ e, callee = callee.*, items, fields, name } } } }
+        if not bind and starting {
+            late{ &c, x = Late::lend{ e, d = call_decl, items } }
+            lend_results{ &c, e, d = call_decl, items }
+        }
         if bind {
             try! map::put{ m = &c.holds, key = expr_key{ e }, value = refs }
             let mut given = list::new([]u8){ realloc = arena::alloc, heap = c.heap }
